@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Dashboard de Aprovação</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f5f6fa;
+    }
+
+    h2 { margin-bottom: 15px; }
+
+    .topbar {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:10px;
+    }
+
+    .nav a {
+      text-decoration:none;
+      padding:8px 14px;
+      border-radius:10px;
+      background:#111;
+      color:#fff;
+      font-weight:700;
+      margin-left:8px;
+    }
+
+    /* KPI CARDS */
+    .kpis {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap:16px;
+      margin-top:20px;
+    }
+
+    .kpi {
+      background:#fff;
+      padding:18px;
+      border-radius:16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    }
+
+    .kpi h3 {
+      margin:0;
+      font-size:28px;
+    }
+
+    .kpi span {
+      font-size:14px;
+      color:#666;
+    }
+
+    .approved { border-left:6px solid #17c964; }
+    .rejected { border-left:6px solid #f31260; }
+    .pending  { border-left:6px solid #f5a524; }
+    .total    { border-left:6px solid #111; }
+
+    /* SEÇÕES */
+    .section {
+      margin-top:40px;
+    }
+
+    .section h3 {
+      margin-bottom:15px;
+    }
+
+    .grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap:18px;
+    }
+
+    .card {
+      background:#fff;
+      border-radius:14px;
+      overflow:hidden;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    }
+
+    .card img {
+      width:100%;
+      height:200px;
+      object-fit:cover;
+    }
+
+    .card-body {
+      padding:12px;
+      font-size:14px;
+    }
+
+    .badge {
+      display:inline-block;
+      padding:4px 8px;
+      border-radius:8px;
+      font-size:12px;
+      font-weight:700;
+      margin-bottom:6px;
+    }
+
+    .b-approved { background:#e6f9f0; color:#0a7a42; }
+    .b-rejected { background:#ffe6ec; color:#a8002a; }
+    .b-pending  { background:#fff3e0; color:#9c5b00; }
+
+    .feedback {
+      margin-top:8px;
+      padding:8px;
+      border-radius:8px;
+      background:#f9f9f9;
+      font-size:13px;
+      color:#444;
+    }
+
+    .empty {
+      margin-top:20px;
+      padding:20px;
+      background:#fff;
+      border-radius:14px;
+      border:1px dashed #ccc;
+      text-align:center;
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h2>📊 Dashboard de Aprovação</h2>
+  <div class="nav">
+    <a href="/">← Voltar</a>
+    <a href="/reprovadas">❌ Reprovadas</a>
+  </div>
+</div>
+
+<!-- KPIs -->
+<div class="kpis">
+  <div class="kpi total">
+    <h3>{{ total }}</h3>
+    <span>Total de imagens</span>
+  </div>
+
+  <div class="kpi approved">
+    <h3>{{ approved }}</h3>
+    <span>Aprovadas</span>
+  </div>
+
+  <div class="kpi rejected">
+    <h3>{{ rejected }}</h3>
+    <span>Reprovadas</span>
+  </div>
+
+  <div class="kpi pending">
+    <h3>{{ pending }}</h3>
+    <span>Pendentes</span>
+  </div>
+</div>
+
+{% if total == 0 %}
+  <div class="empty">
+    <h3>Nenhuma imagem enviada ainda</h3>
+    <p>Faça upload na página inicial para gerar dados no dashboard.</p>
+  </div>
+{% else %}
+
+<!-- LISTAGEM COMPLETA -->
+<div class="section">
+  <h3>📁 Todas as Imagens</h3>
+  <div class="grid">
+
+    {% for img in images %}
+    <div class="card">
+      <img src="{{ img.url }}" alt="">
+      <div class="card-body">
+
+        {% if img.status == "approved" %}
+          <span class="badge b-approved">Aprovada</span>
+        {% elif img.status == "rejected" %}
+          <span class="badge b-rejected">Reprovada</span>
+        {% else %}
+          <span class="badge b-pending">Pendente</span>
+        {% endif %}
+
+        <div><b>ID:</b> {{ img.id }}</div>
+
+        {% if img.feedback %}
+        <div class="feedback">
+          <b>Feedback:</b><br>
+          {{ img.feedback }}
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
+</div>
+
+{% endif %}
+
+</body>
+</html>

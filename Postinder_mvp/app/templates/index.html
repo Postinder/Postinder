@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Aprovação estilo Tinder</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 18px; }
+    .wrap { max-width: 520px; margin: 0 auto; }
+    .card { border: 1px solid #ddd; border-radius: 14px; padding: 12px; }
+    img { width: 100%; border-radius: 12px; display:block; }
+    .row { display:flex; gap:10px; margin-top: 10px; }
+    button { flex:1; padding:12px; border:0; border-radius: 12px; cursor:pointer; font-weight:700; }
+    .ok { background:#17c964; color:#fff; }
+    .no { background:#f31260; color:#fff; }
+    .nav { background:#eef; }
+    textarea { width:100%; margin-top:10px; min-height:70px; padding:10px; border-radius:12px; border:1px solid #ddd; }
+    .meta { margin: 10px 0; color:#444; font-size: 14px; display:flex; gap:8px; flex-wrap: wrap; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:#f2f2f2; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .linkbtn { display:inline-block; padding:10px 12px; border-radius:12px; background:#111; color:#fff; text-decoration:none; font-weight:700; }
+    .linkbtn:hover { opacity: .92; }
+    .muted { color:#666; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="topbar">
+      <h2 style="margin:0;">Postinder (MVP)</h2>
+
+      <!-- ✅ BOTÕES NO TOPO -->
+      <div style="display:flex; gap:8px;">
+        <a class="linkbtn" href="/report">📄 Relatório</a>
+        <a class="linkbtn" href="/reprovadas" style="background:#f31260;">❌ Reprovadas</a>
+      </div>
+    </div>
+
+    <div class="muted" style="margin-top:6px;">Aprove/reprove imagem por imagem. Ao reprovar, escreva o motivo.</div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="meta">
+        <span class="pill" id="counter">0/0</span>
+        <span class="pill" id="statusPill">sem imagens</span>
+        <span class="pill" id="kpiTotal">Total: 0</span>
+        <span class="pill" id="kpiApproved">Aprovadas: 0</span>
+        <span class="pill" id="kpiRejected">Reprovadas: 0</span>
+        <span class="pill" id="kpiPending">Pendentes: 0</span>
+      </div>
+
+      <img id="img" src="" alt="preview" style="display:none"/>
+
+      <textarea id="feedback" placeholder="Se reprovar, escreva aqui o motivo (obrigatório)"></textarea>
+
+      <div class="row">
+        <button class="nav" id="prevBtn">◀ Anterior</button>
+        <button class="nav" id="nextBtn">Próximo ▶</button>
+      </div>
+
+      <div class="row">
+        <button class="no" id="rejectBtn">❌ Reprovar</button>
+        <button class="ok" id="approveBtn">✅ Aprovar</button>
+      </div>
+    </div>
+
+    <h3 style="margin-top:18px;">Adicionar imagens</h3>
+    <form id="uploadForm">
+      <input type="file" name="files" id="files" multiple accept="image/*" />
+      <button type="submit" style="margin-top:10px; padding:10px 14px; border-radius:12px; border:0; cursor:pointer; font-weight:700;">
+        Enviar
+      </button>
+    </form>
+
+    <p id="msg"></p>
+  </div>
+
+<script>
+  let images = [];
+  let idx = 0;
+
+  function setMsg(t){ document.getElementById("msg").innerText = t || ""; }
+
+  function calcKpis() {
+    const total = images.length;
+    const approved = images.filter(i => i.status === "approved").length;
+    const rejected = images.filter(i => i.status === "rejected").length;
+    const pending  = images.filter(i => !i.status || i.status === "pending").length;
+
+    document.getElementById("kpiTotal").innerText = `Total: ${total}`;
+    document.getElementById("kpiApproved").innerText = `Aprovadas: ${approved}`;
+    document.getElementById("kpiRejected").innerText = `Reprovadas: ${rejected}`;
+    document.getElementById("kpiPending").innerText = `Pendentes: ${pending}`;
+  }
+
+  function render() {
+    const imgEl = document.getElementById("img");
+    const counter = document.getElementById("counter");
+    const statusPill = document.getElementById("statusPill");
+    const feedbackEl = document.getElementById("feedback");
+
+    calcKpis();
+
+    if (!images.length) {
+      imgEl.style.display = "none";
+      counter.innerText = "0/0";
+      statusPill.innerText = "sem imagens";
+      feedbackEl.value = "";
+      return;
+    }
+
+    const item = images[idx];
+    imgEl.src = item.url;
+    imgEl.style.display = "block";
+    counter.innerText = `${idx+1}/${images.length}`;
+    statusPill.innerText = item.status || "pending";
+    feedbackEl.value = item.feedback || "";
+  }
+
+  async function loadBatch() {
+    const r = await fetch("/batch");
+    const j = await r.json();
+    images = j.batch.images || [];
+    if (idx >= images.length) idx = Math.max(0, images.length-1);
+    render();
+  }
+
+  async function sendReview(status) {
+    if (!images.length) return;
+
+    const item = images[idx];
+    const feedback = document.getElementById("feedback").value.trim();
+
+    const r = await fetch("/review", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ id: item.id, status, feedback })
+    });
+
+    const j = await r.json();
+    if (!j.ok) { setMsg(j.error || "Erro"); return; }
+
+    // atualiza local
+    images[idx] = j.item;
+    setMsg("Salvo!");
+
+    // avança automaticamente
+    if (idx < images.length-1) idx++;
+    render();
+  }
+
+  document.getElementById("prevBtn").onclick = () => { if (idx>0) idx--; render(); };
+  document.getElementById("nextBtn").onclick = () => { if (idx<images.length-1) idx++; render(); };
+
+  document.getElementById("approveBtn").onclick = () => sendReview("approved");
+  document.getElementById("rejectBtn").onclick = () => sendReview("rejected");
+
+  document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const files = document.getElementById("files").files;
+    if (!files.length) { setMsg("Selecione imagens."); return; }
+
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f);
+
+    const r = await fetch("/upload", { method:"POST", body: fd });
+    const j = await r.json();
+    if (!j.ok) { setMsg(j.error || "Erro no upload"); return; }
+
+    setMsg(`Upload ok: ${j.items.length} imagens`);
+    await loadBatch();
+  });
+
+  loadBatch();
+</script>
+</body>
+</html>
