@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <radialGradient id="fire" cx="50%" cy="80%" r="60%">
+      <stop offset="0%" stop-color="#ff9500"/>
+      <stop offset="40%" stop-color="#ff3c00"/>
+      <stop offset="100%" stop-color="#A7014B"/>
+    </radialGradient>
+  </defs>
+  <!-- Outer flame -->
+  <path d="M16 2 C16 2 22 8 22 14 C22 14 24 11 23 8 C26 11 28 15 27 20 C26 25 22 30 16 30 C10 30 6 25 5 20 C4 15 6 11 9 8 C8 11 10 14 10 14 C10 8 16 2 16 2Z" fill="url(#fire)"/>
+  <!-- Inner flame -->
+  <path d="M16 10 C16 10 19 14 19 18 C19 18 20 16 19.5 14 C21 16 21.5 18 21 21 C20.5 24 18.5 27 16 27 C13.5 27 11.5 24 11 21 C10.5 18 11 16 12.5 14 C12 16 13 18 13 18 C13 14 16 10 16 10Z" fill="#ffcc00" opacity="0.9"/>
+  <!-- Core -->
+  <ellipse cx="16" cy="22" rx="3" ry="4" fill="#fff5c0" opacity="0.7"/>
+</svg>

@@ -1,0 +1,33 @@
+import { Request, Response, NextFunction } from 'express'
+import { AppException } from '../exceptions/AppException'
+import { logger } from '../utils/Logger'
+import { ZodError } from 'zod'
+
+export function errorHandler(
+  error: Error,
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  logger.error('Request error', { path: req.path, error: error.message })
+
+  if (error instanceof AppException) {
+    return res.status(error.statusCode).json({
+      error: error.message,
+      code: error.code,
+    })
+  }
+
+  if (error instanceof ZodError) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+      details: error.errors,
+    })
+  }
+
+  res.status(500).json({
+    error: 'Internal server error',
+    code: 'INTERNAL_SERVER_ERROR',
+  })
+}
