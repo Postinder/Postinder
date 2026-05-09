@@ -1,1 +1,2 @@
-// auth - presentation
+export * from './controllers'
+export * from './routes'

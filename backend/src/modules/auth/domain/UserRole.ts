@@ -1,0 +1,8 @@
+export enum UserRole {
+  ADMIN = 'admin',
+  MANAGER = 'manager',
+  EDITOR = 'editor',
+  VIEWER = 'viewer',
+}
+
+export const UserRoleValues = Object.values(UserRole)

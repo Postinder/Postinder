@@ -1,1 +1,1 @@
-// auth - infrastructure
+export { JwtProvider } from './JwtProvider'
