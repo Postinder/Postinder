@@ -4,14 +4,11 @@
   "version": "2.0.0",
   "description": "Postinder - Platform de Aprovação de Conteúdo",
   "scripts": {
-    "dev": "pnpm -r --parallel run dev",
-    "build": "pnpm -r run build",
-    "preview": "pnpm -r run preview",
-    "lint": "pnpm -r run lint"
+    "dev": "pnpm run dev --recursive",
+    "build": "pnpm run build --recursive",
+    "lint": "pnpm run lint --recursive"
   },
-  "workspaces": [
-    "apps/*",
-    "backend",
-    "packages/*"
-  ]
+  "keywords": [],
+  "author": "Mathluiz23",
+  "license": "ISC"
 }

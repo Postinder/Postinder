@@ -1,0 +1,20 @@
+feat: frontend - refactor services to use HTTP API instead of Supabase direct calls
+
+Refactored all frontend services to call backend HTTP API instead of accessing Supabase directly:
+- auth.service.js: Login/logout now call /auth/login and /auth/logout endpoints
+- posts.service.js: Post operations now call /posts/* endpoints with axios
+- clients.service.js: Client operations now call /clients/* endpoints
+- approvals.service.js: Approval operations now call approval endpoints
+- insights.service.js: Analytics now call /insights/* endpoints
+- edge-functions.service.js: Now delegates to backend API endpoints
+- supabase.js: Simplified to only handle file storage (migration planned)
+- Created lib/axios.js: HTTP client with auth token management and refresh logic
+- Added axios dependency to package.json
+
+This removes the direct Supabase dependency from frontend business logic and enables:
+- Centralized backend API as single source of truth
+- Better request interception and error handling
+- Token refresh logic at HTTP layer
+- Future migration of file storage away from Supabase
+
+Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>

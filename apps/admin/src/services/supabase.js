@@ -2,27 +2,16 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-const serviceKey  = import.meta.env.VITE_SUPABASE_SERVICE_KEY
 
 if (!supabaseUrl || supabaseUrl.includes('SEU_PROJETO')) {
   console.warn('⚠️ Postinder: Configure o Supabase no arquivo .env')
 }
 
+// Supabase client - now only used for storage
 export const supabase = createClient(
-  supabaseUrl  || 'https://placeholder.supabase.co',
-  supabaseKey  || 'placeholder',
-  { auth: { autoRefreshToken: true, persistSession: true } }
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseKey || 'placeholder'
 )
-
-// Admin client — only created if service key is configured
-// Used for privileged operations like creating users
-export const supabaseAdmin = serviceKey
-  ? createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    })
-  : null
-
-export const hasAdminAccess = !!serviceKey
 
 export const STORAGE_BUCKET = 'post-files'
 
