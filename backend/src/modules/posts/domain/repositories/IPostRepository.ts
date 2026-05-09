@@ -2,7 +2,7 @@ import { Post } from '../Post.entity'
 import { PostStatus } from '../PostStatus'
 
 export interface FindPostsFilter {
-  companyId: string
+  companyId?: string
   clientId?: string
   status?: PostStatus
 }

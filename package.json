@@ -2,13 +2,10 @@
   "private": true,
   "name": "postinder",
   "version": "2.0.0",
-  "description": "Postinder - Platform de Aprovação de Conteúdo",
   "scripts": {
-    "dev": "pnpm run dev --recursive",
-    "build": "pnpm run build --recursive",
-    "lint": "pnpm run lint --recursive"
+    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan,magenta\" \"npm run dev --prefix backend\" \"npm run dev --prefix apps/admin\""
   },
-  "keywords": [],
-  "author": "Mathluiz23",
-  "license": "ISC"
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }

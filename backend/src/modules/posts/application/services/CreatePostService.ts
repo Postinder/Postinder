@@ -1,21 +1,19 @@
 import { Post } from '../../domain/Post.entity'
 import { IPostRepository } from '../../domain/repositories/IPostRepository'
 import { CreatePostDTO } from '../dtos/CreatePostDTO'
-import { logger } from '../../../shared/utils/Logger'
+import { logger } from '../../../../shared/utils/Logger'
 
 export class CreatePostService {
   constructor(private postRepository: IPostRepository) {}
 
-  async execute(dto: CreatePostDTO, userId: string, companyId: string): Promise<Post> {
+  async execute(dto: CreatePostDTO, userId: string, companyId?: string): Promise<Post> {
     logger.info('Creating post', { userId, companyId, title: dto.title })
 
     const post = Post.create({
       companyId,
       clientId: dto.clientId,
-      createdBy: userId,
       title: dto.title,
-      description: dto.description,
-      channels: dto.channels,
+      description: dto.description || dto.caption,
     })
 
     const saved = await this.postRepository.save(post)

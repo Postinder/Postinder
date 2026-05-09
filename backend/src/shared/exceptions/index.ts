@@ -1,1 +1,1 @@
-// shared - exceptions
+export * from './AppException'

@@ -18,3 +18,34 @@ export async function updateClient(clientId, updates) {
 export async function softDeleteClient(clientId) {
   await apiClient.delete(`/clients/${clientId}`)
 }
+
+export function parseVCFText(text) {
+  const contacts = []
+  const vcfEntries = text.split('BEGIN:VCARD')
+
+  for (const entry of vcfEntries) {
+    if (!entry.includes('FN:')) continue
+
+    const contact = {
+      name: '',
+      email: '',
+      phone: '',
+      selected: false,
+      password: '',
+      segment: '',
+    }
+
+    const lines = entry.split('\n')
+    for (const line of lines) {
+      if (line.startsWith('FN:')) contact.name = line.replace('FN:', '').trim()
+      if (line.startsWith('EMAIL')) contact.email = line.split(':')[1]?.trim() || ''
+      if (line.startsWith('TEL')) contact.phone = line.split(':')[1]?.trim() || ''
+    }
+
+    if (contact.name && contact.phone) {
+      contacts.push(contact)
+    }
+  }
+
+  return contacts
+}

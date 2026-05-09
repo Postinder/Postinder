@@ -1,68 +1,102 @@
-import { supabase } from '../../../shared/database/supabase'
+import { query } from '../../../../shared/database/pool'
 import { Post } from '../../domain/Post.entity'
 import { IPostRepository, FindPostsFilter, PaginationParams } from '../../domain/repositories/IPostRepository'
 import { PostMapper } from '../mappers/PostMapper'
-import { logger } from '../../../shared/utils/Logger'
+import { logger } from '../../../../shared/utils/Logger'
 
 export class PostRepository implements IPostRepository {
   async save(post: Post): Promise<Post> {
-    const data = PostMapper.toPersistence(post)
-
-    const { data: saved, error } = await supabase
-      .from('posts')
-      .upsert(data)
-      .select()
-      .single()
-
-    if (error) {
+    try {
+      const data = PostMapper.toPersistence(post)
+      const result = await query(
+        `INSERT INTO posts (id, client_id, company_id, title, description, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (id) DO UPDATE SET
+           title = EXCLUDED.title,
+           description = EXCLUDED.description,
+           status = EXCLUDED.status,
+           updated_at = EXCLUDED.updated_at
+         RETURNING *`,
+        [data.id, data.client_id, data.company_id, data.title, data.description, data.status, data.created_at, data.updated_at],
+      )
+      return PostMapper.toDomain(result.rows[0])
+    } catch (error) {
       logger.error('Failed to save post', { error })
       throw new Error('Failed to save post')
     }
-
-    return PostMapper.toDomain(saved)
   }
 
   async findById(id: string): Promise<Post | null> {
-    const { data, error } = await supabase
-      .from('posts')
-      .select()
-      .eq('id', id)
-      .is('deleted_at', null)
-      .single()
-
-    if (error) return null
-    return PostMapper.toDomain(data)
+    try {
+      const result = await query('SELECT * FROM posts WHERE id = $1', [id])
+      return result.rows[0] ? PostMapper.toDomain(result.rows[0]) : null
+    } catch (error) {
+      logger.error('Failed to find post', { error })
+      return null
+    }
   }
 
   async findMany(filter: FindPostsFilter, pagination: PaginationParams) {
-    let query = supabase
-      .from('posts')
-      .select('*', { count: 'exact' })
-      .eq('company_id', filter.companyId)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false })
+    try {
+      const params: any[] = []
+      const conditions: string[] = []
 
-    if (filter.clientId) {
-      query = query.eq('client_id', filter.clientId)
-    }
+      if (filter.companyId) {
+        conditions.push(`p.company_id = $${params.length + 1}`)
+        params.push(filter.companyId)
+      }
+      if (filter.clientId) {
+        conditions.push(`p.client_id = $${params.length + 1}`)
+        params.push(filter.clientId)
+      }
+      if (filter.status) {
+        conditions.push(`p.status = $${params.length + 1}`)
+        params.push(filter.status)
+      }
 
-    if (filter.status) {
-      query = query.eq('status', filter.status)
-    }
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    const { data, error, count } = await query.range(
-      pagination.offset,
-      pagination.offset + pagination.limit - 1,
-    )
+      const countResult = await query(
+        `SELECT COUNT(*) as count FROM posts p ${where}`,
+        params,
+      )
 
-    if (error) {
+      params.push(pagination.limit)
+      params.push(pagination.offset)
+
+      const result = await query(
+        `SELECT
+           p.*,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', f.id,
+                 'name', COALESCE(f.original_name, f.url),
+                 'storage_url', f.url,
+                 'file_type', f.file_type,
+                 'status', f.status,
+                 'rejection_reason', f.rejection_reason,
+                 'rejection_tags', f.rejection_tags
+               ) ORDER BY f.created_at
+             ) FILTER (WHERE f.id IS NOT NULL),
+             '[]'
+           ) AS files
+         FROM posts p
+         LEFT JOIN files f ON f.post_id = p.id
+         ${where}
+         GROUP BY p.id
+         ORDER BY p.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params,
+      )
+
+      return {
+        posts: result.rows.map(row => PostMapper.toDomainWithFiles(row)),
+        total: parseInt(countResult.rows[0].count, 10),
+      }
+    } catch (error) {
       logger.error('Failed to list posts', { error })
       return { posts: [], total: 0 }
-    }
-
-    return {
-      posts: (data || []).map(PostMapper.toDomain),
-      total: count || 0,
     }
   }
 
@@ -71,9 +105,10 @@ export class PostRepository implements IPostRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await supabase
-      .from('posts')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id)
+    try {
+      await query('DELETE FROM posts WHERE id = $1', [id])
+    } catch (error) {
+      logger.error('Failed to delete post', { error })
+    }
   }
 }

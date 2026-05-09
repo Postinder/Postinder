@@ -1,18 +1,21 @@
 import clsx from 'clsx'
 
 const statusStyles = {
-  pending:   'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-  approved:  'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300',
-  rejected:  'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
-  updated:   'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
-  delivered: 'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
-  topo:      'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
-  meio:      'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
-  fundo:     'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+  draft:            'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400',
+  pending:          'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+  pending_approval: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+  approved:         'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300',
+  rejected:         'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
+  updated:          'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
+  delivered:        'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
+  topo:             'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+  meio:             'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
+  fundo:            'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
 }
 
 const statusLabels = {
-  pending: 'Pendente', approved: 'Aprovado', rejected: 'Recusado',
+  draft: 'Rascunho', pending: 'Pendente', pending_approval: 'Aguardando',
+  approved: 'Aprovado', rejected: 'Recusado',
   updated: 'Atualizado', delivered: 'Entregue',
   topo: 'Topo', meio: 'Meio', fundo: 'Fundo',
 }
