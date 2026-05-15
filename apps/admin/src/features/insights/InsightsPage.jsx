@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BarChart2, MessageSquare } from 'lucide-react'
-import { fetchInsightsSummary, fetchRejectionTags, fetchChannelBreakdown, fetchMonthlyFeedbacks } from '../../services/insights.service'
+import { fetchMonthlyFeedbacks } from '../../services/insights.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { fetchClients } from '../../services/clients.service'
 import Card from '../../components/ui/Card'

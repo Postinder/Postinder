@@ -8,6 +8,11 @@ export class Post {
   title?: string
   description?: string
   status: PostStatus
+  channels?: string[]
+  formats?: Record<string, string[]>
+  scheduledDate?: string | null
+  funnelTag?: string | null
+  emailLink?: string | null
   createdAt: Date
   updatedAt: Date
 
@@ -18,6 +23,11 @@ export class Post {
     title?: string
     description?: string
     status: PostStatus
+    channels?: string[]
+    formats?: Record<string, string[]>
+    scheduledDate?: string | null
+    funnelTag?: string | null
+    emailLink?: string | null
     createdAt: Date
     updatedAt: Date
   }) {
@@ -27,6 +37,11 @@ export class Post {
     this.title = data.title
     this.description = data.description
     this.status = data.status
+    this.channels = data.channels || []
+    this.formats = data.formats || {}
+    this.scheduledDate = data.scheduledDate || null
+    this.funnelTag = data.funnelTag || null
+    this.emailLink = data.emailLink || null
     this.createdAt = data.createdAt
     this.updatedAt = data.updatedAt
   }
@@ -38,6 +53,11 @@ export class Post {
     title: string
     description?: string
     status?: PostStatus
+    channels?: string[]
+    formats?: Record<string, string[]>
+    scheduledDate?: string | null
+    funnelTag?: string | null
+    emailLink?: string | null
     createdAt?: Date
     updatedAt?: Date
   }): Post {
@@ -51,6 +71,11 @@ export class Post {
       title: data.title,
       description: data.description || '',
       status: data.status || PostStatus.DRAFT,
+      channels: data.channels,
+      formats: data.formats,
+      scheduledDate: data.scheduledDate,
+      funnelTag: data.funnelTag,
+      emailLink: data.emailLink,
       createdAt: data.createdAt || new Date(),
       updatedAt: data.updatedAt || new Date(),
     })

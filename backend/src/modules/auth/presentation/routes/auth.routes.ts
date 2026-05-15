@@ -15,6 +15,10 @@ export function createAuthRoutes(): Router {
     controller.login(req, res).catch(err => res.status(err.statusCode || 500).json({ error: err.message }))
   )
 
+  router.post('/client-token', (req: Request, res: Response) =>
+    controller.loginClientByToken(req, res).catch(err => res.status(err.statusCode || 500).json({ error: err.message }))
+  )
+
   router.post('/refresh', (req: Request, res: Response) =>
     controller.refresh(req, res).catch(err => res.status(err.statusCode || 500).json({ error: err.message }))
   )

@@ -25,6 +25,7 @@ export default function Button({
       className={clsx(
         'inline-flex items-center justify-center gap-2 font-semibold rounded-lg',
         'transition-all duration-150 cursor-pointer',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-neutral-950',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variants[variant],
         sizes[size],

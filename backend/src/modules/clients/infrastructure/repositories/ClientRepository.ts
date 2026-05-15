@@ -1,5 +1,6 @@
 import { query } from '../../../../shared/database/pool'
 import { logger } from '../../../../shared/utils/Logger'
+import { randomUUID } from 'crypto'
 
 export interface CreateClientDTO {
   name: string
@@ -21,6 +22,20 @@ export interface UpdateClientDTO {
 }
 
 export class ClientRepository {
+  private async createTokenForClient(clientId: string) {
+    const slug = randomUUID().replace(/-/g, '')
+    const token = randomUUID()
+
+    const result = await query(
+      `INSERT INTO client_tokens (client_id, token, slug)
+       VALUES ($1, $2, $3)
+       RETURNING id, slug, revoked_at, created_at`,
+      [clientId, token, slug],
+    )
+
+    return result.rows[0]
+  }
+
   async create(dto: CreateClientDTO) {
     try {
       const result = await query(
@@ -38,7 +53,15 @@ export class ClientRepository {
           dto.company_id || null,
         ]
       )
-      return result.rows[0]
+      const client = result.rows[0]
+
+      try {
+        const token = await this.createTokenForClient(client.id)
+        return { ...client, tokens: [token] }
+      } catch (error) {
+        logger.error('Failed to create client approval token', { error })
+        return { ...client, tokens: [] }
+      }
     } catch (error: any) {
       if (error.code === '23505') {
         throw new Error('Email already exists')
@@ -48,12 +71,18 @@ export class ClientRepository {
     }
   }
 
-  async findById(id: string) {
+  async findById(id: string, companyId?: string) {
     try {
+      const params: any[] = [id]
+      let sql = `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, created_at, updated_at
+         FROM clients WHERE id = $1 AND is_active = true`
+      if (companyId) {
+        params.push(companyId)
+        sql += ` AND company_id = $${params.length}`
+      }
       const result = await query(
-        `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, created_at, updated_at
-         FROM clients WHERE id = $1 AND is_active = true`,
-        [id]
+        sql,
+        params,
       )
       return result.rows[0] || null
     } catch (error) {
@@ -78,15 +107,39 @@ export class ClientRepository {
 
   async findAll(companyId?: string, limit = 50, offset = 0) {
     try {
-      let sql = 'SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, created_at FROM clients WHERE is_active = true'
+      let sql = `
+        SELECT
+          c.id,
+          c.name,
+          c.email,
+          c.whatsapp,
+          c.segment,
+          c.color,
+          c.deadline_days,
+          c.company_id,
+          c.created_at,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', ct.id,
+                'slug', ct.slug,
+                'revoked_at', ct.revoked_at,
+                'created_at', ct.created_at
+              )
+            ) FILTER (WHERE ct.id IS NOT NULL),
+            '[]'
+          ) AS tokens
+        FROM clients c
+        LEFT JOIN client_tokens ct ON ct.client_id = c.id
+        WHERE c.is_active = true`
       const params: any[] = []
 
       if (companyId) {
-        sql += ` AND company_id = $${params.length + 1}`
+        sql += ` AND c.company_id = $${params.length + 1}`
         params.push(companyId)
       }
 
-      sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+      sql += ` GROUP BY c.id ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
       params.push(limit)
       params.push(offset)
 
@@ -112,7 +165,7 @@ export class ClientRepository {
     }
   }
 
-  async update(id: string, dto: UpdateClientDTO) {
+  async update(id: string, dto: UpdateClientDTO, companyId?: string) {
     try {
       const updates: string[] = []
       const values: any[] = []
@@ -144,12 +197,18 @@ export class ClientRepository {
         paramIndex++
       }
 
-      if (updates.length === 0) return this.findById(id)
+      if (updates.length === 0) return this.findById(id, companyId)
 
       updates.push(`updated_at = NOW()`)
       values.push(id)
+      const conditions = [`id = $${paramIndex}`]
+      if (companyId) {
+        paramIndex++
+        values.push(companyId)
+        conditions.push(`company_id = $${paramIndex}`)
+      }
 
-      const sql = `UPDATE clients SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING id, name, email, whatsapp, segment, color, deadline_days`
+      const sql = `UPDATE clients SET ${updates.join(', ')} WHERE ${conditions.join(' AND ')} RETURNING id, name, email, whatsapp, segment, color, deadline_days`
 
       const result = await query(sql, values)
       return result.rows[0] || null
@@ -159,9 +218,15 @@ export class ClientRepository {
     }
   }
 
-  async delete(id: string) {
+  async delete(id: string, companyId?: string) {
     try {
-      await query('UPDATE clients SET is_active = false, updated_at = NOW() WHERE id = $1', [id])
+      const params: any[] = [id]
+      const conditions = ['id = $1']
+      if (companyId) {
+        params.push(companyId)
+        conditions.push(`company_id = $${params.length}`)
+      }
+      await query(`UPDATE clients SET is_active = false, updated_at = NOW() WHERE ${conditions.join(' AND ')}`, params)
     } catch (error) {
       logger.error('Failed to delete client', { error })
       throw new Error('Failed to delete client')

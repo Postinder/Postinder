@@ -1,7 +1,19 @@
 import { query } from '../../../../shared/database/pool'
 
 export class ApprovalsRepository {
-  async getClientQueue(clientId: string) {
+  async getClientQueue(clientId: string, companyId?: string) {
+    const params: any[] = [clientId]
+    const conditions = [
+      'p.client_id = $1',
+      "p.status = 'pending_approval'",
+      "f.status = 'pending'",
+      'p.deleted_at IS NULL',
+    ]
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`p.company_id = $${params.length}`)
+    }
+
     const result = await query(
       `SELECT
          p.id          AS post_id,
@@ -14,9 +26,9 @@ export class ApprovalsRepository {
          f.created_at  AS file_created_at
        FROM files f
        JOIN posts p ON f.post_id = p.id
-       WHERE p.client_id = $1 AND f.status = 'pending'
+       WHERE ${conditions.join(' AND ')}
        ORDER BY p.created_at DESC, f.created_at ASC`,
-      [clientId],
+      params,
     )
 
     // Group by post
@@ -47,41 +59,143 @@ export class ApprovalsRepository {
     return queue
   }
 
-  async approveFile(fileId: string) {
-    const fileRes = await query(`UPDATE files SET status = 'approved', updated_at = NOW() WHERE id = $1 RETURNING post_id`, [fileId])
-    if (!fileRes.rows[0]) return
+  private buildScopeConditions(params: any[], scope?: { clientId?: string; companyId?: string }) {
+    const conditions = ['p.deleted_at IS NULL']
+    if (scope?.clientId) {
+      params.push(scope.clientId)
+      conditions.push(`p.client_id = $${params.length}`)
+    }
+    if (scope?.companyId) {
+      params.push(scope.companyId)
+      conditions.push(`p.company_id = $${params.length}`)
+    }
+    return conditions
+  }
+
+  async approveFile(fileId: string, scope?: { clientId?: string; companyId?: string }) {
+    const params: any[] = [fileId]
+    const scopeConditions = this.buildScopeConditions(params, scope)
+    const fileRes = await query(
+      `UPDATE files f
+       SET status = 'approved', updated_at = NOW()
+       FROM posts p
+       WHERE f.post_id = p.id
+         AND f.id = $1
+         AND f.status = 'pending'
+         AND ${scopeConditions.join(' AND ')}
+       RETURNING f.post_id`,
+      params,
+    )
+    if (!fileRes.rows[0]) return false
 
     const postId = fileRes.rows[0].post_id
     const pending = await query(`SELECT id FROM files WHERE post_id = $1 AND status = 'pending'`, [postId])
     if (pending.rows.length === 0) {
       await query(`UPDATE posts SET status = 'approved', updated_at = NOW() WHERE id = $1`, [postId])
     }
+    return true
   }
 
-  async rejectFile(fileId: string, tags: string[], comment: string) {
+  async rejectFile(fileId: string, tags: string[], comment: string, scope?: { clientId?: string; companyId?: string }) {
+    const params: any[] = [fileId, comment || null, tags]
+    const scopeConditions = this.buildScopeConditions(params, scope)
     const fileRes = await query(
-      `UPDATE files SET status = 'rejected', rejection_reason = $2, rejection_tags = $3, updated_at = NOW() WHERE id = $1 RETURNING post_id`,
-      [fileId, comment || null, tags],
+      `UPDATE files f
+       SET status = 'rejected', rejection_reason = $2, rejection_tags = $3, updated_at = NOW()
+       FROM posts p
+       WHERE f.post_id = p.id
+         AND f.id = $1
+         AND f.status = 'pending'
+         AND ${scopeConditions.join(' AND ')}
+       RETURNING f.post_id`,
+      params,
     )
     if (fileRes.rows[0]) {
       await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [fileRes.rows[0].post_id])
+      return true
     }
+    return false
   }
 
-  async saveFeedback(clientId: string, rating: number, text: string, month: string) {
-    await query(
-      `INSERT INTO feedback (client_id, rating, text, month) VALUES ($1, $2, $3, $4)`,
-      [clientId, rating, text, month],
+  async saveFeedback(clientId: string, rating: number, text: string, month: string, companyId?: string) {
+    const params: any[] = [clientId]
+    const conditions = ['id = $1', 'is_active = true']
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`company_id = $${params.length}`)
+    }
+
+    const client = await query(`SELECT id FROM clients WHERE ${conditions.join(' AND ')}`, params)
+    if (!client.rows[0]) return false
+
+    await query(`INSERT INTO feedback (client_id, rating, text, month) VALUES ($1, $2, $3, $4)`, [clientId, rating, text, month])
+    return true
+  }
+
+  async listMonthlyFeedbacks(filters: { clientId?: string; month?: string; companyId?: string }) {
+    const params: any[] = []
+    const conditions: string[] = []
+
+    if (filters.clientId) {
+      params.push(filters.clientId)
+      conditions.push(`f.client_id = $${params.length}`)
+    }
+    if (filters.month) {
+      params.push(filters.month)
+      conditions.push(`f.month = $${params.length}`)
+    }
+    if (filters.companyId) {
+      params.push(filters.companyId)
+      conditions.push(`c.company_id = $${params.length}`)
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const result = await query(
+      `SELECT
+         f.id,
+         f.client_id,
+         f.rating,
+         f.text,
+         f.month,
+         f.created_at,
+         json_build_object('id', c.id, 'name', c.name, 'email', c.email, 'color', c.color) AS client
+       FROM feedback f
+       JOIN clients c ON c.id = f.client_id
+       ${where}
+       ORDER BY f.created_at DESC`,
+      params,
     )
+
+    return result.rows
   }
 
-  async approveAllFiles(postId: string) {
+  async approveAllFiles(postId: string, companyId?: string) {
+    const params: any[] = [postId]
+    const conditions = ['id = $1', 'deleted_at IS NULL']
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`company_id = $${params.length}`)
+    }
+    const post = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
+    if (!post.rows[0]) return false
+
     await query(`UPDATE files SET status = 'approved', updated_at = NOW() WHERE post_id = $1`, [postId])
-    await query(`UPDATE posts SET status = 'approved', updated_at = NOW() WHERE id = $1`, [postId])
+    await query(`UPDATE posts SET status = 'approved', updated_at = NOW(), approved_at = NOW() WHERE id = $1`, [postId])
+    return true
   }
 
-  async rejectAllFiles(postId: string) {
-    await query(`UPDATE files SET status = 'rejected', updated_at = NOW() WHERE post_id = $1`, [postId])
+  async rejectAllFiles(postId: string, companyId?: string) {
+    const params: any[] = [postId]
+    const conditions = ['id = $1', 'deleted_at IS NULL']
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`company_id = $${params.length}`)
+    }
+    const post = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
+    if (!post.rows[0]) return false
+
+    await query(`UPDATE files SET status = 'rejected', updated_at = NOW() WHERE post_id = $1 AND status <> 'approved'`, [postId])
     await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [postId])
+    return true
   }
 }

@@ -1,7 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './store/authStore'
+import { loginClientWithToken } from './services/auth.service'
 import AdminLayout from './components/layout/AdminLayout'
 import ClientLayout from './components/layout/ClientLayout'
 import LoginPage from './features/auth/LoginPage'
@@ -24,7 +25,49 @@ function RequireAdmin({ children }) {
   return children
 }
 function RequireClient({ children }) {
-  const { user } = useAuthStore()
+  const { user, setUser } = useAuthStore()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const token = new URLSearchParams(location.search).get('token')
+  const [loadingToken, setLoadingToken] = useState(Boolean(token && user?.type !== 'client'))
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function authenticateWithToken() {
+      if (!token || user?.type === 'client') {
+        setLoadingToken(false)
+        return
+      }
+
+      try {
+        const clientUser = await loginClientWithToken(token)
+        if (cancelled) return
+        setUser(clientUser)
+        navigate(location.pathname, { replace: true })
+      } catch {
+        if (!cancelled) {
+          setLoadingToken(false)
+          navigate('/login', { replace: true })
+        }
+      }
+    }
+
+    authenticateWithToken()
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, user?.type, setUser, navigate, location.pathname])
+
+  if (loadingToken) {
+    return (
+      <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-neutral-300 dark:border-neutral-700 border-t-mag-500 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
   if (!user || user.type !== 'client') return <Navigate to="/login" replace />
   return children
 }

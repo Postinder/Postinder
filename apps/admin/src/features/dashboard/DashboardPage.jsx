@@ -8,6 +8,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Textarea } from '../../components/ui/Input'
+import Skeleton from '../../components/ui/Skeleton'
 import toast from 'react-hot-toast'
 
 const STATUS_TABS = [
@@ -161,7 +162,7 @@ export default function DashboardPage() {
           { label: 'Recusados',  value: counts.rejected,         color: 'text-red-600',    key: 'rejected' },
         ].map(m => (
           <button key={m.key} onClick={() => setSF(statusFilter === m.key ? 'all' : m.key)}
-            className={`text-left p-5 rounded-xl border transition-all ${statusFilter === m.key ? 'border-mag-500 bg-mag-50 dark:bg-mag-950/30' : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 hover:border-neutral-300'}`}>
+            className={`text-left p-5 rounded-xl border transition-all bg-white dark:bg-neutral-900 ${statusFilter === m.key ? 'border-mag-500 shadow-[inset_0_0_0_1px_#A7014B]' : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700'}`}>
             <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">{m.label}</div>
             <div className={`text-4xl font-extrabold ${m.color}`}>{m.value}</div>
           </button>
@@ -199,7 +200,23 @@ export default function DashboardPage() {
         </div>
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="p-10 text-center text-neutral-400">Carregando...</div>
+            <div className="p-4 space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="grid grid-cols-[2fr_1.4fr_1.5fr_1fr_1fr] gap-4 items-center py-2">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="w-10 h-10 rounded-lg" />
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-3 w-2/3" />
+                      <Skeleton className="h-2 w-1/3" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-7 w-20" />
+                  <Skeleton className="h-5 w-24" />
+                  <Skeleton className="h-7 w-16" />
+                </div>
+              ))}
+            </div>
           ) : filtered.length === 0 ? (
             <div className="p-10 text-center text-neutral-400">
               <div className="text-4xl mb-3">📭</div>

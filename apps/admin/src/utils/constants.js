@@ -74,6 +74,9 @@ export const PERMISSION_SCREENS = [
 // ── Role permissions defaults ──
 export const ROLE_PERMISSIONS = {
   admin:  PERMISSION_SCREENS.map(s => s.id).concat(['users']),
+  manager: PERMISSION_SCREENS.map(s => s.id),
+  editor: ['dashboard', 'posts/new', 'approvals', 'feed'],
+  viewer: ['dashboard', 'feed', 'insights'],
   gestor: PERMISSION_SCREENS.map(s => s.id),
   equipe: ['dashboard', 'approvals'],
 }
@@ -103,5 +106,5 @@ export function clientInitials(name = '') {
 
 export function buildApprovalLink(slug) {
   const base = import.meta.env.VITE_APPROVAL_BASE_URL || window.location.origin
-  return `${base}/c/${slug}`
+  return `${base}/aprovar?token=${encodeURIComponent(slug)}`
 }

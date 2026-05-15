@@ -2,10 +2,15 @@ import { Request, Response } from 'express'
 import { ClientRepository } from '../../infrastructure/repositories/ClientRepository'
 import bcryptjs from 'bcryptjs'
 
+interface AuthRequest extends Request {
+  user?: any
+  tenantId?: string
+}
+
 export class ClientsController {
   constructor(private clientRepository: ClientRepository) {}
 
-  async create(req: Request, res: Response) {
+  async create(req: AuthRequest, res: Response) {
     const { name, email, password, whatsapp, segment, color, deadline_days } = req.body
 
     if (!name || !email || !password) {
@@ -23,6 +28,7 @@ export class ClientsController {
         segment,
         color,
         deadline_days,
+        company_id: req.tenantId,
       })
 
       res.status(201).json({ data: client })
@@ -32,11 +38,11 @@ export class ClientsController {
     }
   }
 
-  async list(req: Request, res: Response) {
+  async list(req: AuthRequest, res: Response) {
     try {
       const { limit = 50, offset = 0 } = req.query
       const result = await this.clientRepository.findAll(
-        undefined,
+        req.tenantId,
         parseInt(limit as string, 10),
         parseInt(offset as string, 10)
       )
@@ -50,10 +56,10 @@ export class ClientsController {
     }
   }
 
-  async getById(req: Request, res: Response) {
+  async getById(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params
-      const client = await this.clientRepository.findById(id)
+      const client = await this.clientRepository.findById(id, req.tenantId)
 
       if (!client) {
         return res.status(404).json({ error: 'Client not found' })
@@ -65,7 +71,7 @@ export class ClientsController {
     }
   }
 
-  async update(req: Request, res: Response) {
+  async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params
       const { name, whatsapp, segment, color, deadline_days } = req.body
@@ -76,7 +82,7 @@ export class ClientsController {
         segment,
         color,
         deadline_days,
-      })
+      }, req.tenantId)
 
       if (!client) {
         return res.status(404).json({ error: 'Client not found' })
@@ -88,10 +94,10 @@ export class ClientsController {
     }
   }
 
-  async delete(req: Request, res: Response) {
+  async delete(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params
-      await this.clientRepository.delete(id)
+      await this.clientRepository.delete(id, req.tenantId)
       res.json({ message: 'Client deleted successfully' })
     } catch (error: any) {
       res.status(500).json({ error: error.message })

@@ -36,6 +36,15 @@ export class AuthService {
     return this.buildClientTokens(client)
   }
 
+  async loginClientByToken(slug: string): Promise<TokenResponseDTO> {
+    const client = await this.userRepository.findClientByTokenSlug(slug)
+    if (!client) {
+      throw new UnauthorizedException('Invalid or expired approval link')
+    }
+
+    return this.buildClientTokens(client)
+  }
+
   async refreshToken(refreshToken: string): Promise<TokenResponseDTO> {
     try {
       const decoded = this.jwtProvider.verify(refreshToken) as any
@@ -50,19 +59,9 @@ export class AuthService {
       }
 
       if (decoded.clientId) {
-        const accessToken = this.jwtProvider.sign(
-          { clientId: decoded.clientId, type: 'client' },
-          `${env.JWT_EXPIRY_MINUTES}m`,
-        )
-        const newRefresh = this.jwtProvider.sign(
-          { clientId: decoded.clientId, type: 'refresh' },
-          `${env.JWT_REFRESH_EXPIRY_DAYS}d`,
-        )
-        return {
-          accessToken,
-          refreshToken: newRefresh,
-          user: { id: decoded.clientId, email: '', name: '', type: 'client' },
-        }
+        const client = await this.userRepository.findClientById(decoded.clientId)
+        if (!client) throw new UnauthorizedException('Client not found')
+        return this.buildClientTokens(client)
       }
 
       throw new UnauthorizedException('Invalid token payload')

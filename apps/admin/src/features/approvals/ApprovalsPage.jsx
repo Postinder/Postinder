@@ -9,6 +9,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { Textarea } from '../../components/ui/Input'
+import Skeleton from '../../components/ui/Skeleton'
 import toast from 'react-hot-toast'
 
 function FilePreview({ file }) {
@@ -179,9 +180,11 @@ export default function ApprovalsPage() {
         <h1 className="text-xl font-bold">Aprovações</h1>
       </div>
 
-      <div className="flex items-center gap-2 text-sm bg-mag-50 dark:bg-mag-950/30 border border-mag-200 dark:border-mag-800 rounded-lg px-3 py-2 mb-4">
+      <div className="flex items-center gap-2 text-sm bg-white dark:bg-neutral-900 border border-mag-500 rounded-lg px-3 py-2 mb-4 shadow-[inset_0_0_0_1px_rgba(167,1,75,0.45)]">
         <span className="w-2 h-2 rounded-full bg-mag-500 flex-shrink-0" />
-        Você está visualizando como <strong className="text-neutral-900 dark:text-white mx-1">administrador</strong> — pode aprovar ou reprovar manualmente.
+        <span className="text-neutral-600 dark:text-neutral-300">
+          Você está visualizando como <strong className="text-neutral-900 dark:text-white mx-1">administrador</strong> — pode aprovar ou reprovar manualmente.
+        </span>
       </div>
 
       <div className="mb-4">
@@ -193,7 +196,21 @@ export default function ApprovalsPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-16 text-neutral-400">Carregando...</div>
+        <div className="space-y-4">
+          {[1, 2].map(i => (
+            <Card key={i} className="p-4">
+              <div className="flex gap-4">
+                <Skeleton className="w-32 h-32 rounded-lg flex-shrink-0" />
+                <div className="flex-1 space-y-3 py-1">
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <Skeleton className="h-8 w-40" />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       ) : actionable.length === 0 ? (
         <Card className="p-12 text-center">
           <div className="text-5xl mb-4">✅</div>

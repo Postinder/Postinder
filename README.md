@@ -1,180 +1,224 @@
-# Postinder v2.0 - Monorepo
+# Postinder v2.0
 
-**Plataforma de Aprovação de Conteúdo** para agências de comunicação digital. Gerenciar, aprovar e otimizar conteúdo para múltiplos clientes e canais de forma eficiente.
+Plataforma para agencias de marketing criarem posts com arquivos e enviarem para aprovacao dos clientes.
 
-## Estrutura do Monorepo
+O admin cria clientes e postagens. O cliente acessa a area de aprovacao e aprova ou reprova cada arquivo.
 
+## O que precisa instalar
+
+Antes de rodar o projeto, instale:
+
+1. **Node.js 18 ou superior**
+   - Baixe em: https://nodejs.org
+   - Depois de instalar, abra o terminal e confira:
+
+```bash
+node -v
+npm -v
 ```
+
+2. **Docker Desktop**
+   - Baixe em: https://www.docker.com/products/docker-desktop/
+   - Abra o Docker Desktop antes de rodar o projeto.
+
+3. **Git**
+   - Baixe em: https://git-scm.com/downloads
+
+4. **Editor de codigo**
+   - Recomendado: VS Code
+
+## Estrutura do projeto
+
+```text
 postinder/
-├── apps/
-│   ├── admin/               # Dashboard e painel administrativo (React + Vite)
-│   └── ...                  # Outros apps no futuro
-├── backend/                 # API e Supabase Edge Functions
-├── packages/
-│   ├── types/              # Tipos TypeScript compartilhados
-│   ├── ui/                 # Componentes UI reutilizáveis
-│   └── shared/             # Utilitários e funções compartilhadas
-├── database/               # Migrações e schemas do banco
-└── infrastructure/         # Terraform, Docker, scripts de deploy
+├── apps/admin/                # Tela web em React
+├── backend/                   # API em Express + TypeScript
+├── database/                  # Schema do banco PostgreSQL
+├── docker-compose.yml         # Configuracao do banco local
+├── setup.ps1                  # Setup automatico no Windows/PowerShell
+├── iniciar.bat                # Atalho para iniciar o projeto no Windows
+└── README.md
 ```
 
-## Setup Rápido
+## Rodar pela primeira vez
 
-### Pré-requisitos
-- Node.js 18+
-- pnpm 9+
+### Opcao facil no Windows
 
-### Instalação
+Abra o PowerShell na pasta do projeto e rode:
+
+```powershell
+.\setup.ps1
+```
+
+Esse script faz:
+
+- sobe o PostgreSQL no Docker;
+- instala dependencias da raiz, backend e frontend;
+- aplica o schema do banco;
+- deixa tudo pronto para rodar.
+
+Depois rode:
 
 ```bash
-# Instalar dependências de todas as workspaces
-pnpm install
+npm run dev
 ```
 
-### Desenvolvimento
+### Opcao manual
+
+1. Instale as dependencias:
 
 ```bash
-# Inicia todos os workspaces em desenvolvimento
-pnpm run dev
+npm install
+npm install --prefix backend
+npm install --prefix apps/admin
 ```
 
-- **apps/admin**: http://localhost:5173
-
-### Build & Deploy
+2. Suba o banco de dados:
 
 ```bash
-pnpm run build      # Build de todos os workspaces
-pnpm run lint       # Lint em todos os workspaces
+docker compose up -d
 ```
 
-## Configurando apps/admin
+3. Aplique o schema do banco:
 
-### 1. Supabase Setup
-1. Acesse https://supabase.com
-2. SQL Editor → cole `supabase-schema.sql` e execute
-3. Storage → New Bucket → `post-files` (Public)
-4. Settings → API → copie URL e anon key
+No PowerShell:
 
-### 2. Variáveis de Ambiente
+```powershell
+Get-Content database\001_initial_schema.sql | docker exec -i postinder-db psql -U postinder_user -d postinder_db
+```
 
-Copie `apps/admin/.env.example` → `apps/admin/.env.local`:
+No Git Bash ou terminal Linux/macOS:
 
 ```bash
-VITE_SUPABASE_URL=https://seu-projeto.supabase.co
-VITE_SUPABASE_ANON_KEY=sua_chave_publica
+docker exec -i postinder-db psql -U postinder_user -d postinder_db < database/001_initial_schema.sql
 ```
 
-### 3. Primeiro Usuário Admin
-
-```sql
--- Supabase SQL Editor
-insert into users (id, name, email, role)
-values ('uuid-do-usuario-auth', 'Seu Nome', 'admin@example.com', 'admin');
-```
-
-## Integrações (Opcionais)
-
-A Postinder suporta:
-
-| Integração | Tipo |
-|-----------|------|
-| **Claude AI** | Análise de métricas com IA |
-| **WhatsApp** | Z-API ou Twilio |
-| **GoHighLevel** | Sync de CRM |
-| **Canva** | Importar designs |
-| **Resend** | E-mails transacionais |
-| **Google Analytics** | Rastreamento |
-
-Todas opcionais e não quebram o sistema se desabilitadas.
-
-## Estrutura de apps/admin
-
-```
-apps/admin/src/
-├── components/         # UI compartilhada
-│   ├── ui/            # Button, Card, Input, Modal, Badge, ThemeToggle
-│   ├── layout/        # AdminLayout, ClientLayout
-│   └── ai/            # AIInsightsPanel
-├── features/          # Funcionalidades/páginas
-├── services/          # API calls e lógica
-│   └── integrations/  # AI, WhatsApp, GHL, Canva, Resend
-├── store/             # Zustand: auth, posts, theme
-├── hooks/             # usePosts, useSwipe
-├── styles/            # CSS global com tema dark/light
-├── utils/             # constants, helpers
-└── App.jsx            # Root com rotas
-```
-
-## Desenvolvimento
-
-### Hot Reload
-Editar qualquer arquivo em `src/` atualiza o navegador automaticamente.
-
-### Proxy API
-Vite roteia `/api/*` → `http://localhost:3001` (útil para backend local).
-
-### Dark/Light Theme
-Toggle automático no layout, respeita preferência do SO.
-
-## Tema Dark/Light
-
-A aplicação oferece alternância automática de tema. Uso:
-
-```jsx
-import { useThemeStore } from './store/themeStore'
-
-export function MyComponent() {
-  const { isDark, toggle } = useThemeStore()
-  return <button onClick={toggle}>Toggle ({isDark ? '🌙' : '☀️'})</button>
-}
-```
-
-## Deploy
-
-### Vercel (Recomendado)
+4. Rode o projeto:
 
 ```bash
-npm install -g vercel
-vercel
+npm run dev
 ```
 
-Configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` no dashboard.
+## Acessos locais
 
-### Outros (Docker, Self-hosted)
-Documentação será adicionada conforme necessário.
+Com o projeto rodando:
 
-## Custo Estimado
+- Frontend: http://localhost:5173
+- Backend: http://localhost:3001
+- Health check da API: http://localhost:3001/health
 
-| Serviço | Custo |
-|---------|-------|
-| Supabase Free | R$ 0 |
-| Vercel Hobby | R$ 0 |
-| **Total** | **R$ 0/mês** |
+## Logins de teste
 
-## Troubleshooting
+Admin:
 
-### Porta em uso?
+- E-mail: `admin@postinder.local`
+- Senha: `Admin@123456`
+
+Cliente:
+
+- E-mail: `cliente@example.com`
+- Senha: `Cliente@123456`
+
+## Como iniciar no dia a dia
+
+Se ja fez o setup uma vez, normalmente basta:
+
 ```bash
-PORT=3000 pnpm run dev
+docker compose up -d
+npm run dev
 ```
 
-### Erro de autenticação Supabase?
-- Verifique `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
-- Confirme projeto ativo no Supabase
-- Cheque permissões RLS
+No Windows, tambem pode dar dois cliques em:
 
-### Limpar cache
+```text
+iniciar.bat
+```
+
+Ele encerra processos antigos nas portas `3001` e `5173` e inicia o projeto.
+
+## Portas usadas
+
+- `5173`: site/admin React
+- `3001`: API backend
+- `5433`: PostgreSQL local via Docker
+
+Se alguma dessas portas estiver ocupada, feche o processo antigo ou use o `iniciar.bat`.
+
+## Comandos uteis
+
+Build do backend:
+
 ```bash
-rm -rf node_modules .pnpm-store && pnpm install
+npm run build --prefix backend
 ```
 
-## Contribuindo
+Build do frontend:
 
-1. Branch a partir de `main`
-2. Implemente feature
-3. `pnpm run lint`
-4. Abra PR
+```bash
+npm run build --prefix apps/admin
+```
 
----
+Parar o banco:
 
-**Desenvolvido com: React 18 + Vite + Supabase + Zustand + Tailwind**
+```bash
+docker compose down
+```
+
+Resetar o banco completamente:
+
+```bash
+docker compose down -v
+docker compose up -d
+```
+
+Depois aplique o schema de novo.
+
+## Problemas comuns
+
+### `ERR_CONNECTION_REFUSED` no navegador
+
+O backend provavelmente nao esta rodando.
+
+Confira:
+
+```bash
+curl http://localhost:3001/health
+```
+
+Se falhar, rode:
+
+```bash
+npm run dev
+```
+
+### Docker nao sobe
+
+Abra o Docker Desktop e espere ele ficar pronto. Depois rode:
+
+```bash
+docker compose up -d
+```
+
+### Login nao funciona
+
+Verifique se o schema foi aplicado no banco. Rode novamente:
+
+```powershell
+Get-Content database\001_initial_schema.sql | docker exec -i postinder-db psql -U postinder_user -d postinder_db
+```
+
+### Tela abre, mas dados nao carregam
+
+Confirme se frontend e backend estao nas portas certas:
+
+- http://localhost:5173
+- http://localhost:3001/health
+
+Se necessario, pare tudo e rode `iniciar.bat`.
+
+## Observacoes para o time
+
+- Nao precisa mexer em `node_modules`.
+- Nao envie arquivos `.env` para o Git.
+- Arquivos `.log` sao gerados localmente e podem ser apagados.
+- O banco local roda no Docker; sem Docker, a API nao consegue salvar ou buscar dados.

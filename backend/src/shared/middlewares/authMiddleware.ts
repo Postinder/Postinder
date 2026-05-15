@@ -20,7 +20,7 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   try {
     const payload = jwtProvider.verify(token)
     req.user = payload
-    req.tenantId = payload.companyId || payload.clientId || payload.userId
+    req.tenantId = payload.companyId || undefined
     next()
   } catch {
     next(new UnauthorizedException('Invalid or expired token'))

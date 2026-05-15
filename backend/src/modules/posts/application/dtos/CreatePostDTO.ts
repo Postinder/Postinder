@@ -5,6 +5,14 @@ export const createPostSchema = z.object({
   description: z.string().optional(),
   caption: z.string().optional(),
   clientId: z.string().uuid(),
+  channels: z.array(z.string()).optional(),
+  formats: z.record(z.array(z.string())).optional(),
+  scheduledDate: z.string().nullable().optional(),
+  scheduled_date: z.string().nullable().optional(),
+  funnelTag: z.string().nullable().optional(),
+  funnel_tag: z.string().nullable().optional(),
+  emailLink: z.string().nullable().optional(),
+  email_link: z.string().nullable().optional(),
 })
 
 export type CreatePostDTO = z.infer<typeof createPostSchema>

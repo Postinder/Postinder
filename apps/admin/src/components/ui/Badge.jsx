@@ -23,7 +23,7 @@ const statusLabels = {
 export function StatusBadge({ status, className }) {
   return (
     <span className={clsx(
-      'inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold',
+      'inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border border-transparent',
       statusStyles[status] || 'bg-neutral-100 text-neutral-600',
       className
     )}>

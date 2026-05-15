@@ -22,6 +22,7 @@ export function createFilesRoutes(): Router {
 
 export function createFeedbackRoutes(): Router {
   const router = Router()
+  router.get('/monthly', wrap(ctrl.listMonthlyFeedbacks.bind(ctrl)))
   router.post('/', wrap(ctrl.submitFeedback.bind(ctrl)))
   return router
 }

@@ -8,7 +8,7 @@
 // 3. Adicione no .env: VITE_ANTHROPIC_API_KEY=sk-ant-...
 //
 // NOTA: Em produção, a chamada deve passar por um backend
-// para não expor a chave no frontend. Use Supabase Edge Functions.
+// para não expor a chave no frontend.
 // ─────────────────────────────────────────────────────────────────
 
 import { isEnabled } from './registry'
