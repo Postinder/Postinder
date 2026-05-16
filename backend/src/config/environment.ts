@@ -13,6 +13,10 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(['debug','info','warn','error']).default('info'),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  APP_PUBLIC_URL: z.string().optional(),
+  ZAPI_TOKEN: z.string().optional(),
+  ZAPI_INSTANCE: z.string().optional(),
+  ZAPI_CLIENT_TOKEN: z.string().optional(),
 })
 
 export type Environment = z.infer<typeof envSchema>

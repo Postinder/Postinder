@@ -35,6 +35,11 @@ export function createApp(): Express {
 
   // Add original_name column if it doesn't exist (safe to run repeatedly)
   pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT[] DEFAULT ARRAY[]::TEXT[];
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS company_id UUID;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
     ALTER TABLE files ADD COLUMN IF NOT EXISTS original_name VARCHAR(255);
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS channels TEXT[] DEFAULT ARRAY[]::TEXT[];
@@ -42,34 +47,9 @@ export function createApp(): Express {
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS scheduled_date TIMESTAMP;
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS funnel_tag VARCHAR(100);
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS email_link TEXT;
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP;
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;
   `).catch(() => {})
-
-  // Keep local/manual databases compatible with approval-link auth.
-  pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`)
-    .then(() => pool.query(`
-      CREATE TABLE IF NOT EXISTS client_tokens (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-        token TEXT NOT NULL UNIQUE,
-        slug TEXT NOT NULL UNIQUE,
-        expires_at TIMESTAMP,
-        revoked_at TIMESTAMP,
-        last_used_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `))
-    .then(() => pool.query(`
-      INSERT INTO client_tokens (client_id, token, slug)
-      SELECT c.id, gen_random_uuid()::text, replace(gen_random_uuid()::text, '-', '')
-      FROM clients c
-      WHERE c.is_active = true
-        AND NOT EXISTS (
-          SELECT 1 FROM client_tokens ct
-          WHERE ct.client_id = c.id AND ct.revoked_at IS NULL
-        )
-      ON CONFLICT DO NOTHING
-    `))
-    .catch(() => {})
 
   return app
 }
