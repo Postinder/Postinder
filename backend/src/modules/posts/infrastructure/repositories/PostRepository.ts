@@ -5,6 +5,19 @@ import { PostMapper } from '../mappers/PostMapper'
 import { logger } from '../../../../shared/utils/Logger'
 
 export class PostRepository implements IPostRepository {
+  private buildPostScope(id: string, companyId?: string, alias = '') {
+    const params: any[] = [id]
+    const prefix = alias ? `${alias}.` : ''
+    const conditions = [`${prefix}id = $1`, `${prefix}deleted_at IS NULL`]
+
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`${prefix}company_id = $${params.length}`)
+    }
+
+    return { params, conditions }
+  }
+
   async save(post: Post): Promise<Post> {
     try {
       const data = PostMapper.toPersistence(post)
@@ -153,6 +166,146 @@ export class PostRepository implements IPostRepository {
 
   async update(id: string, post: Post): Promise<Post> {
     return this.save(post)
+  }
+
+  async updateFields(id: string, data: any, companyId?: string) {
+    const fields: string[] = ['updated_at = NOW()']
+    const params: any[] = []
+
+    if (data.title !== undefined) {
+      params.push(data.title)
+      fields.push(`title = $${params.length}`)
+    }
+    if (data.description !== undefined || data.caption !== undefined) {
+      params.push(data.description ?? data.caption)
+      fields.push(`description = $${params.length}`)
+    }
+    if (data.scheduled_date !== undefined || data.scheduledDate !== undefined) {
+      params.push(data.scheduled_date ?? data.scheduledDate)
+      fields.push(`scheduled_date = $${params.length}`)
+    }
+    if (data.funnel_tag !== undefined || data.funnelTag !== undefined) {
+      params.push(data.funnel_tag ?? data.funnelTag)
+      fields.push(`funnel_tag = $${params.length}`)
+    }
+    if (data.channels !== undefined) {
+      params.push(data.channels)
+      fields.push(`channels = $${params.length}`)
+    }
+    if (data.formats !== undefined) {
+      params.push(JSON.stringify(data.formats))
+      fields.push(`formats = $${params.length}`)
+    }
+    if (data.email_link !== undefined || data.emailLink !== undefined) {
+      params.push(data.email_link ?? data.emailLink)
+      fields.push(`email_link = $${params.length}`)
+    }
+
+    params.push(id)
+    const conditions = [`id = $${params.length}`, 'deleted_at IS NULL']
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`company_id = $${params.length}`)
+    }
+
+    const result = await query(
+      `UPDATE posts SET ${fields.join(', ')}
+       WHERE ${conditions.join(' AND ')}
+       RETURNING *`,
+      params,
+    )
+
+    return result.rows[0] || null
+  }
+
+  async softDelete(id: string, companyId?: string): Promise<boolean> {
+    const { params, conditions } = this.buildPostScope(id, companyId)
+    const result = await query(
+      `UPDATE posts SET deleted_at = NOW(), updated_at = NOW()
+       WHERE ${conditions.join(' AND ')}
+       RETURNING id`,
+      params,
+    )
+    return Boolean(result.rows[0])
+  }
+
+  async exists(id: string, companyId?: string): Promise<boolean> {
+    const { params, conditions } = this.buildPostScope(id, companyId)
+    const result = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
+    return Boolean(result.rows[0])
+  }
+
+  async addFiles(postId: string, files: Array<{ url: string; originalName: string; fileType: string }>, companyId?: string) {
+    const postExists = await this.exists(postId, companyId)
+    if (!postExists) return null
+
+    const savedFiles = []
+    for (const file of files) {
+      const result = await query(
+        `INSERT INTO files (post_id, url, original_name, file_type, status)
+         VALUES ($1, $2, $3, $4, 'pending')
+         RETURNING *`,
+        [postId, file.url, file.originalName, file.fileType],
+      )
+      savedFiles.push(result.rows[0])
+    }
+
+    await query(`UPDATE posts SET status = 'pending_approval', updated_at = NOW() WHERE id = $1`, [postId])
+    return savedFiles
+  }
+
+  async submitForApproval(id: string, companyId?: string): Promise<boolean> {
+    const { params, conditions } = this.buildPostScope(id, companyId)
+    const result = await query(
+      `UPDATE posts SET status = 'pending_approval', submitted_at = NOW(), updated_at = NOW()
+       WHERE ${conditions.join(' AND ')}
+       RETURNING id`,
+      params,
+    )
+    return Boolean(result.rows[0])
+  }
+
+  async resubmit(id: string, data: { title?: string; caption?: string; description?: string; justificativa?: string }, companyId?: string) {
+    const updates: string[] = [`status = 'pending_approval'`, 'updated_at = NOW()']
+    const params: any[] = []
+
+    if (data.title) {
+      params.push(data.title)
+      updates.push(`title = $${params.length}`)
+    }
+    if (data.caption || data.description) {
+      params.push(data.caption || data.description)
+      updates.push(`description = $${params.length}`)
+    }
+
+    params.push(id)
+    const conditions = [`id = $${params.length}`, 'deleted_at IS NULL']
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`company_id = $${params.length}`)
+    }
+
+    const result = await query(
+      `UPDATE posts SET ${updates.join(', ')}
+       WHERE ${conditions.join(' AND ')}
+       RETURNING id`,
+      params,
+    )
+
+    if (!result.rows[0]) return false
+
+    await query(`UPDATE files SET status = 'pending' WHERE post_id = $1 AND status = 'rejected'`, [id])
+
+    if (data.justificativa) {
+      await query(
+        `INSERT INTO post_notes (post_id, note, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT DO NOTHING`,
+        [id, data.justificativa],
+      ).catch(() => {})
+    }
+
+    return true
   }
 
   async delete(id: string): Promise<void> {
