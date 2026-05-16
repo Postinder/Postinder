@@ -16,16 +16,6 @@ export class AuthController {
     res.json(result)
   }
 
-  async loginClientByToken(req: Request, res: Response) {
-    const slug = String(req.body.token || req.body.slug || req.query.token || '').trim()
-    if (!slug) {
-      return res.status(400).json({ error: 'Approval token required' })
-    }
-
-    const result = await this.authService.loginClientByToken(slug)
-    res.json(result)
-  }
-
   logout(req: Request, res: Response) {
     res.json({ message: 'Logged out successfully' })
   }

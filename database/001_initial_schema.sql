@@ -35,18 +35,6 @@ CREATE TABLE IF NOT EXISTS clients (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create client approval tokens table
-CREATE TABLE IF NOT EXISTS client_tokens (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  token TEXT NOT NULL UNIQUE,
-  slug TEXT NOT NULL UNIQUE,
-  expires_at TIMESTAMP,
-  revoked_at TIMESTAMP,
-  last_used_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Create posts table
 CREATE TABLE IF NOT EXISTS posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -101,7 +89,6 @@ CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
 CREATE INDEX IF NOT EXISTS idx_feedback_client_id ON feedback(client_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
-CREATE INDEX IF NOT EXISTS idx_client_tokens_slug ON client_tokens(slug);
 CREATE INDEX IF NOT EXISTS idx_users_company_id ON users(company_id);
 CREATE INDEX IF NOT EXISTS idx_clients_company_id ON clients(company_id);
 
@@ -131,12 +118,6 @@ VALUES (
   true
 )
 ON CONFLICT (email) DO NOTHING;
-
-INSERT INTO client_tokens (client_id, token, slug)
-SELECT id, 'seed-client-token-acme', 'acme-aprovacao'
-FROM clients
-WHERE email = 'cliente@example.com'
-ON CONFLICT (slug) DO NOTHING;
 
 -- Verification query
 SELECT 'USERS' as table_name, COUNT(*) as count FROM users

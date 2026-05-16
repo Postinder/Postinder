@@ -36,15 +36,6 @@ export class AuthService {
     return this.buildClientTokens(client)
   }
 
-  async loginClientByToken(slug: string): Promise<TokenResponseDTO> {
-    const client = await this.userRepository.findClientByTokenSlug(slug)
-    if (!client) {
-      throw new UnauthorizedException('Invalid or expired approval link')
-    }
-
-    return this.buildClientTokens(client)
-  }
-
   async refreshToken(refreshToken: string): Promise<TokenResponseDTO> {
     try {
       const decoded = this.jwtProvider.verify(refreshToken) as any

@@ -22,13 +22,6 @@ export async function loginClient(email, password) {
   return { ...data.user, type: 'client' }
 }
 
-export async function loginClientWithToken(token) {
-  const { data } = await apiClient.post('/auth/client-token', { token })
-  localStorage.setItem('accessToken', data.accessToken)
-  if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
-  return { ...data.user, type: 'client' }
-}
-
 export async function logout() {
   try {
     await apiClient.post('/auth/logout')

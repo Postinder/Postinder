@@ -103,8 +103,3 @@ export function statusLabel(s) {
 export function clientInitials(name = '') {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 }
-
-export function buildApprovalLink(slug) {
-  const base = import.meta.env.VITE_APPROVAL_BASE_URL || window.location.origin
-  return `${base}/aprovar?token=${encodeURIComponent(slug)}`
-}
