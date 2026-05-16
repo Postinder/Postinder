@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { ClientRepository } from '../../infrastructure/repositories/ClientRepository'
 import bcryptjs from 'bcryptjs'
+import { env } from '../../../../config/environment'
 
 interface AuthRequest extends Request {
   user?: any
@@ -9,6 +10,46 @@ interface AuthRequest extends Request {
 
 export class ClientsController {
   constructor(private clientRepository: ClientRepository) {}
+
+  private onlyDigits(value = '') {
+    return value.replace(/\D/g, '')
+  }
+
+  private withBrazilCountryCode(phone = '') {
+    const digits = this.onlyDigits(phone)
+    if (!digits) return ''
+    return digits.startsWith('55') ? digits : `55${digits}`
+  }
+
+  private buildApprovalUrl() {
+    const baseUrl = env.APP_PUBLIC_URL || 'http://localhost:5173'
+    return `${baseUrl.replace(/\/$/, '')}/aprovar`
+  }
+
+  private async sendWhatsApp(phone: string, message: string) {
+    if (!env.ZAPI_INSTANCE || !env.ZAPI_TOKEN) {
+      return { sent: true, provider: 'local-preview' }
+    }
+
+    const response = await fetch(
+      `https://api.z-api.io/instances/${env.ZAPI_INSTANCE}/token/${env.ZAPI_TOKEN}/send-text`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(env.ZAPI_CLIENT_TOKEN ? { 'Client-Token': env.ZAPI_CLIENT_TOKEN } : {}),
+        },
+        body: JSON.stringify({ phone, message }),
+      },
+    )
+
+    if (!response.ok) {
+      const details = await response.text().catch(() => '')
+      throw new Error(details || 'WhatsApp provider failed')
+    }
+
+    return { sent: true, provider: 'z-api' }
+  }
 
   async create(req: AuthRequest, res: Response) {
     const { name, email, password, whatsapp, segment, color, deadline_days } = req.body
@@ -101,6 +142,34 @@ export class ClientsController {
       res.json({ message: 'Client deleted successfully' })
     } catch (error: any) {
       res.status(500).json({ error: error.message })
+    }
+  }
+
+  async notify(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params
+      const target = await this.clientRepository.findNotificationTarget(id, req.tenantId)
+
+      if (!target) {
+        return res.status(404).json({ error: 'Client not found' })
+      }
+
+      const phone = this.withBrazilCountryCode(target.whatsapp)
+      if (!phone) {
+        return res.status(400).json({ error: 'Client has no WhatsApp number' })
+      }
+      const approvalUrl = this.buildApprovalUrl()
+      const message = `Olá ${target.name}! Você tem conteúdos aguardando aprovação. Acesse: ${approvalUrl}`
+      const delivery = await this.sendWhatsApp(phone, message)
+
+      res.json({
+        ...delivery,
+        phone,
+        message,
+        approvalUrl,
+      })
+    } catch (error: any) {
+      res.status(502).json({ error: error.message || 'Failed to send WhatsApp notification' })
     }
   }
 }

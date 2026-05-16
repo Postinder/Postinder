@@ -1,6 +1,5 @@
 import { query } from '../../../../shared/database/pool'
 import { logger } from '../../../../shared/utils/Logger'
-import { randomUUID } from 'crypto'
 
 export interface CreateClientDTO {
   name: string
@@ -22,20 +21,6 @@ export interface UpdateClientDTO {
 }
 
 export class ClientRepository {
-  private async createTokenForClient(clientId: string) {
-    const slug = randomUUID().replace(/-/g, '')
-    const token = randomUUID()
-
-    const result = await query(
-      `INSERT INTO client_tokens (client_id, token, slug)
-       VALUES ($1, $2, $3)
-       RETURNING id, slug, revoked_at, created_at`,
-      [clientId, token, slug],
-    )
-
-    return result.rows[0]
-  }
-
   async create(dto: CreateClientDTO) {
     try {
       const result = await query(
@@ -53,15 +38,7 @@ export class ClientRepository {
           dto.company_id || null,
         ]
       )
-      const client = result.rows[0]
-
-      try {
-        const token = await this.createTokenForClient(client.id)
-        return { ...client, tokens: [token] }
-      } catch (error) {
-        logger.error('Failed to create client approval token', { error })
-        return { ...client, tokens: [] }
-      }
+      return result.rows[0]
     } catch (error: any) {
       if (error.code === '23505') {
         throw new Error('Email already exists')
@@ -87,6 +64,34 @@ export class ClientRepository {
       return result.rows[0] || null
     } catch (error) {
       logger.error('Failed to find client', { error })
+      return null
+    }
+  }
+
+  async findNotificationTarget(id: string, companyId?: string) {
+    try {
+      const params: any[] = [id]
+      const conditions = ['c.id = $1', 'c.is_active = true']
+
+      if (companyId) {
+        params.push(companyId)
+        conditions.push(`c.company_id = $${params.length}`)
+      }
+
+      const result = await query(
+        `SELECT
+           c.id,
+           c.name,
+           c.email,
+           c.whatsapp
+         FROM clients c
+         WHERE ${conditions.join(' AND ')}`,
+        params,
+      )
+
+      return result.rows[0] || null
+    } catch (error) {
+      logger.error('Failed to find client notification target', { error })
       return null
     }
   }
@@ -117,20 +122,8 @@ export class ClientRepository {
           c.color,
           c.deadline_days,
           c.company_id,
-          c.created_at,
-          COALESCE(
-            json_agg(
-              json_build_object(
-                'id', ct.id,
-                'slug', ct.slug,
-                'revoked_at', ct.revoked_at,
-                'created_at', ct.created_at
-              )
-            ) FILTER (WHERE ct.id IS NOT NULL),
-            '[]'
-          ) AS tokens
+          c.created_at
         FROM clients c
-        LEFT JOIN client_tokens ct ON ct.client_id = c.id
         WHERE c.is_active = true`
       const params: any[] = []
 
@@ -139,7 +132,7 @@ export class ClientRepository {
         params.push(companyId)
       }
 
-      sql += ` GROUP BY c.id ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+      sql += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
       params.push(limit)
       params.push(offset)
 

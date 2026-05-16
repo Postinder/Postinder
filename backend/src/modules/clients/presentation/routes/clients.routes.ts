@@ -19,6 +19,10 @@ export function createClientsRoutes(): Router {
     controller.getById(req, res).catch(err => res.status(500).json({ error: err.message }))
   )
 
+  router.post('/:id/notify', (req: Request, res: Response) =>
+    controller.notify(req, res).catch(err => res.status(500).json({ error: err.message }))
+  )
+
   router.put('/:id', (req: Request, res: Response) =>
     controller.update(req, res).catch(err => res.status(500).json({ error: err.message }))
   )
