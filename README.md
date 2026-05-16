@@ -107,6 +107,17 @@ Com o projeto rodando:
 - Backend: http://localhost:3001
 - Health check da API: http://localhost:3001/health
 
+## Variaveis de ambiente
+
+Copie `.env.example` para `.env` e confira os valores principais:
+
+- `DATABASE_URL`: conexao com o PostgreSQL local.
+- `JWT_SECRET`: chave usada para login.
+- `APP_PUBLIC_URL`: URL usada pelo backend para enviar a area de aprovacao ao cliente.
+- `ZAPI_INSTANCE`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`: dados da Z-API para envio automatico de WhatsApp.
+
+Em desenvolvimento local, `APP_PUBLIC_URL` deve ficar como `http://localhost:5173`. Quando fizer deploy, troque pela URL real do site.
+
 ## Logins de teste
 
 Admin:
