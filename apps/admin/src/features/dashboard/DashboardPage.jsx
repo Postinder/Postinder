@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Trash2, Edit3, RotateCcw, Plus, ExternalLink } from 'lucide-react'
 import { fetchPosts, softDeletePost, computePostStatus, updatePost, resubmitPost } from '../../services/posts.service'
-import { fetchClients } from '../../services/clients.service'
+import { fetchClients, notifyClient } from '../../services/clients.service'
 import { StatusBadge, Avatar } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -112,6 +112,15 @@ export default function DashboardPage() {
     await softDeletePost(id)
     setPosts(p => p.filter(x => x.id !== id))
     toast.success('Postagem excluída.')
+  }
+
+  async function sendApprovalNotification(clientId) {
+    try {
+      await notifyClient(clientId)
+      toast.success('Mensagem via WhatsApp foi enviada.')
+    } catch (e) {
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível enviar o WhatsApp.')
+    }
   }
 
   const activeClient = clients.find(c => c.id === clientFilter)
@@ -320,7 +329,12 @@ export default function DashboardPage() {
         </div>
       </Card>
 
-      <EditPostModal post={editPost} open={!!editPost} onClose={() => setEditPost(null)} onSave={load} />
+      <EditPostModal post={editPost} open={!!editPost} onClose={() => setEditPost(null)} onSave={async () => {
+        if (editPost?.status === 'rejected') {
+          await sendApprovalNotification(editPost.client_id || editPost.clientId)
+        }
+        load()
+      }} />
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CheckCircle, RotateCcw, AlertTriangle, Eye } from 'lucide-react'
 import { fetchPosts, computePostStatus, resubmitPost } from '../../services/posts.service'
-import { fetchClients } from '../../services/clients.service'
+import { fetchClients, notifyClient } from '../../services/clients.service'
 import { approveAllFiles, rejectAllFiles } from '../../services/approvals.service'
 import { StatusBadge } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
@@ -66,6 +66,15 @@ export default function ApprovalsPage() {
     toast('Post reprovado.')
   }
 
+  async function sendApprovalNotification(clientId) {
+    try {
+      await notifyClient(clientId)
+      toast.success('Mensagem via WhatsApp foi enviada.')
+    } catch (e) {
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível enviar o WhatsApp.')
+    }
+  }
+
   async function handleResubmit() {
     if (!justificativa.trim() || justificativa.trim().length < 10) {
       toast.error('Justificativa deve ter ao menos 10 caracteres.')
@@ -80,6 +89,7 @@ export default function ApprovalsPage() {
       setResubmitModal({ open: false, post: null })
       setJustificativa('')
       toast.success('Reenviado para aprovação!')
+      await sendApprovalNotification(post.client_id || post.clientId)
     } catch (e) { toast.error(e.message) }
   }
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { createPost } from '../../services/posts.service'
-import { fetchClients } from '../../services/clients.service'
+import { fetchClients, notifyClient } from '../../services/clients.service'
 import { CHANNELS, FUNNEL_TAGS, CLIENT_COLORS } from '../../utils/constants'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -58,6 +58,15 @@ export default function NewPostPage() {
     setFiles(f => [...f, ...newFiles])
   }
 
+  async function sendApprovalNotification(clientId) {
+    try {
+      await notifyClient(clientId)
+      toast.success('Mensagem via WhatsApp foi enviada.')
+    } catch (e) {
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível enviar o WhatsApp.')
+    }
+  }
+
   async function handleSave() {
     const chs = Object.keys(selChannels)
     if (!form.title || !form.clientId || !chs.length) { toast.error('Preencha título, cliente e ao menos um canal.'); return }
@@ -74,6 +83,7 @@ export default function NewPostPage() {
         clientId: form.clientId, createdById: user?.id,
       }, isEmail ? [] : files)
       toast.success('Postagem criada e enviada para aprovação!')
+      await sendApprovalNotification(form.clientId)
       setSuccessModal({ open: true, clientId: form.clientId })
     } catch(e) { toast.error(e.message) }
     finally { setLoading(false) }
