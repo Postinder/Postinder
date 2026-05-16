@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Copy, MessageCircle, Trash2, Edit3, Upload, Check, Eye } from 'lucide-react'
+import { Plus, MessageCircle, Trash2, Edit3, Upload, Eye } from 'lucide-react'
 import { fetchClients, createClient, updateClient, softDeleteClient, parseVCFText } from '../../services/clients.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { Avatar } from '../../components/ui/Badge'
@@ -7,7 +7,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Select } from '../../components/ui/Input'
-import { CLIENT_COLORS, buildApprovalLink } from '../../utils/constants'
+import { CLIENT_COLORS } from '../../utils/constants'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
@@ -17,22 +17,19 @@ const DOC_MASK = {
 }
 
 function ClientCard({ client, posts, onEdit, onDelete, onViewPosts }) {
-  const [copied, setCopied] = useState(false)
-  const token = (client.tokens || []).find(t => !t.revoked_at)
-  const link  = token ? buildApprovalLink(token.slug) : ''
-
   const cp  = posts.filter(p => p.client_id === client.id)
   const apv = cp.filter(p => computePostStatus(p) === 'approved').length
   const pnd = cp.filter(p => computePostStatus(p) === 'pending_approval').length
   const rjt = cp.filter(p => computePostStatus(p) === 'rejected').length
 
-  function copyLink() {
-    navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
-    toast.success('Link copiado!')
-  }
-
   function openWA() {
-    window.open(`https://wa.me/55${(client.whatsapp||'').replace(/\D/g,'')}?text=${encodeURIComponent(`Olá ${client.name}! Você tem conteúdos aguardando aprovação. Acesse: ${link}`)}`, '_blank')
+    const digits = (client.whatsapp || '').replace(/\D/g, '')
+    if (!digits) {
+      toast.error('Cliente sem WhatsApp cadastrado.')
+      return
+    }
+    const phone = digits.startsWith('55') ? digits : `55${digits}`
+    window.open(`https://wa.me/${phone}`, '_blank')
   }
 
   return (
@@ -60,20 +57,6 @@ function ClientCard({ client, posts, onEdit, onDelete, onViewPosts }) {
         <span className="text-xs bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-semibold">{pnd} pend</span>
         <span className="text-xs bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-full font-semibold">{rjt} reprov</span>
       </div>
-
-      {/* Link */}
-      {link ? (
-        <div className="flex items-center gap-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg px-3 py-2 mb-3">
-          <span className="text-xs text-neutral-400 flex-1 truncate font-mono">{link.replace('https://','')}</span>
-          <button onClick={copyLink} className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded transition-all flex-shrink-0 ${copied ? 'bg-green-500 text-white' : 'bg-teal-500 text-white hover:bg-teal-600'}`}>
-            {copied ? <><Check size={11}/> Copiado</> : <><Copy size={11}/> Copiar</>}
-          </button>
-        </div>
-      ) : (
-        <div className="bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 text-xs px-3 py-2 rounded-lg mb-3">
-          ⚠️ Sem link gerado. Recrie o cliente para gerar.
-        </div>
-      )}
 
       <div className="flex gap-2 flex-wrap">
         <button onClick={openWA} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">

@@ -7,16 +7,21 @@ export async function fetchClients() {
 
 export async function createClient(clientData) {
   const { data } = await apiClient.post('/clients', clientData)
-  return data
+  return data.data || data
 }
 
 export async function updateClient(clientId, updates) {
   const { data } = await apiClient.put(`/clients/${clientId}`, updates)
-  return data
+  return data.data || data
 }
 
 export async function softDeleteClient(clientId) {
   await apiClient.delete(`/clients/${clientId}`)
+}
+
+export async function notifyClient(clientId) {
+  const { data } = await apiClient.post(`/clients/${clientId}/notify`)
+  return data
 }
 
 export function parseVCFText(text) {
