@@ -46,3 +46,6 @@ backend/uploads/
 
 # Local test scripts
 create-test-users.js
+
+.claude/
+
