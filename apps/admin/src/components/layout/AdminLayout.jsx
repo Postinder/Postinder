@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PlusSquare, CheckCircle,
-  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, X, Bell
+  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, Bell
 } from 'lucide-react'
 import { useAuthStore }  from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -48,6 +48,7 @@ function NavItem({ to, icon: Icon, label, badge }) {
 export default function AdminLayout() {
   const { user, logout: clearUser } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const isAdmin  = user?.role === 'admin'
@@ -58,6 +59,18 @@ export default function AdminLayout() {
     clearUser()
     navigate('/login')
   }
+
+  const pageTitle = [
+    { path: '/admin/dashboard', title: 'Dashboard' },
+    { path: '/admin/clients', title: 'Clientes' },
+    { path: '/admin/posts/new', title: 'Nova Postagem' },
+    { path: '/admin/approvals', title: 'Aprovações' },
+    { path: '/admin/feed', title: 'Prévia do Feed' },
+    { path: '/admin/insights', title: 'Insights & Feedbacks' },
+    { path: '/admin/users', title: 'Usuários' },
+    { path: '/admin/email', title: 'E-mail' },
+    { path: '/admin/integrations', title: 'Integrações' },
+  ].find(item => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))?.title || 'Postinder'
 
   const sidebar = (
     <aside className="flex flex-col h-full bg-mag-600 dark:bg-neutral-950">
@@ -140,7 +153,7 @@ export default function AdminLayout() {
               <Menu size={20} />
             </button>
             <h1 className="text-lg font-bold text-neutral-900 dark:text-white" id="page-title">
-              Dashboard
+              {pageTitle}
             </h1>
           </div>
           <div className="flex items-center gap-3">
