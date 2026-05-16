@@ -27,7 +27,7 @@ export const INTEGRATIONS = {
   // ── WhatsApp ─────────────────────────────────────────────────
   whatsapp_zapi: {
     name:        'WhatsApp via Z-API',
-    description: 'Envio automático de links de aprovação via WhatsApp',
+    description: 'Envio automático de avisos de aprovação via WhatsApp',
     icon:        '📱',
     enabled:     !!(import.meta.env.VITE_ZAPI_INSTANCE && import.meta.env.VITE_ZAPI_TOKEN),
     envKeys:     ['VITE_ZAPI_INSTANCE', 'VITE_ZAPI_TOKEN'],
