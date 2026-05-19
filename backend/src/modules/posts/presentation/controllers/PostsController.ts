@@ -88,6 +88,27 @@ export class PostsController {
     res.status(201).json({ data: savedFiles })
   }
 
+  async replaceFile(req: AuthRequest, res: Response) {
+    const uploadedFile = req.file as Express.Multer.File
+    if (!uploadedFile) {
+      return res.status(400).json({ error: 'No file uploaded' })
+    }
+
+    const savedFile = await this.postRepository.replaceFile(
+      req.params.id,
+      req.params.fileId,
+      {
+        url: `/uploads/${uploadedFile.filename}`,
+        originalName: uploadedFile.originalname,
+        fileType: getFileCategory(uploadedFile.mimetype),
+      },
+      req.tenantId,
+    )
+
+    if (!savedFile) return res.status(404).json({ error: 'Rejected file not found' })
+    res.status(200).json({ data: savedFile })
+  }
+
   async submitForApproval(req: AuthRequest, res: Response) {
     const submitted = await this.postRepository.submitForApproval(req.params.id, req.tenantId)
     if (!submitted) return res.status(404).json({ error: 'Post not found' })
