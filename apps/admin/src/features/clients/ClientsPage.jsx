@@ -33,36 +33,44 @@ function ClientCard({ client, posts, onEdit, onDelete, onViewPosts }) {
   }
 
   return (
-    <Card hover className="p-5">
-      <div className="flex items-start justify-between mb-3">
+    <Card hover className="group p-5 border-neutral-200/80 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-mag-300 hover:shadow-lg hover:shadow-neutral-900/5 dark:border-neutral-800 dark:bg-neutral-900/90 dark:hover:border-mag-500/60 dark:hover:shadow-black/20">
+      <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <Avatar name={client.name} color={client.color} size="lg" />
-          <div>
-            <div className="font-bold text-neutral-900 dark:text-white">{client.name}</div>
+          <div className="min-w-0">
+            <div className="font-bold text-neutral-900 dark:text-white truncate">{client.name}</div>
             <div className="text-xs text-neutral-400">{client.email}</div>
             <div className="text-xs text-neutral-400 mt-0.5">
               {cp.length} posts{client.segment ? ` · ${client.segment}` : ''} · prazo: {client.deadline_days || 7}d
             </div>
           </div>
         </div>
-        <div className="flex gap-1">
-          <button onClick={() => onEdit(client)} className="p-1.5 rounded hover:bg-teal-50 dark:hover:bg-teal-900/30 text-neutral-400 hover:text-teal-500 transition-colors" title="Editar"><Edit3 size={14}/></button>
-          <button onClick={() => onDelete(client.id)} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-neutral-400 hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={14}/></button>
+        <div className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 opacity-80 transition-opacity group-hover:opacity-100 dark:border-neutral-800 dark:bg-neutral-950/60">
+          <button onClick={() => onEdit(client)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500 transition-colors" title="Editar"><Edit3 size={14}/></button>
+          <button onClick={() => onDelete(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={14}/></button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="flex gap-2 mb-3">
-        <span className="text-xs bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full font-semibold">{apv} aprov</span>
-        <span className="text-xs bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-semibold">{pnd} pend</span>
-        <span className="text-xs bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-full font-semibold">{rjt} reprov</span>
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="rounded-lg bg-green-50 px-2.5 py-2 text-center dark:bg-green-950/40">
+          <div className="text-sm font-extrabold text-green-700 dark:text-green-400">{apv}</div>
+          <div className="text-[10px] font-semibold uppercase text-green-700/70 dark:text-green-400/70">Aprov</div>
+        </div>
+        <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-center dark:bg-amber-950/40">
+          <div className="text-sm font-extrabold text-amber-700 dark:text-amber-400">{pnd}</div>
+          <div className="text-[10px] font-semibold uppercase text-amber-700/70 dark:text-amber-400/70">Pend</div>
+        </div>
+        <div className="rounded-lg bg-red-50 px-2.5 py-2 text-center dark:bg-red-950/40">
+          <div className="text-sm font-extrabold text-red-700 dark:text-red-400">{rjt}</div>
+          <div className="text-[10px] font-semibold uppercase text-red-700/70 dark:text-red-400/70">Reprov</div>
+        </div>
       </div>
 
       <div className="flex gap-2 flex-wrap">
-        <button onClick={openWA} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+        <button onClick={openWA} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-green-500/20">
           <MessageCircle size={12}/> WhatsApp
         </button>
-        <button onClick={() => onViewPosts(client.id)} className="flex-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:border-mag-400 hover:text-mag-500 transition-all">
+        <button onClick={() => onViewPosts(client.id)} className="flex-1 text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-mag-400 hover:text-mag-500 transition-all">
           <Eye size={12} className="inline mr-1"/> Ver posts
         </button>
       </div>
@@ -236,12 +244,23 @@ export default function ClientsPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="text-xl font-bold">Clientes cadastrados <span className="text-neutral-400 font-normal text-base">({clients.length})</span></h1>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" icon={<Upload size={14}/>} onClick={()=>setShowVCF(true)}>Importar VCF</Button>
-          <Button size="sm" icon={<Plus size={14}/>} onClick={()=>setShowNew(true)}>Novo Cliente</Button>
+    <div className="space-y-5">
+      <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-neutral-950 dark:text-white">
+              Clientes cadastrados <span className="text-neutral-400 font-semibold text-lg">({clients.length})</span>
+            </h1>
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+              Gerencie acessos, contatos e aprovações por cliente.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="md" icon={<Upload size={15}/>} onClick={()=>setShowVCF(true)}>Importar VCF</Button>
+            <Button size="lg" icon={<Plus size={18}/>} onClick={()=>setShowNew(true)} className="px-5 shadow-md shadow-mag-500/20">
+              Novo Cliente
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -254,7 +273,7 @@ export default function ClientsPage() {
           <Button className="mt-4" onClick={()=>setShowNew(true)}>+ Novo Cliente</Button>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-4">
           {clients.map(c => (
             <ClientCard key={c.id} client={c} posts={posts}
               onEdit={setEditClient} onDelete={handleDelete} onViewPosts={viewPosts} />
