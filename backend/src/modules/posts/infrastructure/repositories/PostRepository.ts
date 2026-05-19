@@ -254,6 +254,38 @@ export class PostRepository implements IPostRepository {
     return savedFiles
   }
 
+  async replaceFile(postId: string, fileId: string, file: { url: string; originalName: string; fileType: string }, companyId?: string) {
+    const postExists = await this.exists(postId, companyId)
+    if (!postExists) return null
+
+    const result = await query(
+      `UPDATE files
+       SET url = $1,
+           original_name = $2,
+           file_type = $3,
+           status = 'pending',
+           rejection_reason = NULL,
+           rejection_tags = NULL,
+           updated_at = NOW()
+       WHERE id = $4
+         AND post_id = $5
+         AND status = 'rejected'
+       RETURNING *`,
+      [file.url, file.originalName, file.fileType, fileId, postId],
+    )
+
+    if (!result.rows[0]) return null
+
+    await query(
+      `UPDATE posts
+       SET status = 'pending_approval', updated_at = NOW()
+       WHERE id = $1`,
+      [postId],
+    )
+
+    return result.rows[0]
+  }
+
   async submitForApproval(id: string, companyId?: string): Promise<boolean> {
     const { params, conditions } = this.buildPostScope(id, companyId)
     const result = await query(
