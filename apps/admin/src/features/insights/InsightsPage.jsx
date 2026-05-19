@@ -4,6 +4,7 @@ import { fetchMonthlyFeedbacks } from '../../services/insights.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { fetchClients } from '../../services/clients.service'
 import Card from '../../components/ui/Card'
+import { Select } from '../../components/ui/Input'
 import AIInsightsPanel from '../../components/ai/AIInsightsPanel'
 import toast from 'react-hot-toast'
 
@@ -282,11 +283,10 @@ export default function InsightsPage() {
               <Card className="p-5 mb-4">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                   <h3 className="font-bold text-sm">Feedbacks de reprovação (por arquivo)</h3>
-                  <select value={fbClientFilter} onChange={e => setFbClientFilter(e.target.value)}
-                    className="border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-neutral-800 outline-none">
+                  <Select value={fbClientFilter} onChange={e => setFbClientFilter(e.target.value)} className="w-52">
                     <option value="">Todos os clientes</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <FeedbacksCard posts={posts} clients={clients} clientFilter={fbClientFilter} />
               </Card>
@@ -300,16 +300,14 @@ export default function InsightsPage() {
       {tab === 'feedbacks' && (
         <>
           <div className="flex gap-3 mb-6 flex-wrap">
-            <select value={fbFilter} onChange={e => setFbFilter(e.target.value)}
-              className="border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-neutral-800 outline-none">
+            <Select value={fbFilter} onChange={e => setFbFilter(e.target.value)} className="w-56">
               <option value="">Todos os clientes</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <select value={fbMonth} onChange={e => setFbMonth(e.target.value)}
-              className="border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-neutral-800 outline-none">
+            </Select>
+            <Select value={fbMonth} onChange={e => setFbMonth(e.target.value)} className="w-48">
               <option value="">Todos os meses</option>
               {MONTHS.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
-            </select>
+            </Select>
           </div>
 
           <div className="grid grid-cols-3 gap-4 mb-6">
