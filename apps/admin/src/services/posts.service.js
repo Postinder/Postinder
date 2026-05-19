@@ -43,6 +43,15 @@ export async function resubmitPost(postId, data) {
   return response.data
 }
 
+export async function replacePostFile(postId, fileId, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await apiClient.post(`/posts/${postId}/files/${fileId}/replace`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data.data
+}
+
 export function computePostStatus(post) {
   // Accept post object or files array (backwards-compat)
   if (Array.isArray(post)) {
