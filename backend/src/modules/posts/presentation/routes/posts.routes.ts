@@ -29,6 +29,7 @@ export function createPostsRoutes(): Router {
   router.put('/:id', wrap(controller.update.bind(controller)))
   router.delete('/:id', wrap(controller.delete.bind(controller)))
   router.post('/:id/files', upload.array('files'), wrap(controller.uploadFiles.bind(controller)))
+  router.post('/:id/files/:fileId/replace', upload.single('file'), wrap(controller.replaceFile.bind(controller)))
   router.post('/:id/submit-for-approval', wrap(controller.submitForApproval.bind(controller)))
   router.post('/:id/resubmit', wrap(controller.resubmit.bind(controller)))
 
