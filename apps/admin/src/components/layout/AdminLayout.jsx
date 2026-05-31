@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PlusSquare, CheckCircle,
-  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, Bell
+  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu
 } from 'lucide-react'
 import { useAuthStore }  from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import ThemeToggle from '../ui/ThemeToggle'
+import NotificationBell from '../notifications/NotificationBell'
+import GlobalSearch from '../search/GlobalSearch'
 import { logout } from '../../services/auth.service'
 import toast from 'react-hot-toast'
 
@@ -157,11 +159,9 @@ export default function AdminLayout() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
+            <GlobalSearch />
             <ThemeToggle />
-            <button className="relative p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800">
-              <Bell size={18} className="text-neutral-500" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-mag-500 rounded-full" />
-            </button>
+            <NotificationBell />
           </div>
         </header>
 
