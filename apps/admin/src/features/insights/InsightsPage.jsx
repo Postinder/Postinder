@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BarChart2, MessageSquare } from 'lucide-react'
+import { BarChart2, Download, MessageSquare } from 'lucide-react'
 import { fetchMonthlyFeedbacks } from '../../services/insights.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { fetchClients } from '../../services/clients.service'
@@ -114,6 +114,317 @@ function FeedbacksCard({ posts, clients, clientFilter }) {
 const COLORS = ['#A7014B','#e05577','#3087A6','#E65A00','#6B21A8','#0F766E','#B45309','#1D4ED8']
 const PERIODS = [{ key:'week', label:'Semanal' }, { key:'month', label:'Mensal' }, { key:'year', label:'Anual' }]
 const MONTHS  = ['2025-05','2025-04','2025-03','2025-02']
+const PAGE_SIZE_OPTIONS = [5, 10]
+
+function PaginationControls({ page, pageSize, totalItems, onPageChange, onPageSizeChange }) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const start = totalItems ? (page - 1) * pageSize + 1 : 0
+  const end = Math.min(page * pageSize, totalItems)
+
+  function handlePageSizeChange(event) {
+    onPageSizeChange(Number(event.target.value))
+    onPageChange(1)
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4 dark:border-neutral-800">
+      <div className="text-xs text-neutral-500 dark:text-neutral-400">
+        Mostrando {start}-{end} de {totalItems}
+      </div>
+      <div className="flex items-center gap-2">
+        <Select value={pageSize} onChange={handlePageSizeChange} className="w-24">
+          {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}/pag.</option>)}
+        </Select>
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-600 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300"
+        >
+          Anterior
+        </button>
+        <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+          {page}/{totalPages}
+        </span>
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+          className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-600 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300"
+        >
+          Proxima
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PaginatedFeedbacksCard({ posts, clients, clientFilter }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
+
+  const feedbackItems = posts
+    .filter(p =>
+      (p.files || []).some(f => f.feedbacks?.length > 0) &&
+      (!clientFilter || p.client_id === clientFilter)
+    )
+    .flatMap(p => {
+      const client = clients.find(c => c.id === p.client_id)
+      const ini = client ? client.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'
+
+      return (p.files || [])
+        .filter(f => f.feedbacks?.length)
+        .flatMap(f => f.feedbacks.map((fb, i) => ({
+          key: `${f.id}-${i}`,
+          post: p,
+          feedback: fb,
+          client,
+          initials: ini,
+        })))
+    })
+
+  useEffect(() => {
+    setPage(1)
+  }, [clientFilter, posts])
+
+  const totalPages = Math.max(1, Math.ceil(feedbackItems.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageItems = feedbackItems.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  if (!feedbackItems.length) return (
+    <div className="text-center py-6 text-neutral-400 text-sm">Nenhum feedback registrado.</div>
+  )
+
+  return (
+    <>
+      <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+        {pageItems.map(item => (
+          <div key={item.key} className="flex items-start gap-3 py-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+              style={{ background: item.client?.color || '#888' }}>{item.initials}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold mb-1">
+                {item.post.title} · <span className="font-normal text-neutral-400">{item.client?.name || '-'}</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {(item.feedback.tags || []).map(t => (
+                  <span key={t} className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                    style={{ background: '#f4e6ed', color: '#A7014B' }}>{t}</span>
+                ))}
+                {item.feedback.comment && <span className="text-xs text-neutral-400 italic">"{item.feedback.comment}"</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PaginationControls
+        page={currentPage}
+        pageSize={pageSize}
+        totalItems={feedbackItems.length}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
+    </>
+  )
+}
+
+function getPostClientId(post) {
+  return post.client_id || post.clientId
+}
+
+function getPostDate(post) {
+  const value = post.updatedAt || post.updated_at || post.createdAt || post.created_at
+  const date = new Date(value || 0)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatDateKey(date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function formatMonthKey(date) {
+  return date.toISOString().slice(0, 7)
+}
+
+function startOfWeek(date) {
+  const start = new Date(date)
+  const day = start.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() + diff)
+  return start
+}
+
+function endOfDay(date) {
+  const end = new Date(date)
+  end.setHours(23, 59, 59, 999)
+  return end
+}
+
+function addDays(date, days) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function getDefaultPeriodValue(period) {
+  const now = new Date()
+
+  if (period === 'week') {
+    return formatDateKey(startOfWeek(now))
+  }
+
+  if (period === 'month') {
+    return formatMonthKey(now)
+  }
+
+  return String(now.getFullYear())
+}
+
+function getPeriodRange(period, value) {
+  if (period === 'week') {
+    const start = value ? new Date(`${value}T00:00:00`) : startOfWeek(new Date())
+    return { start, end: endOfDay(addDays(start, 6)) }
+  }
+
+  if (period === 'month') {
+    const [year, month] = (value || getDefaultPeriodValue('month')).split('-').map(Number)
+    return {
+      start: new Date(year, month - 1, 1),
+      end: endOfDay(new Date(year, month, 0)),
+    }
+  }
+
+  const year = Number(value || getDefaultPeriodValue('year'))
+  return {
+    start: new Date(year, 0, 1),
+    end: endOfDay(new Date(year, 11, 31)),
+  }
+}
+
+function formatPeriodOption(period, value) {
+  if (period === 'week') {
+    const start = new Date(`${value}T00:00:00`)
+    const end = addDays(start, 6)
+    const fmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' })
+    return `${fmt.format(start)} a ${fmt.format(end)}`
+  }
+
+  if (period === 'month') {
+    return new Date(`${value}-01T00:00:00`).toLocaleDateString('pt-BR', {
+      month: 'long',
+      year: 'numeric',
+    })
+  }
+
+  return value
+}
+
+function buildPeriodOptions(posts, period, selectedValue) {
+  const values = new Set([selectedValue || getDefaultPeriodValue(period)])
+
+  posts.forEach(post => {
+    const date = getPostDate(post)
+    if (!date) return
+
+    if (period === 'week') values.add(formatDateKey(startOfWeek(date)))
+    else if (period === 'month') values.add(formatMonthKey(date))
+    else values.add(String(date.getFullYear()))
+  })
+
+  return Array.from(values)
+    .sort((a, b) => b.localeCompare(a))
+    .map(value => ({ value, label: formatPeriodOption(period, value) }))
+}
+
+function getStatus(post) {
+  const status = computePostStatus(post)
+  if (status !== 'draft' || !post?.files?.length) return status
+  return computePostStatus(post.files)
+}
+
+function getActivityData(posts, period, periodRange) {
+  if (period === 'week') {
+    const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab']
+    const values = Array(7).fill(0)
+
+    posts.forEach(post => {
+      const date = getPostDate(post)
+      if (!date) return
+      const dayStart = new Date(date)
+      dayStart.setHours(0, 0, 0, 0)
+      const diff = Math.round((dayStart - periodRange.start) / 86400000)
+      if (diff >= 0 && diff < 7) values[diff] += 1
+    })
+
+    return values.map((value, index) => {
+      const date = addDays(periodRange.start, index)
+      return { label: labels[date.getDay()], value }
+    })
+  }
+
+  if (period === 'month') {
+    const values = [0, 0, 0, 0]
+    posts.forEach(post => {
+      const date = getPostDate(post)
+      if (!date) return
+      const bucket = Math.min(3, Math.floor((date.getDate() - 1) / 7))
+      values[bucket] += 1
+    })
+    return values.map((value, index) => ({ label: `S${index + 1}`, value }))
+  }
+
+  const labels = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+  const values = Array(12).fill(0)
+  posts.forEach(post => {
+    const date = getPostDate(post)
+    if (date) values[date.getMonth()] += 1
+  })
+  return labels.map((label, index) => ({ label, value: values[index] }))
+}
+
+function csvValue(value) {
+  const text = String(value ?? '')
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function csvLine(values) {
+  return values.map(csvValue).join(';')
+}
+
+function downloadCSV(filename, sections) {
+  const content = sections
+    .flatMap(section => [
+      section.title,
+      csvLine(section.headers),
+      ...section.rows.map(csvLine),
+      '',
+    ])
+    .join('\n')
+
+  const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function getSafeFilenamePart(value) {
+  return normalizeString(value || 'todos')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function normalizeString(value) {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
 
 function MetricCard({ label, value, color, sub }) {
   return (
@@ -127,13 +438,17 @@ function MetricCard({ label, value, color, sub }) {
 
 export default function InsightsPage() {
   const [period, setPeriod]   = useState('week')
+  const [periodValue, setPeriodValue] = useState(getDefaultPeriodValue('week'))
   const [tab, setTab]         = useState('metrics')
   const [clients, setClients] = useState([])
   const [posts, setPosts]     = useState([])
   const [feedbacks, setFeedbacks] = useState([])
+  const [metricsClientFilter, setMetricsClientFilter] = useState('')
   const [fbFilter, setFbFilter]   = useState('')
   const [fbClientFilter, setFbClientFilter] = useState('')
   const [fbMonth, setFbMonth] = useState('')
+  const [feedbacksPage, setFeedbacksPage] = useState(1)
+  const [feedbacksPageSize, setFeedbacksPageSize] = useState(5)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -150,15 +465,30 @@ export default function InsightsPage() {
     }
   }, [tab, fbFilter, fbMonth])
 
-  const total     = posts.length
-  const approved  = posts.filter(p => computePostStatus(p.files||[]) === 'approved').length
-  const rejected  = posts.filter(p => computePostStatus(p.files||[]) === 'rejected').length
-  const pending   = posts.filter(p => ['pending','updated'].includes(computePostStatus(p.files||[]))).length
+  useEffect(() => {
+    setFeedbacksPage(1)
+  }, [fbFilter, fbMonth, feedbacksPageSize])
+
+  const periodOptions = buildPeriodOptions(posts, period, periodValue)
+  const periodRange = getPeriodRange(period, periodValue)
+  const metricsPosts = posts.filter(post => {
+    const date = getPostDate(post)
+    return (!metricsClientFilter || getPostClientId(post) === metricsClientFilter) &&
+      date &&
+      date >= periodRange.start &&
+      date <= periodRange.end
+  })
+  const activeMetricsClient = clients.find(c => c.id === metricsClientFilter)
+
+  const total     = metricsPosts.length
+  const approved  = metricsPosts.filter(p => getStatus(p) === 'approved').length
+  const rejected  = metricsPosts.filter(p => getStatus(p) === 'rejected').length
+  const pending   = metricsPosts.filter(p => ['pending_approval','pending','updated','draft'].includes(getStatus(p))).length
   const approvalRate  = total ? Math.round(approved / total * 100) : 0
   const rejectionRate = total ? Math.round(rejected / total * 100) : 0
 
   const tagCounts = {}
-  posts.forEach(p => (p.files||[]).forEach(f =>
+  metricsPosts.forEach(p => (p.files||[]).forEach(f =>
     (f.feedbacks||[]).forEach(fb =>
       (fb.tags||[]).forEach(t => { tagCounts[t] = (tagCounts[t]||0) + 1 })
     )
@@ -167,7 +497,7 @@ export default function InsightsPage() {
     .map(([label, value]) => ({ label, value }))
 
   const chanCounts = {}
-  posts.forEach(p => (p.channels||[]).forEach(ch => {
+  metricsPosts.forEach(p => (p.channels||[]).forEach(ch => {
     const k = ch.split('/')[0].slice(0, 10)
     chanCounts[k] = (chanCounts[k]||0) + 1
   }))
@@ -181,20 +511,115 @@ export default function InsightsPage() {
   const actValues = period === 'week' ? [3,5,2,6,4,1,2]
     : period === 'month' ? [12,18,9,15]
     : [8,12,15,10,18,22,16,14,20,11,9,13]
-  const actData = actLabels.map((label, i) => ({ label, value: actValues[i] }))
+  const actData = getActivityData(metricsPosts, period, periodRange)
 
   const clientApproval = clients.map(c => {
-    const cp = posts.filter(p => p.client_id === c.id)
-    const r  = cp.length ? Math.round(cp.filter(p => computePostStatus(p.files||[]) === 'approved').length / cp.length * 100) : 0
+    const cp = posts.filter(p => {
+      const date = getPostDate(p)
+      return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
+    })
+    const r  = cp.length ? Math.round(cp.filter(p => getStatus(p) === 'approved').length / cp.length * 100) : 0
     return { label: c.name, value: r }
   })
   const clientRejection = clients.map(c => {
-    const cp = posts.filter(p => p.client_id === c.id)
-    const r  = cp.length ? Math.round(cp.filter(p => computePostStatus(p.files||[]) === 'rejected').length / cp.length * 100) : 0
+    const cp = posts.filter(p => {
+      const date = getPostDate(p)
+      return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
+    })
+    const r  = cp.length ? Math.round(cp.filter(p => getStatus(p) === 'rejected').length / cp.length * 100) : 0
     return { label: c.name, value: r }
   })
+  const approvalChartData = activeMetricsClient
+    ? [{ label: activeMetricsClient.name, value: approvalRate }]
+    : clientApproval
+  const rejectionChartData = activeMetricsClient
+    ? [{ label: activeMetricsClient.name, value: rejectionRate }]
+    : clientRejection
+  const feedbacksTotalPages = Math.max(1, Math.ceil(feedbacks.length / feedbacksPageSize))
+  const currentFeedbacksPage = Math.min(feedbacksPage, feedbacksTotalPages)
+  const paginatedFeedbacks = feedbacks.slice(
+    (currentFeedbacksPage - 1) * feedbacksPageSize,
+    currentFeedbacksPage * feedbacksPageSize
+  )
+  const clientById = new Map(clients.map(client => [client.id, client]))
 
   const monthLabel = m => new Date(m + '-01').toLocaleDateString('pt-BR', { month:'long', year:'numeric' })
+  const periodLabel = PERIODS.find(item => item.key === period)?.label || period
+  const selectedPeriodLabel = formatPeriodOption(period, periodValue)
+
+  function handleExportMetrics() {
+    const clientLabel = activeMetricsClient?.name || 'Todos os clientes'
+    const feedbackRows = metricsPosts.flatMap(post => {
+      const client = clientById.get(getPostClientId(post))
+      return (post.files || []).flatMap(file =>
+        (file.feedbacks || []).map(feedback => [
+          client?.name || '',
+          post.title || '',
+          file.name || file.original_name || file.originalName || '',
+          (feedback.tags || []).join(', '),
+          feedback.comment || '',
+        ])
+      )
+    })
+
+    const postRows = metricsPosts.map(post => {
+      const client = clientById.get(getPostClientId(post))
+      return [
+        post.title || '',
+        client?.name || '',
+        getStatus(post),
+        (post.channels || []).join(', '),
+        getPostDate(post)?.toLocaleDateString('pt-BR') || '',
+      ]
+    })
+
+    downloadCSV(
+      `insights-${getSafeFilenamePart(periodLabel)}-${getSafeFilenamePart(selectedPeriodLabel)}-${getSafeFilenamePart(clientLabel)}.csv`,
+      [
+        {
+          title: 'Resumo',
+          headers: ['Indicador', 'Valor'],
+          rows: [
+            ['Periodo', periodLabel],
+            ['Recorte', selectedPeriodLabel],
+            ['Cliente', clientLabel],
+            ['Total de posts', total],
+            ['Aprovados', approved],
+            ['Reprovados', rejected],
+            ['Pendentes ou em andamento', pending],
+            ['Taxa de aprovacao', `${approvalRate}%`],
+            ['Taxa de reprovacao', `${rejectionRate}%`],
+          ],
+        },
+        {
+          title: 'Atividade',
+          headers: ['Periodo', 'Quantidade'],
+          rows: actData.map(item => [item.label, item.value]),
+        },
+        {
+          title: 'Motivos de reprovacao',
+          headers: ['Motivo', 'Quantidade'],
+          rows: rejTagsData.map(item => [item.label, item.value]),
+        },
+        {
+          title: 'Posts por canal',
+          headers: ['Canal', 'Quantidade'],
+          rows: chanData.map(item => [item.label, item.value]),
+        },
+        {
+          title: 'Posts do recorte',
+          headers: ['Titulo', 'Cliente', 'Status', 'Canais', 'Data'],
+          rows: postRows,
+        },
+        {
+          title: 'Feedbacks de reprovacao',
+          headers: ['Cliente', 'Post', 'Arquivo', 'Tags', 'Comentario'],
+          rows: feedbackRows,
+        },
+      ]
+    )
+    toast.success('Insights exportados em CSV.')
+  }
 
   return (
     <div>
@@ -214,19 +639,42 @@ export default function InsightsPage() {
 
       {tab === 'metrics' && (
         <>
-          <div className="flex border border-neutral-200 dark:border-neutral-700 rounded-xl overflow-hidden w-fit mb-6">
-            {PERIODS.map(p => (
-              <button key={p.key} onClick={() => setPeriod(p.key)}
-                className={`px-4 py-2 text-sm font-semibold transition-all ${period === p.key ? 'bg-mag-500 text-white' : 'bg-white dark:bg-neutral-900 text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800'}`}>
-                {p.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            <div className="flex border border-neutral-200 dark:border-neutral-700 rounded-xl overflow-hidden w-fit">
+              {PERIODS.map(p => (
+                <button key={p.key} onClick={() => { setPeriod(p.key); setPeriodValue(getDefaultPeriodValue(p.key)) }}
+                  className={`px-4 py-2 text-sm font-semibold transition-all ${period === p.key ? 'bg-mag-500 text-white' : 'bg-white dark:bg-neutral-900 text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800'}`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <Select value={periodValue} onChange={e => setPeriodValue(e.target.value)} className="w-56">
+              {periodOptions.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+            <Select value={metricsClientFilter} onChange={e => setMetricsClientFilter(e.target.value)} className="w-56">
+              <option value="">Todos os clientes</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+            <button
+              type="button"
+              onClick={handleExportMetrics}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download size={16} />
+              Exportar CSV
+            </button>
           </div>
 
           {loading ? (
             <div className="text-center py-16 text-neutral-400">Carregando métricas...</div>
           ) : (
             <>
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                Visao: {activeMetricsClient?.name || 'Todos os clientes'}
+              </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <MetricCard label="Total de Posts"     value={total}              color="text-neutral-900 dark:text-white" sub="no período" />
                 <MetricCard label="Taxa de Aprovação"  value={`${approvalRate}%`} color="text-green-600"  sub="dos conteúdos" />
@@ -239,7 +687,7 @@ export default function InsightsPage() {
                 <Card className="p-5">
                   <h3 className="font-bold text-sm mb-4">Motivos de reprovação</h3>
                   <VerticalBarChart
-                    data={rejTagsData.length ? rejTagsData : [{ label:'Cor', value:5 },{ label:'Luz', value:4 },{ label:'Qualidade', value:3 }]}
+                    data={rejTagsData}
                     colorFn={i => COLORS[i % COLORS.length]}
                   />
                 </Card>
@@ -247,7 +695,7 @@ export default function InsightsPage() {
                 <Card className="p-5">
                   <h3 className="font-bold text-sm mb-4">Posts por canal</h3>
                   <VerticalBarChart
-                    data={chanData.length ? chanData : [{ label:'Instagram', value:0 }]}
+                    data={chanData}
                     colorFn={i => COLORS[(i + 2) % COLORS.length]}
                   />
                 </Card>
@@ -255,7 +703,7 @@ export default function InsightsPage() {
                 <Card className="p-5">
                   <h3 className="font-bold text-sm mb-4">Taxa de aprovação</h3>
                   <HorizontalBarChart
-                    data={clientApproval}
+                    data={approvalChartData}
                     color={v => v >= 60 ? '#16a34a' : v >= 30 ? '#d97706' : '#dc2626'}
                   />
                 </Card>
@@ -268,7 +716,7 @@ export default function InsightsPage() {
                 <Card className="p-5">
                   <h3 className="font-bold text-sm mb-4">Taxa de reprovação</h3>
                   <HorizontalBarChart
-                    data={clientRejection}
+                    data={rejectionChartData}
                     color={v => v > 40 ? '#dc2626' : v > 20 ? '#d97706' : '#16a34a'}
                   />
                 </Card>
@@ -288,10 +736,10 @@ export default function InsightsPage() {
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </Select>
                 </div>
-                <FeedbacksCard posts={posts} clients={clients} clientFilter={fbClientFilter} />
+                <PaginatedFeedbacksCard posts={posts} clients={clients} clientFilter={fbClientFilter} />
               </Card>
 
-              <AIInsightsPanel posts={posts} clients={clients} period={period} />
+              <AIInsightsPanel posts={metricsPosts} clients={activeMetricsClient ? [activeMetricsClient] : clients} period={period} />
             </>
           )}
         </>
@@ -323,7 +771,7 @@ export default function InsightsPage() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {feedbacks.map(fb => {
+              {paginatedFeedbacks.map(fb => {
                 const isPos = fb.rating >= 4
                 const stars = Array.from({ length:5 }, (_,i) => i < fb.rating ? '⭐' : '☆').join('')
                 return (
@@ -342,6 +790,15 @@ export default function InsightsPage() {
                   </Card>
                 )
               })}
+              <Card className="p-4">
+                <PaginationControls
+                  page={currentFeedbacksPage}
+                  pageSize={feedbacksPageSize}
+                  totalItems={feedbacks.length}
+                  onPageChange={setFeedbacksPage}
+                  onPageSizeChange={setFeedbacksPageSize}
+                />
+              </Card>
             </div>
           )}
         </>
