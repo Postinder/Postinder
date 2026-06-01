@@ -3,6 +3,7 @@ import { env } from '../../config/environment'
 
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
+  ssl: env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
 })
 
 pool.on('error', (err) => {
