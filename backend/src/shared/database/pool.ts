@@ -1,8 +1,16 @@
 import { Pool } from 'pg'
 import { env } from '../../config/environment'
 
+function getDatabaseUrl() {
+  if (env.NODE_ENV !== 'production') return env.DATABASE_URL
+
+  const url = new URL(env.DATABASE_URL)
+  url.searchParams.delete('sslmode')
+  return url.toString()
+}
+
 export const pool = new Pool({
-  connectionString: env.DATABASE_URL,
+  connectionString: getDatabaseUrl(),
   ssl: env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
 })
 
