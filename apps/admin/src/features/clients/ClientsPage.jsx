@@ -7,6 +7,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Select } from '../../components/ui/Input'
+import Skeleton from '../../components/ui/Skeleton'
 import { CLIENT_COLORS } from '../../utils/constants'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -16,7 +17,7 @@ const DOC_MASK = {
   cnpj: v => { v=v.replace(/\D/g,'').slice(0,14); if(v.length>12)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8,12)+'-'+v.slice(12); if(v.length>8)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8); if(v.length>5)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5); if(v.length>2)return v.slice(0,2)+'.'+v.slice(2); return v },
 }
 
-function ClientCard({ client, posts, onEdit, onDelete, onViewPosts }) {
+function ClientCard({ client, posts, onEdit, onDelete, onViewPosts, onViewDetails }) {
   const cp  = posts.filter(p => p.client_id === client.id)
   const apv = cp.filter(p => computePostStatus(p) === 'approved').length
   const pnd = cp.filter(p => computePostStatus(p) === 'pending_approval').length
@@ -70,7 +71,10 @@ function ClientCard({ client, posts, onEdit, onDelete, onViewPosts }) {
         <button onClick={openWA} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-green-500/20">
           <MessageCircle size={12}/> WhatsApp
         </button>
-        <button onClick={() => onViewPosts(client.id)} className="flex-1 text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-mag-400 hover:text-mag-500 transition-all">
+        <button onClick={() => onViewDetails(client.id)} className="flex-1 text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-mag-400 hover:text-mag-500 transition-all">
+          <Eye size={12} className="inline mr-1"/> Detalhes
+        </button>
+        <button onClick={() => onViewPosts(client.id)} className="flex-1 text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-teal-400 hover:text-teal-500 transition-all">
           <Eye size={12} className="inline mr-1"/> Ver posts
         </button>
       </div>
@@ -243,6 +247,10 @@ export default function ClientsPage() {
     navigate(`/admin/dashboard?client=${clientId}`)
   }
 
+  function viewDetails(clientId) {
+    navigate(`/admin/clients/${clientId}`)
+  }
+
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
@@ -265,7 +273,26 @@ export default function ClientsPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-16 text-neutral-400">Carregando...</div>
+        <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-4">
+          {[1, 2, 3, 4, 5, 6].map(item => (
+            <Card key={item} className="p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <Skeleton className="h-11 w-11 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                <Skeleton className="h-14 rounded-lg" />
+                <Skeleton className="h-14 rounded-lg" />
+                <Skeleton className="h-14 rounded-lg" />
+              </div>
+              <Skeleton className="h-9 rounded-lg" />
+            </Card>
+          ))}
+        </div>
       ) : clients.length === 0 ? (
         <Card className="p-12 text-center text-neutral-400">
           <div className="text-4xl mb-3">👥</div>
@@ -276,7 +303,7 @@ export default function ClientsPage() {
         <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-4">
           {clients.map(c => (
             <ClientCard key={c.id} client={c} posts={posts}
-              onEdit={setEditClient} onDelete={handleDelete} onViewPosts={viewPosts} />
+              onEdit={setEditClient} onDelete={handleDelete} onViewPosts={viewPosts} onViewDetails={viewDetails} />
           ))}
         </div>
       )}

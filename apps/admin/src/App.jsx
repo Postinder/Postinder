@@ -8,6 +8,7 @@ import LoginPage from './features/auth/LoginPage'
 import RecoverPage from './features/auth/RecoverPage'
 import DashboardPage from './features/dashboard/DashboardPage'
 import ClientsPage from './features/clients/ClientsPage'
+import ClientDetailsPage from './features/clients/ClientDetailsPage'
 import NewPostPage from './features/posts/NewPostPage'
 import ApprovalsPage from './features/approvals/ApprovalsPage'
 import FeedPreviewPage from './features/posts/FeedPreviewPage'
@@ -43,6 +44,7 @@ export default function App() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="clients" element={<ClientsPage />} />
+        <Route path="clients/:id" element={<ClientDetailsPage />} />
         <Route path="posts/new" element={<NewPostPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="feed" element={<FeedPreviewPage />} />

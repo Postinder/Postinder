@@ -8,6 +8,7 @@ import { StatusBadge } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
+import EmptyState from '../../components/ui/EmptyState'
 import { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
 import toast from 'react-hot-toast'
@@ -98,19 +99,29 @@ export default function ApprovalsPage() {
   })
 
   async function handleApproveAll(postId) {
-    await approveAllFiles(postId)
-    setPosts(current => current.map(post => post.id === postId
-      ? { ...post, status: 'approved', files: (post.files || []).map(file => ({ ...file, status: 'approved' })) }
-      : post))
-    toast.success('Post aprovado!')
+    if (!confirm('Aprovar todos os arquivos desta postagem?')) return
+    try {
+      await approveAllFiles(postId)
+      setPosts(current => current.map(post => post.id === postId
+        ? { ...post, status: 'approved', files: (post.files || []).map(file => ({ ...file, status: 'approved' })) }
+        : post))
+      toast.success('Post aprovado com sucesso.')
+    } catch (e) {
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível aprovar o post.')
+    }
   }
 
   async function handleRejectAll(postId) {
-    await rejectAllFiles(postId)
-    setPosts(current => current.map(post => post.id === postId
-      ? { ...post, status: 'rejected', files: (post.files || []).map(file => file.status !== 'approved' ? { ...file, status: 'rejected' } : file) }
-      : post))
-    toast('Post reprovado.')
+    if (!confirm('Reprovar todos os arquivos pendentes desta postagem?')) return
+    try {
+      await rejectAllFiles(postId)
+      setPosts(current => current.map(post => post.id === postId
+        ? { ...post, status: 'rejected', files: (post.files || []).map(file => file.status !== 'approved' ? { ...file, status: 'rejected' } : file) }
+        : post))
+      toast.success('Post reprovado com sucesso.')
+    } catch (e) {
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível reprovar o post.')
+    }
   }
 
   async function sendApprovalNotification(clientId) {
@@ -118,7 +129,7 @@ export default function ApprovalsPage() {
       await notifyClient(clientId)
       toast.success('Mensagem via WhatsApp foi enviada.')
     } catch (e) {
-      toast.error(e.response?.data?.error || e.message || 'Nao foi possivel enviar o WhatsApp.')
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível enviar o WhatsApp.')
     }
   }
 
@@ -173,7 +184,7 @@ export default function ApprovalsPage() {
         : item))
 
       closeResubmitModal()
-      toast.success('Arquivos corrigidos e reenviados para aprovacao!')
+      toast.success('Arquivos corrigidos e reenviados para aprovação!')
       await sendApprovalNotification(getClientId(post))
     } catch (e) {
       toast.error(e.response?.data?.error || e.message)
@@ -226,7 +237,7 @@ export default function ApprovalsPage() {
                   <span className="text-xs font-medium text-neutral-400">{client.name || 'Cliente nao informado'}</span>
                 </div>
                 <h3 className="line-clamp-1 text-base font-bold text-neutral-900 dark:text-white">{post.title || '(sem titulo)'}</h3>
-                <p className="mt-1 line-clamp-2 text-sm text-neutral-500 dark:text-neutral-400">{post.description || 'Sem descricao cadastrada.'}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-neutral-500 dark:text-neutral-400">{post.description || 'Sem descrição cadastrada.'}</p>
               </div>
               <div className="rounded-xl bg-neutral-100 px-3 py-2 text-right text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
                 <div className="font-bold text-neutral-900 dark:text-white">{files.length}</div>
@@ -304,7 +315,7 @@ export default function ApprovalsPage() {
           </div>
         </div>
         <div className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-          {actionable.length} aguardando acao
+          {actionable.length} aguardando ação
         </div>
       </div>
 
@@ -312,7 +323,7 @@ export default function ApprovalsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
             <span className="h-2 w-2 rounded-full bg-mag-500" />
-            Voce esta visualizando como <strong className="text-neutral-900 dark:text-white">administrador</strong>
+            Você está visualizando como <strong className="text-neutral-900 dark:text-white">administrador</strong>
           </div>
           <div className="w-full sm:w-80">
             <Select value={filter} onChange={event => setFilter(event.target.value)}>
@@ -340,14 +351,14 @@ export default function ApprovalsPage() {
           ))}
         </div>
       ) : actionable.length === 0 ? (
-        <Card className="p-12 text-center">
-          <FileCheck2 size={38} className="mx-auto mb-3 text-green-500" />
-          <h3 className="mb-2 text-lg font-bold">Tudo em dia</h3>
-          <p className="text-sm text-neutral-400">Nenhuma postagem aguardando acao{filter ? ' para este cliente' : ''}.</p>
-        </Card>
+        <EmptyState
+          icon={<FileCheck2 size={38} className="text-green-500" />}
+          title="Tudo em dia"
+          description={`Nenhuma postagem aguardando ação${filter ? ' para este cliente' : ''}.`}
+        />
       ) : (
         <div>
-          <p className="mb-4 text-sm text-neutral-400">{actionable.length} post{actionable.length !== 1 ? 's' : ''} aguardando acao</p>
+          <p className="mb-4 text-sm text-neutral-400">{actionable.length} post{actionable.length !== 1 ? 's' : ''} aguardando ação</p>
           {actionable.map(post => renderPostCard(post))}
         </div>
       )}
@@ -360,7 +371,7 @@ export default function ApprovalsPage() {
       >
         <div className="space-y-4">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            Cada item reprovado precisa de um novo arquivo. Os arquivos aprovados permanecem como estao.
+            Cada item reprovado precisa de um novo arquivo. Os arquivos aprovados permanecem como estão.
           </div>
 
           <div className="space-y-3">
@@ -437,7 +448,7 @@ export default function ApprovalsPage() {
               ) : getFileUrl(fileViewer.file) ? (
                 <iframe title={fileViewer.file.name} src={getFileUrl(fileViewer.file)} className="h-[60vh] w-full bg-white" />
               ) : (
-                <div className="flex h-80 items-center justify-center text-sm text-neutral-400">Arquivo indisponivel para visualizacao.</div>
+                <div className="flex h-80 items-center justify-center text-sm text-neutral-400">Arquivo indisponível para visualização.</div>
               )}
             </div>
 
@@ -454,7 +465,7 @@ export default function ApprovalsPage() {
               <div className="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/30">
                 <div className="mb-2 flex items-center gap-2 text-sm font-bold text-red-700 dark:text-red-300">
                   <AlertTriangle size={15} />
-                  Motivo da reprovacao
+                  Motivo da reprovação
                 </div>
                 <p className="text-sm text-red-700 dark:text-red-300">
                   {fileViewer.file.rejection_reason || 'O cliente nao informou um comentario detalhado.'}

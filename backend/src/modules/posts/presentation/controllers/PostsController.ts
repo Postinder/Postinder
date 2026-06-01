@@ -7,6 +7,7 @@ import { PostMapper } from '../../infrastructure/mappers/PostMapper'
 import { PostStatus } from '../../domain/PostStatus'
 import { PostRepository } from '../../infrastructure/repositories/PostRepository'
 import { getFileCategory } from '../../../../shared/upload/multer'
+import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 
 interface AuthRequest extends Request {
   user?: any
@@ -19,6 +20,7 @@ export class PostsController {
     private listPostsService: ListPostsService,
     private getPostService: GetPostService,
     private postRepository: PostRepository,
+    private activityRepository = new ActivityRepository(),
   ) {}
 
   async create(req: AuthRequest, res: Response) {
@@ -28,6 +30,13 @@ export class PostsController {
       req.user?.userId || req.user?.clientId,
       req.tenantId,
     )
+    await this.activityRepository.createForPost(post.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId || req.user?.clientId,
+      actorRole: req.user?.role,
+      type: 'post_created',
+      title: 'Post criado',
+    }).catch(() => {})
     res.status(201).json(PostMapper.toDTO(post))
   }
 
@@ -61,12 +70,28 @@ export class PostsController {
   async update(req: AuthRequest, res: Response) {
     const post = await this.postRepository.updateFields(req.params.id, req.body, req.tenantId)
     if (!post) return res.status(404).json({ error: 'Post not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId || req.user?.clientId,
+      actorRole: req.user?.role,
+      type: 'post_updated',
+      title: 'Post atualizado',
+    }).catch(() => {})
     res.json(post)
   }
 
   async delete(req: AuthRequest, res: Response) {
     const deleted = await this.postRepository.softDelete(req.params.id, req.tenantId)
     if (!deleted) return res.status(404).json({ error: 'Post not found' })
+    await this.activityRepository.create({
+      companyId: req.tenantId,
+      actorId: req.user?.userId || req.user?.clientId,
+      actorRole: req.user?.role,
+      postId: req.params.id,
+      type: 'post_deleted',
+      title: 'Post excluído',
+      description: 'Uma postagem foi removida do dashboard.',
+    }).catch(() => {})
     res.json({ success: true })
   }
 
@@ -84,6 +109,14 @@ export class PostsController {
 
     const savedFiles = await this.postRepository.addFiles(req.params.id, files, req.tenantId)
     if (!savedFiles) return res.status(404).json({ error: 'Post not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId || req.user?.clientId,
+      actorRole: req.user?.role,
+      type: 'files_uploaded',
+      title: 'Arquivos enviados',
+      metadata: { filesCount: savedFiles.length },
+    }).catch(() => {})
 
     res.status(201).json({ data: savedFiles })
   }
@@ -106,18 +139,41 @@ export class PostsController {
     )
 
     if (!savedFile) return res.status(404).json({ error: 'Rejected file not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId || req.user?.clientId,
+      actorRole: req.user?.role,
+      type: 'post_corrected',
+      title: 'Post corrigido',
+      metadata: { fileId: req.params.fileId },
+    }).catch(() => {})
     res.status(200).json({ data: savedFile })
   }
 
   async submitForApproval(req: AuthRequest, res: Response) {
     const submitted = await this.postRepository.submitForApproval(req.params.id, req.tenantId)
     if (!submitted) return res.status(404).json({ error: 'Post not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId || req.user?.clientId,
+      actorRole: req.user?.role,
+      type: 'post_submitted',
+      title: 'Post enviado para aprovação',
+    }).catch(() => {})
     res.json({ success: true })
   }
 
   async resubmit(req: AuthRequest, res: Response) {
     const resubmitted = await this.postRepository.resubmit(req.params.id, req.body, req.tenantId)
     if (!resubmitted) return res.status(404).json({ error: 'Post not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId || req.user?.clientId,
+      actorRole: req.user?.role,
+      type: 'post_resubmitted',
+      title: 'Post reenviado',
+      metadata: { note: req.body?.justificativa },
+    }).catch(() => {})
     res.json({ success: true })
   }
 }

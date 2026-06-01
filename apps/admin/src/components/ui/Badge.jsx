@@ -8,6 +8,8 @@ const statusStyles = {
   rejected:         'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
   updated:          'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
   delivered:        'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
+  completed:        'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
+  concluded:        'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
   topo:             'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
   meio:             'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
   fundo:            'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
@@ -17,7 +19,31 @@ const statusLabels = {
   draft: 'Rascunho', pending: 'Pendente', pending_approval: 'Aguardando',
   approved: 'Aprovado', rejected: 'Recusado',
   updated: 'Atualizado', delivered: 'Entregue',
+  completed: 'Concluido', concluded: 'Concluido',
   topo: 'Topo', meio: 'Meio', fundo: 'Fundo',
+}
+
+const statusDots = {
+  draft: 'bg-neutral-300',
+  pending: 'bg-amber-400',
+  pending_approval: 'bg-amber-400',
+  approved: 'bg-green-500',
+  rejected: 'bg-red-500',
+  updated: 'bg-blue-500',
+  delivered: 'bg-blue-500',
+  completed: 'bg-blue-500',
+  concluded: 'bg-blue-500',
+}
+
+export const STATUS_LEGEND = [
+  { status: 'approved', label: statusLabels.approved },
+  { status: 'pending_approval', label: statusLabels.pending_approval },
+  { status: 'rejected', label: statusLabels.rejected },
+  { status: 'completed', label: statusLabels.completed },
+]
+
+export function getStatusDotClass(status) {
+  return statusDots[status] || 'bg-neutral-400'
 }
 
 export function StatusBadge({ status, className }) {
@@ -30,6 +56,10 @@ export function StatusBadge({ status, className }) {
       {statusLabels[status] || status}
     </span>
   )
+}
+
+export function StatusDot({ status, className }) {
+  return <span className={clsx('inline-block h-2.5 w-2.5 rounded-full', getStatusDotClass(status), className)} />
 }
 
 export function FunnelBadge({ tag }) {

@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { ClientRepository } from '../../infrastructure/repositories/ClientRepository'
 import bcryptjs from 'bcryptjs'
 import { env } from '../../../../config/environment'
+import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 
 interface AuthRequest extends Request {
   user?: any
@@ -9,7 +10,10 @@ interface AuthRequest extends Request {
 }
 
 export class ClientsController {
-  constructor(private clientRepository: ClientRepository) {}
+  constructor(
+    private clientRepository: ClientRepository,
+    private activityRepository = new ActivityRepository(),
+  ) {}
 
   private onlyDigits(value = '') {
     return value.replace(/\D/g, '')
@@ -72,6 +76,14 @@ export class ClientsController {
         company_id: req.tenantId,
       })
 
+      await this.activityRepository.createForClient(client.id, {
+        companyId: req.tenantId,
+        actorId: req.user?.userId || req.user?.clientId,
+        actorRole: req.user?.role,
+        type: 'client_created',
+        title: 'Cliente criado',
+      }).catch(() => {})
+
       res.status(201).json({ data: client })
     } catch (error: any) {
       const status = error.message === 'Email already exists' ? 400 : 500
@@ -105,6 +117,14 @@ export class ClientsController {
       if (!client) {
         return res.status(404).json({ error: 'Client not found' })
       }
+
+      await this.activityRepository.createForClient(id, {
+        companyId: req.tenantId,
+        actorId: req.user?.userId || req.user?.clientId,
+        actorRole: req.user?.role,
+        type: 'client_updated',
+        title: 'Cliente atualizado',
+      }).catch(() => {})
 
       res.json({ data: client })
     } catch (error: any) {
@@ -161,6 +181,14 @@ export class ClientsController {
       const approvalUrl = this.buildApprovalUrl()
       const message = `Olá ${target.name}! Você tem conteúdos aguardando aprovação. Acesse: ${approvalUrl}`
       const delivery = await this.sendWhatsApp(phone, message)
+      await this.activityRepository.createForClient(id, {
+        companyId: req.tenantId,
+        actorId: req.user?.userId || req.user?.clientId,
+        actorRole: req.user?.role,
+        type: 'approval_notification_sent',
+        title: 'Notificação enviada',
+        metadata: { provider: delivery.provider, phone },
+      }).catch(() => {})
 
       res.json({
         ...delivery,

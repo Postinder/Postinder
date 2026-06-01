@@ -53,8 +53,8 @@ function buildNotifications(posts, clients) {
           post,
           client,
           type: 'pending',
-          title: 'Aguardando aprovacao',
-          message: `"${post.title || 'Postagem sem titulo'}" esta aguardando retorno do cliente.`,
+          title: 'Aguardando aprovação',
+          message: `"${post.title || 'Postagem sem título'}" está aguardando retorno do cliente.`,
           date: getPostDate(post),
           icon: Clock,
           iconClass: 'text-amber-500 bg-amber-50 dark:bg-amber-950/40',
@@ -175,7 +175,7 @@ export default function NotificationBell() {
             ) : isError ? (
               <div className="p-5 text-center">
                 <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-                  Nao foi possivel carregar
+                  Não foi possível carregar
                 </div>
                 <button
                   type="button"
@@ -191,7 +191,7 @@ export default function NotificationBell() {
                   <CheckCircle size={20} />
                 </div>
                 <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-                  Nenhuma notificacao agora
+                  Nenhuma notificação agora
                 </div>
                 <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                   Postagens pendentes ou recusadas aparecerao aqui.

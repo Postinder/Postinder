@@ -80,6 +80,21 @@ CREATE TABLE IF NOT EXISTS feedback (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create activity events table (dashboard timeline/audit)
+CREATE TABLE IF NOT EXISTS activity_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID,
+  client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
+  post_id UUID REFERENCES posts(id) ON DELETE SET NULL,
+  actor_id UUID,
+  actor_role VARCHAR(50),
+  type VARCHAR(80) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_posts_client_id ON posts(client_id);
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
@@ -91,6 +106,10 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
 CREATE INDEX IF NOT EXISTS idx_users_company_id ON users(company_id);
 CREATE INDEX IF NOT EXISTS idx_clients_company_id ON clients(company_id);
+CREATE INDEX IF NOT EXISTS idx_activity_events_company_id ON activity_events(company_id);
+CREATE INDEX IF NOT EXISTS idx_activity_events_client_id ON activity_events(client_id);
+CREATE INDEX IF NOT EXISTS idx_activity_events_post_id ON activity_events(post_id);
+CREATE INDEX IF NOT EXISTS idx_activity_events_created_at ON activity_events(created_at DESC);
 
 -- Insert test users
 -- Admin password: Admin@123456

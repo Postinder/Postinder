@@ -3,6 +3,7 @@ import { BarChart2, Download, MessageSquare } from 'lucide-react'
 import { fetchMonthlyFeedbacks } from '../../services/insights.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { fetchClients } from '../../services/clients.service'
+import { createActivity } from '../../services/activities.service'
 import Card from '../../components/ui/Card'
 import { Select } from '../../components/ui/Input'
 import AIInsightsPanel from '../../components/ai/AIInsightsPanel'
@@ -115,6 +116,25 @@ const COLORS = ['#A7014B','#e05577','#3087A6','#E65A00','#6B21A8','#0F766E','#B4
 const PERIODS = [{ key:'week', label:'Semanal' }, { key:'month', label:'Mensal' }, { key:'year', label:'Anual' }]
 const MONTHS  = ['2025-05','2025-04','2025-03','2025-02']
 const PAGE_SIZE_OPTIONS = [5, 10]
+const INSIGHTS_FILTERS_KEY = 'postinder-insights-filters'
+const DASHBOARD_ACTIVITY_KEY = 'postinder-dashboard-activities'
+
+function getSavedInsightsFilters() {
+  try {
+    return JSON.parse(localStorage.getItem(INSIGHTS_FILTERS_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+async function addDashboardActivity(activity) {
+  try {
+    await createActivity(activity)
+  } catch {
+    const current = JSON.parse(localStorage.getItem(DASHBOARD_ACTIVITY_KEY) || '[]')
+    localStorage.setItem(DASHBOARD_ACTIVITY_KEY, JSON.stringify([activity, ...current].slice(0, 20)))
+  }
+}
 
 function PaginationControls({ page, pageSize, totalItems, onPageChange, onPageSizeChange }) {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
@@ -437,16 +457,17 @@ function MetricCard({ label, value, color, sub }) {
 }
 
 export default function InsightsPage() {
-  const [period, setPeriod]   = useState('week')
-  const [periodValue, setPeriodValue] = useState(getDefaultPeriodValue('week'))
-  const [tab, setTab]         = useState('metrics')
+  const savedFilters = getSavedInsightsFilters()
+  const [period, setPeriod]   = useState(savedFilters.period || 'week')
+  const [periodValue, setPeriodValue] = useState(savedFilters.periodValue || getDefaultPeriodValue(savedFilters.period || 'week'))
+  const [tab, setTab]         = useState(savedFilters.tab || 'metrics')
   const [clients, setClients] = useState([])
   const [posts, setPosts]     = useState([])
   const [feedbacks, setFeedbacks] = useState([])
-  const [metricsClientFilter, setMetricsClientFilter] = useState('')
-  const [fbFilter, setFbFilter]   = useState('')
-  const [fbClientFilter, setFbClientFilter] = useState('')
-  const [fbMonth, setFbMonth] = useState('')
+  const [metricsClientFilter, setMetricsClientFilter] = useState(savedFilters.metricsClientFilter || '')
+  const [fbFilter, setFbFilter]   = useState(savedFilters.fbFilter || '')
+  const [fbClientFilter, setFbClientFilter] = useState(savedFilters.fbClientFilter || '')
+  const [fbMonth, setFbMonth] = useState(savedFilters.fbMonth || '')
   const [feedbacksPage, setFeedbacksPage] = useState(1)
   const [feedbacksPageSize, setFeedbacksPageSize] = useState(5)
   const [loading, setLoading] = useState(true)
@@ -468,6 +489,18 @@ export default function InsightsPage() {
   useEffect(() => {
     setFeedbacksPage(1)
   }, [fbFilter, fbMonth, feedbacksPageSize])
+
+  useEffect(() => {
+    localStorage.setItem(INSIGHTS_FILTERS_KEY, JSON.stringify({
+      tab,
+      period,
+      periodValue,
+      metricsClientFilter,
+      fbFilter,
+      fbClientFilter,
+      fbMonth,
+    }))
+  }, [tab, period, periodValue, metricsClientFilter, fbFilter, fbClientFilter, fbMonth])
 
   const periodOptions = buildPeriodOptions(posts, period, periodValue)
   const periodRange = getPeriodRange(period, periodValue)
@@ -587,8 +620,8 @@ export default function InsightsPage() {
             ['Aprovados', approved],
             ['Reprovados', rejected],
             ['Pendentes ou em andamento', pending],
-            ['Taxa de aprovacao', `${approvalRate}%`],
-            ['Taxa de reprovacao', `${rejectionRate}%`],
+            ['Taxa de aprovação', `${approvalRate}%`],
+            ['Taxa de reprovação', `${rejectionRate}%`],
           ],
         },
         {
@@ -597,7 +630,7 @@ export default function InsightsPage() {
           rows: actData.map(item => [item.label, item.value]),
         },
         {
-          title: 'Motivos de reprovacao',
+          title: 'Motivos de reprovação',
           headers: ['Motivo', 'Quantidade'],
           rows: rejTagsData.map(item => [item.label, item.value]),
         },
@@ -612,12 +645,21 @@ export default function InsightsPage() {
           rows: postRows,
         },
         {
-          title: 'Feedbacks de reprovacao',
+          title: 'Feedbacks de reprovação',
           headers: ['Cliente', 'Post', 'Arquivo', 'Tags', 'Comentario'],
           rows: feedbackRows,
         },
       ]
     )
+    addDashboardActivity({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: 'insights_exported',
+      title: 'Exportação realizada',
+      description: `Insights exportados · ${clientLabel} · ${selectedPeriodLabel}`,
+      date: new Date().toISOString(),
+      tone: 'teal',
+      clientId: activeMetricsClient?.id || '',
+    })
     toast.success('Insights exportados em CSV.')
   }
 
