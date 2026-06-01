@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
+import { resolveMediaUrl } from '../../utils/mediaUrl'
 import toast from 'react-hot-toast'
 
 const FILE_LABELS = {
@@ -27,7 +28,7 @@ function getClientId(post) {
 }
 
 function getFileUrl(file) {
-  return file?.storage_url || file?.url || ''
+  return resolveMediaUrl(file?.storage_url || file?.url)
 }
 
 function FilePreview({ file }) {

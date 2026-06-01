@@ -5,6 +5,7 @@ import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { fetchClients } from '../../services/clients.service'
 import Card from '../../components/ui/Card'
 import { Select } from '../../components/ui/Input'
+import { resolveMediaUrl } from '../../utils/mediaUrl'
 import toast from 'react-hot-toast'
 
 const STATUS_DOT = {
@@ -105,7 +106,7 @@ export default function FeedPreviewPage() {
           <div className="grid grid-cols-2 gap-px bg-neutral-200 dark:bg-neutral-800 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {filtered.map(p => {
               const st = computePostStatus(p)
-              const url = p.files?.[0]?.url || p.files?.[0]?.storage_url
+              const url = resolveMediaUrl(p.files?.[0]?.url || p.files?.[0]?.storage_url)
               return (
                 <div
                   key={p.id}

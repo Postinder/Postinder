@@ -12,6 +12,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
+import { resolveMediaUrl } from '../../utils/mediaUrl'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTIONS = [
@@ -392,8 +393,8 @@ export default function DashboardPage() {
                       <td className="px-4 py-3 align-middle">
                         <div className="flex items-center gap-3">
                           <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-800">
-                            {firstFile?.file_type === 'IMAGE' && firstFile?.storage_url
-                              ? <img src={firstFile.storage_url} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
+                            {firstFile?.file_type === 'IMAGE' && resolveMediaUrl(firstFile?.storage_url)
+                              ? <img src={resolveMediaUrl(firstFile.storage_url)} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
                               : <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem midia'}</div>
                             }
                           </div>
