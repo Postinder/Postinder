@@ -258,6 +258,14 @@ Senha:  Cliente@123456</pre>
       <p>Foi escolhida a opção <code>Session pooler</code> no Supabase, porque a conexão direta pode depender de IPv6.</p>
       <pre>DATABASE_URL=postgresql://postgres.PROJECT_REF:SENHA_URL_ENCODED@aws-1-us-west-2.pooler.supabase.com:5432/postgres?sslmode=require</pre>
       <p>Exemplo de encoding: se a senha contém <code>@</code>, ela deve virar <code>%40</code> na URL.</p>
+      <h3>Supabase Storage</h3>
+      <ol>
+        <li>No Supabase, abrir <code>Storage</code>.</li>
+        <li>Criar um bucket chamado <code>postinder-uploads</code>.</li>
+        <li>Marcar o bucket como público para que o frontend consiga carregar as imagens e arquivos.</li>
+        <li>Em <code>Project Settings &gt; API</code>, copiar o <code>Project URL</code> e a chave <code>service_role</code>.</li>
+        <li>Adicionar esses valores no Render como <code>SUPABASE_URL</code> e <code>SUPABASE_SERVICE_ROLE_KEY</code>.</li>
+      </ol>
     </section>
 
     <section>
@@ -310,6 +318,8 @@ JWT_SECRET=troque-por-uma-chave-grande-e-secreta
 JWT_EXPIRY_MINUTES=15
 JWT_REFRESH_EXPIRY_DAYS=7
 LOG_LEVEL=info
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=cole-a-chave-service-role-do-supabase
 APP_PUBLIC_URL=https://postinder.vercel.app</pre>
       <div class="note">
         <p><strong>Não commitar segredos:</strong> a <code>DATABASE_URL</code> real e o <code>JWT_SECRET</code> devem ficar só no painel do Render, não em arquivos do Git.</p>
@@ -383,8 +393,8 @@ APP_PUBLIC_URL=https://postinder.vercel.app</pre>
 
     <section>
       <h2>Observação Sobre Uploads</h2>
-      <p>O backend salva arquivos na pasta local <code>uploads</code>. Em serviços gratuitos como Render, arquivos locais podem ser perdidos após restart/redeploy.</p>
-      <p>Para produção real, migrar uploads para um serviço externo, por exemplo Supabase Storage, Cloudinary, S3 ou Cloudflare R2.</p>
+      <p>Em desenvolvimento local, o backend salva arquivos na pasta <code>uploads</code>.</p>
+      <p>Em produção, os uploads foram configurados para ir ao Supabase Storage no bucket <code>postinder-uploads</code>. Isso evita perda de arquivos em restart/redeploy do Render.</p>
     </section>
   </main>
 </body>

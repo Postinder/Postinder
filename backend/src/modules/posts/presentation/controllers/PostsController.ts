@@ -7,6 +7,7 @@ import { PostMapper } from '../../infrastructure/mappers/PostMapper'
 import { PostStatus } from '../../domain/PostStatus'
 import { PostRepository } from '../../infrastructure/repositories/PostRepository'
 import { getFileCategory } from '../../../../shared/upload/multer'
+import { storeUploadedFile } from '../../../../shared/upload/storage'
 
 interface AuthRequest extends Request {
   user?: any
@@ -76,11 +77,11 @@ export class PostsController {
       return res.status(400).json({ error: 'No files uploaded' })
     }
 
-    const files = uploadedFiles.map(file => ({
-      url: `/uploads/${file.filename}`,
+    const files = await Promise.all(uploadedFiles.map(async file => ({
+      url: await storeUploadedFile(file),
       originalName: file.originalname,
       fileType: getFileCategory(file.mimetype),
-    }))
+    })))
 
     const savedFiles = await this.postRepository.addFiles(req.params.id, files, req.tenantId)
     if (!savedFiles) return res.status(404).json({ error: 'Post not found' })
@@ -98,7 +99,7 @@ export class PostsController {
       req.params.id,
       req.params.fileId,
       {
-        url: `/uploads/${uploadedFile.filename}`,
+        url: await storeUploadedFile(uploadedFile),
         originalName: uploadedFile.originalname,
         fileType: getFileCategory(uploadedFile.mimetype),
       },

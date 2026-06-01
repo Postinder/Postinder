@@ -34,7 +34,7 @@ function fileFilter(_req: Request, file: Express.Multer.File, cb: FileFilterCall
   }
 }
 
-const storage = multer.diskStorage({
+const diskStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     const uploadDir = path.join(process.cwd(), 'uploads')
     fs.mkdirSync(uploadDir, { recursive: true })
@@ -45,6 +45,10 @@ const storage = multer.diskStorage({
     cb(null, `${uuidv4()}${ext}`)
   },
 })
+
+const storage = process.env.NODE_ENV === 'production'
+  ? multer.memoryStorage()
+  : diskStorage
 
 export const upload = multer({
   storage,
