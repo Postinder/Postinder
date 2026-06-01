@@ -1,4 +1,5 @@
 import multer, { FileFilterCallback } from 'multer'
+import fs from 'fs'
 import path from 'path'
 import { Request } from 'express'
 import { v4 as uuidv4 } from 'uuid'
@@ -35,7 +36,9 @@ function fileFilter(_req: Request, file: Express.Multer.File, cb: FileFilterCall
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, path.join(process.cwd(), 'uploads'))
+    const uploadDir = path.join(process.cwd(), 'uploads')
+    fs.mkdirSync(uploadDir, { recursive: true })
+    cb(null, uploadDir)
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase()
