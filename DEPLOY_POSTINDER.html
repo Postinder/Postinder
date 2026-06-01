@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guia de Deploy - Postinder</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb;
+      --paper: #ffffff;
+      --ink: #15171a;
+      --muted: #5b6472;
+      --line: #d9dde5;
+      --accent: #a7014b;
+      --accent-soft: #fbe7f1;
+      --code: #111827;
+      --code-bg: #f2f4f8;
+      --ok: #127a3d;
+      --warn: #9a5b00;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 22px 64px;
+    }
+
+    header {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      margin-bottom: 20px;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.2;
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      font-size: 32px;
+      color: var(--accent);
+    }
+
+    h2 {
+      font-size: 23px;
+      padding-top: 6px;
+    }
+
+    h3 {
+      font-size: 18px;
+      margin-top: 22px;
+    }
+
+    p { margin: 0 0 12px; }
+
+    section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px 28px;
+      margin: 18px 0;
+    }
+
+    ul, ol {
+      margin: 10px 0 0 24px;
+      padding: 0;
+    }
+
+    li { margin: 8px 0; }
+
+    code {
+      background: var(--code-bg);
+      color: var(--code);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 0.94em;
+    }
+
+    pre {
+      background: #111827;
+      color: #f9fafb;
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.45;
+      margin: 12px 0 0;
+    }
+
+    .meta {
+      color: var(--muted);
+      margin-bottom: 0;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 3px 10px;
+      font-weight: 700;
+      font-size: 12px;
+      margin-right: 8px;
+    }
+
+    .note {
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+      padding: 12px 14px;
+      margin: 14px 0;
+      border-radius: 4px;
+    }
+
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f2f4f8;
+    }
+
+    @media print {
+      body { background: #fff; }
+      main { max-width: none; padding: 0; }
+      section, header { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="badge">Postinder</span>
+      <span class="badge">Deploy</span>
+      <h1>Guia de Deploy do Postinder</h1>
+      <p class="meta">Documento com os passos e configurações usados para publicar o frontend, backend e banco de dados da branch <code>newStructure</code>.</p>
+      <p class="meta">Atualizado em 01/06/2026.</p>
+    </header>
+
+    <section>
+      <h2>Arquitetura Publicada</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Parte</th>
+            <th>Plataforma</th>
+            <th>Função</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Frontend</td>
+            <td>Vercel</td>
+            <td>Hospeda o app React/Vite em <code>https://postinder.vercel.app</code>.</td>
+          </tr>
+          <tr>
+            <td>Backend</td>
+            <td>Render Web Service</td>
+            <td>Hospeda a API Express/Node da pasta <code>backend</code>.</td>
+          </tr>
+          <tr>
+            <td>Banco de dados</td>
+            <td>Supabase Postgres</td>
+            <td>Armazena tabelas, usuários, clientes, posts, arquivos e feedbacks.</td>
+          </tr>
+          <tr>
+            <td>Repositório</td>
+            <td>GitHub</td>
+            <td>Organização <code>Postinder</code>, repositório <code>Postinder/Postinder</code>, branch <code>newStructure</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Preparação no GitHub</h2>
+      <ol>
+        <li>O repositório foi movido para a organização <code>Postinder</code>.</li>
+        <li>A branch de produção usada foi <code>newStructure</code>.</li>
+        <li>A Vercel foi instalada/configurada na organização para acessar o repositório.</li>
+        <li>Foi feito push das correções necessárias para deploy.</li>
+      </ol>
+      <pre>git add -A
+git commit -m "Configure backend CORS for production"
+git push origin newStructure</pre>
+      <p>Depois, foi criado outro commit para corrigir o start do backend em produção:</p>
+      <pre>git add backend/package.json
+git commit -m "Fix backend production module format"
+git push origin newStructure</pre>
+    </section>
+
+    <section>
+      <h2>Correções Feitas no Código</h2>
+      <h3>CORS no backend</h3>
+      <p>Foi adicionada a dependência <code>cors</code> para permitir que o frontend da Vercel chame o backend hospedado em outro domínio.</p>
+      <pre>npm install cors
+npm install -D @types/cors</pre>
+      <p>No arquivo <code>backend/src/app.ts</code>, foi configurado CORS com a variável <code>APP_PUBLIC_URL</code> e suporte local para <code>http://localhost:5173</code>.</p>
+
+      <h3>Correção de módulo no backend</h3>
+      <p>O Render estava falhando com <code>exports is not defined in ES module scope</code>. A causa era o <code>package.json</code> do backend declarar <code>"type": "module"</code>, enquanto o TypeScript compilava para CommonJS.</p>
+      <p>A correção foi remover <code>"type": "module"</code> de <code>backend/package.json</code>.</p>
+
+      <h3>Build validado localmente</h3>
+      <pre>cd backend
+npm run build
+node dist/server.js</pre>
+      <p>O endpoint <code>/health</code> respondeu com status OK após a correção.</p>
+    </section>
+
+    <section>
+      <h2>Banco no Supabase</h2>
+      <ol>
+        <li>Foi criado um projeto Supabase chamado <code>Postinder</code>.</li>
+        <li>No <code>SQL Editor</code>, foi colado o conteúdo completo de <code>database/001_initial_schema.sql</code>.</li>
+        <li>O script criou as tabelas <code>users</code>, <code>clients</code>, <code>posts</code>, <code>files</code> e <code>feedback</code>.</li>
+        <li>O script também criou índices e inseriu o admin e cliente de teste.</li>
+      </ol>
+      <div class="note">
+        <p><strong>Importante:</strong> no SQL Editor deve ser colado o conteúdo do arquivo SQL, não o caminho <code>database/001_initial_schema.sql</code>.</p>
+      </div>
+      <h3>Credenciais de teste criadas pelo SQL</h3>
+      <pre>Admin:
+E-mail: admin@postinder.local
+Senha:  Admin@123456
+
+Cliente:
+E-mail: cliente@example.com
+Senha:  Cliente@123456</pre>
+      <h3>Connection string usada no backend</h3>
+      <p>Foi escolhida a opção <code>Session pooler</code> no Supabase, porque a conexão direta pode depender de IPv6.</p>
+      <pre>DATABASE_URL=postgresql://postgres.PROJECT_REF:SENHA_URL_ENCODED@aws-1-us-west-2.pooler.supabase.com:5432/postgres?sslmode=require</pre>
+      <p>Exemplo de encoding: se a senha contém <code>@</code>, ela deve virar <code>%40</code> na URL.</p>
+    </section>
+
+    <section>
+      <h2>Frontend na Vercel</h2>
+      <ol>
+        <li>Foi criado um novo projeto na Vercel a partir do GitHub.</li>
+        <li>Repositório selecionado: <code>Postinder/Postinder</code>.</li>
+        <li>Branch usada: <code>newStructure</code>.</li>
+        <li>Preset selecionado: <code>Vite</code>.</li>
+        <li>Root directory configurado como <code>apps/admin</code>.</li>
+      </ol>
+      <h3>Configurações de build</h3>
+      <pre>Framework Preset: Vite
+Root Directory: apps/admin
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist</pre>
+      <h3>Variáveis de ambiente na Vercel</h3>
+      <pre>VITE_API_URL=https://SUA-URL-DO-RENDER.onrender.com/api/v1
+VITE_APP_URL=https://postinder.vercel.app
+VITE_APPROVAL_BASE_URL=https://postinder.vercel.app</pre>
+      <p>Depois de adicionar ou alterar variáveis na Vercel, é necessário fazer redeploy em <code>Deployments &gt; Redeploy</code>.</p>
+    </section>
+
+    <section>
+      <h2>Backend no Render</h2>
+      <ol>
+        <li>No Render, foi escolhido <code>New Web Service</code>.</li>
+        <li>O repositório selecionado foi <code>Postinder/Postinder</code>.</li>
+        <li>A branch selecionada foi <code>newStructure</code>.</li>
+        <li>O serviço foi configurado como Node.</li>
+        <li>O Root Directory foi configurado como <code>backend</code>.</li>
+      </ol>
+      <h3>Configurações do Web Service</h3>
+      <pre>Name: postinder-api
+Language: Node
+Branch: newStructure
+Region: Oregon (US West)
+Root Directory: backend
+Instance Type: Free</pre>
+      <h3>Comandos no Render</h3>
+      <pre>Build Command: npm install --include=dev && npm run build
+Start Command: npm run start</pre>
+      <p>O <code>--include=dev</code> garante que o TypeScript seja instalado mesmo com <code>NODE_ENV=production</code>.</p>
+      <h3>Variáveis de ambiente no Render</h3>
+      <pre>NODE_ENV=production
+PORT=10000
+DATABASE_URL=postgresql://postgres.PROJECT_REF:SENHA_URL_ENCODED@aws-1-us-west-2.pooler.supabase.com:5432/postgres?sslmode=require
+JWT_SECRET=troque-por-uma-chave-grande-e-secreta
+JWT_EXPIRY_MINUTES=15
+JWT_REFRESH_EXPIRY_DAYS=7
+LOG_LEVEL=info
+APP_PUBLIC_URL=https://postinder.vercel.app</pre>
+      <div class="note">
+        <p><strong>Não commitar segredos:</strong> a <code>DATABASE_URL</code> real e o <code>JWT_SECRET</code> devem ficar só no painel do Render, não em arquivos do Git.</p>
+      </div>
+      <h3>Teste do backend</h3>
+      <pre>https://SUA-URL-DO-RENDER.onrender.com/health</pre>
+      <p>Resposta esperada:</p>
+      <pre>{
+  "status": "ok",
+  "timestamp": "..."
+}</pre>
+    </section>
+
+    <section>
+      <h2>Problemas Encontrados e Soluções</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Problema</th>
+            <th>Causa</th>
+            <th>Solução</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Login local falhando</td>
+            <td>A senha correta do admin era <code>Admin@123456</code>, não <code>admin</code>.</td>
+            <td>Usar as credenciais do seed SQL.</td>
+          </tr>
+          <tr>
+            <td>Backend local não conectava ao Postgres</td>
+            <td><code>localhost</code> resolvia para IPv6 no Windows.</td>
+            <td>Trocar a URL local para <code>127.0.0.1:5433</code>.</td>
+          </tr>
+          <tr>
+            <td>Supabase SQL Editor deu erro em <code>database</code></td>
+            <td>Foi colado o caminho do arquivo em vez do conteúdo SQL.</td>
+            <td>Copiar e colar todo o conteúdo de <code>database/001_initial_schema.sql</code>.</td>
+          </tr>
+          <tr>
+            <td>Render falhou no build</td>
+            <td><code>NODE_ENV=production</code> podia impedir instalação de dev dependencies.</td>
+            <td>Usar <code>npm install --include=dev && npm run build</code>.</td>
+          </tr>
+          <tr>
+            <td>Render falhou no start com <code>exports is not defined</code></td>
+            <td><code>"type": "module"</code> conflitava com output CommonJS do TypeScript.</td>
+            <td>Remover <code>"type": "module"</code> de <code>backend/package.json</code>.</td>
+          </tr>
+          <tr>
+            <td>Frontend e backend em domínios diferentes</td>
+            <td>O navegador bloqueia chamadas sem CORS.</td>
+            <td>Adicionar <code>cors</code> no backend e liberar <code>APP_PUBLIC_URL</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Checklist Final</h2>
+      <ul>
+        <li><span class="ok">OK</span> Supabase com schema executado.</li>
+        <li><span class="ok">OK</span> Vercel hospedando frontend em <code>https://postinder.vercel.app</code>.</li>
+        <li><span class="ok">OK</span> Render Web Service publicado.</li>
+        <li><span class="ok">OK</span> Backend com endpoint <code>/health</code> respondendo.</li>
+        <li><span class="warn">Conferir</span> Vercel com <code>VITE_API_URL</code> apontando para a URL final do Render.</li>
+        <li><span class="warn">Conferir</span> Fazer redeploy da Vercel após adicionar variáveis.</li>
+        <li><span class="warn">Conferir</span> Testar login com <code>admin@postinder.local</code> e <code>Admin@123456</code>.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Observação Sobre Uploads</h2>
+      <p>O backend salva arquivos na pasta local <code>uploads</code>. Em serviços gratuitos como Render, arquivos locais podem ser perdidos após restart/redeploy.</p>
+      <p>Para produção real, migrar uploads para um serviço externo, por exemplo Supabase Storage, Cloudinary, S3 ou Cloudflare R2.</p>
+    </section>
+  </main>
+</body>
+</html>
