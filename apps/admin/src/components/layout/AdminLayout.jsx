@@ -73,6 +73,7 @@ export default function AdminLayout() {
     { path: '/admin/email', title: 'E-mail' },
     { path: '/admin/integrations', title: 'Integrações' },
   ].find(item => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))?.title || 'Postinder'
+  const showTopbar = location.pathname === '/admin/posts/new'
 
   const sidebar = (
     <aside className="flex flex-col h-full bg-mag-600 dark:bg-neutral-950">
@@ -146,24 +147,26 @@ export default function AdminLayout() {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Topbar */}
-        <header className="h-16 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <button
-              className="md:hidden p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu size={20} />
-            </button>
-            <h1 className="text-lg font-bold text-neutral-900 dark:text-white" id="page-title">
-              {pageTitle}
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <GlobalSearch />
-            <ThemeToggle />
-            <NotificationBell />
-          </div>
-        </header>
+        {showTopbar && (
+          <header className="h-16 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                className="md:hidden p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu size={20} />
+              </button>
+              <h1 className="text-lg font-bold text-neutral-900 dark:text-white" id="page-title">
+                {pageTitle}
+              </h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <GlobalSearch />
+              <ThemeToggle />
+              <NotificationBell />
+            </div>
+          </header>
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
