@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Trash2, Edit3, RotateCcw, Plus, Search,
-  Building2, SlidersHorizontal, X, ArrowUpDown, CalendarDays, Paperclip
+  Building2, SlidersHorizontal, X, ArrowUpDown, CalendarDays, Paperclip, UploadCloud
 } from 'lucide-react'
-import { fetchPosts, softDeletePost, computePostStatus, updatePost, resubmitPost } from '../../services/posts.service'
+import { fetchPosts, softDeletePost, computePostStatus, updatePost, resubmitPost, replacePostFile } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import { StatusBadge, Avatar } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
@@ -53,6 +53,7 @@ function EditPostModal({ post, open, onClose, onSave }) {
   const [title, setTitle] = useState('')
   const [caption, setCaption] = useState('')
   const [just, setJust] = useState('')
+  const [replacementFiles, setReplacementFiles] = useState({})
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -60,20 +61,33 @@ function EditPostModal({ post, open, onClose, onSave }) {
       setTitle(post.title || '')
       setCaption(post.description || '')
       setJust('')
+      setReplacementFiles({})
     }
   }, [post])
 
   const isRej = post?.status === 'rejected'
+  const rejectedFiles = (post?.files || []).filter(file => file.status === 'rejected')
 
   async function handleSave() {
     setSaving(true)
     try {
       if (isRej) {
+        if (!rejectedFiles.length) {
+          toast.error('Nenhum arquivo reprovado para corrigir.')
+          setSaving(false)
+          return
+        }
+        if (rejectedFiles.some(file => !replacementFiles[file.id])) {
+          toast.error('Anexe um novo arquivo para cada item reprovado.')
+          setSaving(false)
+          return
+        }
         if (!just.trim() || just.trim().length < 10) {
           toast.error('Justificativa deve ter ao menos 10 caracteres.')
           setSaving(false)
           return
         }
+        await Promise.all(rejectedFiles.map(file => replacePostFile(post.id, file.id, replacementFiles[file.id])))
         await resubmitPost(post.id, { title, caption, justificativa: just })
         toast.success('Reenviado para aprovacao!')
       } else {
@@ -94,32 +108,75 @@ function EditPostModal({ post, open, onClose, onSave }) {
     <Modal
       open={open}
       onClose={onClose}
-      title={isRej ? 'Corrigir e Reenviar' : 'Editar Postagem'}
-      subtitle={isRej ? 'Corrija e reenvie para nova aprovacao do cliente.' : 'Edite os dados da postagem.'}
+      title={isRej ? 'Corrigir arquivos reprovados' : 'Editar Postagem'}
+      subtitle={isRej ? 'Substitua cada arquivo reprovado por uma nova versao antes de reenviar ao cliente.' : 'Edite os dados da postagem.'}
     >
       <div className="space-y-4">
-        {isRej && (
-          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-3">
-            <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-1">Arquivos reprovados pelo cliente</p>
-            {(post.files || []).filter(f => f.status === 'rejected').map(f => (
-              <div key={f.id} className="text-xs text-red-500">- {f.name}</div>
-            ))}
-          </div>
+        {isRej ? (
+          <>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+              Cada item reprovado precisa de um novo arquivo. Os arquivos aprovados permanecem como estao.
+            </div>
+
+            <div className="space-y-3">
+              {rejectedFiles.map(file => {
+                const previewUrl = resolveMediaUrl(file.storage_url || file.url)
+                return (
+                  <div key={file.id} className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+                    <div className="mb-3 flex items-start gap-3">
+                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
+                        {(file.file_type || '').toUpperCase() === 'IMAGE' && previewUrl
+                          ? <img src={previewUrl} alt="" className="h-full w-full object-cover" onError={event => { event.currentTarget.style.display = 'none' }} />
+                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-400">{FILE_LABELS[file.file_type] || 'Arquivo'}</div>
+                        }
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="line-clamp-1 text-sm font-bold text-neutral-900 dark:text-white">{file.name}</div>
+                        {file.rejection_reason && <p className="mt-1 text-xs text-red-500">{file.rejection_reason}</p>}
+                      </div>
+                    </div>
+
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-3 py-3 text-sm transition-colors hover:border-mag-500 hover:bg-mag-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-mag-500/10">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <UploadCloud size={17} className="shrink-0 text-mag-500" />
+                        <span className="truncate font-semibold text-neutral-700 dark:text-neutral-200">
+                          {replacementFiles[file.id]?.name || 'Anexar novo arquivo'}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-xs font-semibold text-mag-500">Escolher</span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={event => {
+                          const nextFile = event.target.files?.[0]
+                          if (nextFile) setReplacementFiles(current => ({ ...current, [file.id]: nextFile }))
+                        }}
+                      />
+                    </label>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        ) : (
+          <>
+            <Input label="Titulo" value={title} onChange={e => setTitle(e.target.value)} />
+            <Textarea label="Legenda / Descricao" value={caption} onChange={e => setCaption(e.target.value)} />
+          </>
         )}
-        <Input label="Titulo" value={title} onChange={e => setTitle(e.target.value)} />
-        <Textarea label="Legenda / Descricao" value={caption} onChange={e => setCaption(e.target.value)} />
+
         {isRej && (
           <Textarea
             label="O que foi corrigido? *"
             value={just}
             onChange={e => setJust(e.target.value)}
-            placeholder="Explique o que foi ajustado..."
+            placeholder="Ex: Substitui os arquivos com o texto corrigido e ajustei o visual conforme o feedback."
           />
         )}
         <div className="flex gap-3 pt-1">
           <Button variant="secondary" onClick={onClose} className="flex-1 justify-center">Cancelar</Button>
           <Button onClick={handleSave} loading={saving} className="flex-1 justify-center" variant={isRej ? 'teal' : 'primary'}>
-            {isRej ? 'Reenviar' : 'Salvar'}
+            {isRej ? 'Reenviar para cliente' : 'Salvar'}
           </Button>
         </div>
       </div>
