@@ -5,6 +5,7 @@ import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { fetchClients } from '../../services/clients.service'
 import Card from '../../components/ui/Card'
 import { Select } from '../../components/ui/Input'
+import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import toast from 'react-hot-toast'
 
@@ -46,23 +47,17 @@ export default function FeedPreviewPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-mag-50 text-mag-500 dark:bg-mag-500/10">
-            <Grid size={20} />
+      <PageHeader
+        icon={Grid}
+        title="Previa do Feed"
+        subtitle="Visualize os posts por cliente no formato de grade."
+        actions={
+          <div className="inline-flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+            <ImageIcon size={14} />
+            {filtered.length} post{filtered.length !== 1 ? 's' : ''}
           </div>
-          <div>
-            <h1 className="text-xl font-bold">Previa do Feed</h1>
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Visualize os posts por cliente no formato de grade.
-            </p>
-          </div>
-        </div>
-        <div className="inline-flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-          <ImageIcon size={14} />
-          {filtered.length} post{filtered.length !== 1 ? 's' : ''}
-        </div>
-      </div>
+        }
+      />
 
       <Card className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">

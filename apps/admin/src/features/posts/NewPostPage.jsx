@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { UploadCloud, X } from 'lucide-react'
+import { PlusSquare, UploadCloud, X } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { createPost } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
@@ -9,6 +9,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input, { Textarea, Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
+import PageHeader from '../../components/ui/PageHeader'
 import toast from 'react-hot-toast'
 
 function Section({ number, title, description, children }) {
@@ -162,11 +163,11 @@ export default function NewPostPage() {
 
   return (
     <div className="space-y-5 pb-20">
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          Comece pelo cliente. Depois preencha o conteudo, escolha os canais e anexe os arquivos para aprovacao.
-        </p>
-      </div>
+      <PageHeader
+        icon={PlusSquare}
+        title="Nova Postagem"
+        subtitle="Comece pelo cliente. Depois preencha o conteudo, escolha os canais e anexe os arquivos para aprovacao."
+      />
 
       <Section number="1" title="Cliente e planejamento" description="Defina para quem esta postagem sera enviada.">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

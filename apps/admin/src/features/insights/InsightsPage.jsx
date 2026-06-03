@@ -6,6 +6,7 @@ import { fetchClients } from '../../services/clients.service'
 import Card from '../../components/ui/Card'
 import { Select } from '../../components/ui/Input'
 import AIInsightsPanel from '../../components/ai/AIInsightsPanel'
+import PageHeader from '../../components/ui/PageHeader'
 import toast from 'react-hot-toast'
 
 function VerticalBarChart({ data, colorFn }) {
@@ -623,10 +624,7 @@ export default function InsightsPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-6">
-        <BarChart2 size={20} className="text-mag-500" />
-        <h1 className="text-xl font-bold">Insights & Feedbacks</h1>
-      </div>
+      <PageHeader icon={BarChart2} title="Insights & Feedbacks" />
 
       <div className="flex border border-neutral-200 dark:border-neutral-700 rounded-xl overflow-hidden w-fit mb-6">
         {[{ key:'metrics', label:'📊 Métricas' }, { key:'feedbacks', label:'💬 Feedbacks' }].map(t => (

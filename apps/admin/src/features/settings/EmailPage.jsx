@@ -3,6 +3,7 @@ import { Mail } from 'lucide-react'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input, { Textarea, Select } from '../../components/ui/Input'
+import PageHeader from '../../components/ui/PageHeader'
 import { fetchClients } from '../../services/clients.service'
 import toast from 'react-hot-toast'
 
@@ -48,10 +49,7 @@ export default function EmailPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-6">
-        <Mail size={20} className="text-mag-500" />
-        <h1 className="text-xl font-bold">Configuracao de E-mail</h1>
-      </div>
+      <PageHeader icon={Mail} title="Configuracao de E-mail" />
 
       <Card className="p-6 mb-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">

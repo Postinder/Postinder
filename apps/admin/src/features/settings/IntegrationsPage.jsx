@@ -1,6 +1,7 @@
 import { Plug, CheckCircle, XCircle, ExternalLink, Copy, Eye, EyeOff } from 'lucide-react'
 import { INTEGRATIONS } from '../../services/integrations/registry'
 import Card from '../../components/ui/Card'
+import PageHeader from '../../components/ui/PageHeader'
 import { useState } from 'react'
 
 const CATEGORY_LABELS = {
@@ -107,13 +108,11 @@ export default function IntegrationsPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Plug size={20} className="text-mag-500" />
-        <h1 className="text-xl font-bold">Integrações</h1>
-      </div>
-      <p className="text-sm text-neutral-400 mb-6">
-        Conecte o Postinder com WhatsApp, CRM, IA e outras ferramentas. Cada integração é independente — ativar ou desativar uma não afeta as demais.
-      </p>
+      <PageHeader
+        icon={Plug}
+        title="Integracoes"
+        subtitle="Conecte o Postinder com WhatsApp, CRM, IA e outras ferramentas. Cada integracao e independente."
+      />
 
       <Card className="p-4 mb-6">
         <div className="flex items-center justify-between">

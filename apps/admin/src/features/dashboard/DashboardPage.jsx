@@ -12,6 +12,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
+import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import toast from 'react-hot-toast'
 
@@ -263,23 +264,23 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard size={20} className="text-mag-500" />
-          <h1 className="text-xl font-bold">
-            {activeClient ? (
-              <>
-                <button onClick={() => setClientFilter('')} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 text-base font-normal">Dashboard</button>
-                <span className="text-neutral-300 dark:text-neutral-600 mx-2">/</span>
-                {activeClient.name}
-              </>
-            ) : 'Dashboard'}
-          </h1>
-        </div>
-        <Button size="md" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')} className="px-5 shadow-sm shadow-mag-500/20">
-          Nova Postagem
-        </Button>
-      </div>
+      <PageHeader
+        icon={LayoutDashboard}
+        title={
+          activeClient ? (
+            <>
+              <button onClick={() => setClientFilter('')} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 text-base font-normal">Dashboard</button>
+              <span className="text-neutral-300 dark:text-neutral-600 mx-2">/</span>
+              {activeClient.name}
+            </>
+          ) : 'Dashboard'
+        }
+        actions={
+          <Button size="md" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')} className="px-5 shadow-sm shadow-mag-500/20">
+            Nova Postagem
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[

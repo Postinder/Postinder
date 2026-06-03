@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, MessageCircle, Trash2, Edit3, Upload, Eye } from 'lucide-react'
+import { Plus, MessageCircle, Trash2, Edit3, Upload, Eye, Users } from 'lucide-react'
 import { fetchClients, createClient, updateClient, softDeleteClient, parseVCFText } from '../../services/clients.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { Avatar } from '../../components/ui/Badge'
@@ -7,6 +7,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Select } from '../../components/ui/Input'
+import PageHeader from '../../components/ui/PageHeader'
 import { CLIENT_COLORS } from '../../utils/constants'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -245,25 +246,19 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-neutral-950 dark:text-white">
-              Clientes cadastrados <span className="text-neutral-400 font-semibold text-lg">({clients.length})</span>
-            </h1>
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Gerencie acessos, contatos e aprovações por cliente.
-            </p>
-          </div>
-          <div className="flex gap-2">
+      <PageHeader
+        icon={Users}
+        title={<>Clientes cadastrados <span className="text-neutral-400 font-semibold text-base">({clients.length})</span></>}
+        subtitle="Gerencie acessos, contatos e aprovacoes por cliente."
+        actions={
+          <>
             <Button variant="secondary" size="md" icon={<Upload size={15}/>} onClick={()=>setShowVCF(true)}>Importar VCF</Button>
             <Button size="lg" icon={<Plus size={18}/>} onClick={()=>setShowNew(true)} className="px-5 shadow-md shadow-mag-500/20">
               Novo Cliente
             </Button>
-          </div>
-        </div>
-      </div>
-
+          </>
+        }
+      />
       {loading ? (
         <div className="text-center py-16 text-neutral-400">Carregando...</div>
       ) : clients.length === 0 ? (

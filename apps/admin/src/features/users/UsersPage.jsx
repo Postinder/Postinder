@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Select } from '../../components/ui/Input'
 import { Avatar } from '../../components/ui/Badge'
+import PageHeader from '../../components/ui/PageHeader'
 import toast from 'react-hot-toast'
 
 const ROLE_STYLES = {
@@ -79,13 +80,11 @@ export default function UsersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <ShieldCheck size={20} className="text-mag-500" />
-          <h1 className="text-xl font-bold">Usuarios do sistema</h1>
-        </div>
-        <Button size="sm" icon={<Plus size={14} />} onClick={() => setShowNew(true)}>Novo Usuario</Button>
-      </div>
+      <PageHeader
+        icon={ShieldCheck}
+        title="Usuarios do sistema"
+        actions={<Button size="sm" icon={<Plus size={14} />} onClick={() => setShowNew(true)}>Novo Usuario</Button>}
+      />
 
       {loading ? (
         <div className="text-center py-16 text-neutral-400">Carregando...</div>

@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
+import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import toast from 'react-hot-toast'
 
@@ -292,22 +293,16 @@ export default function ApprovalsPage() {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-mag-50 text-mag-500 dark:bg-mag-500/10">
-            <CheckCircle size={20} />
+      <PageHeader
+        icon={CheckCircle}
+        title="Aprovacoes"
+        subtitle="Revise posts pendentes e corrija arquivos reprovados antes de reenviar ao cliente."
+        actions={
+          <div className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+            {actionable.length} aguardando acao
           </div>
-          <div>
-            <h1 className="text-xl font-bold">Aprovacoes</h1>
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Revise posts pendentes e corrija arquivos reprovados antes de reenviar ao cliente.
-            </p>
-          </div>
-        </div>
-        <div className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-          {actionable.length} aguardando acao
-        </div>
-      </div>
+        }
+      />
 
       <Card className="mb-5 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
