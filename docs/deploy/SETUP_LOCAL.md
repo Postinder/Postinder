@@ -7,7 +7,7 @@ Este arquivo e um resumo. O guia completo esta no `README.md`.
 No PowerShell:
 
 ```powershell
-.\setup.ps1
+.\docs\deploy\setup.ps1
 ```
 
 Depois:
@@ -26,7 +26,7 @@ npm run dev
 Ou, no Windows, use:
 
 ```text
-iniciar.bat
+docs\deploy\iniciar.bat
 ```
 
 ## URLs

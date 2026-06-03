@@ -1,5 +1,8 @@
 Write-Host "Postinder v2.0 - setup local" -ForegroundColor Green
 
+$projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+Set-Location $projectRoot
+
 Write-Host "`n1. Subindo PostgreSQL..." -ForegroundColor Cyan
 docker compose up -d
 Start-Sleep -Seconds 5
