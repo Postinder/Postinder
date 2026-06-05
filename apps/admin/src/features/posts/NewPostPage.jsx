@@ -104,14 +104,14 @@ export default function NewPostPage() {
       await notifyClient(clientId)
       toast.success('Mensagem via WhatsApp foi enviada.')
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message || 'Nao foi possivel enviar o WhatsApp.')
+      toast.error(error.response?.data?.error || error.message || 'Não foi possível enviar o WhatsApp.')
     }
   }
 
   async function handleSave() {
     const channels = Object.keys(selChannels)
     if (!form.clientId || !form.title || !channels.length) {
-      toast.error('Preencha cliente, titulo e ao menos um canal.')
+      toast.error('Preencha cliente, título e ao menos um canal.')
       return
     }
     if (isEmail && !emailLink) {
@@ -142,7 +142,7 @@ export default function NewPostPage() {
         createdById: user?.id,
       }, isEmail ? [] : files)
 
-      toast.success('Postagem criada e enviada para aprovacao!')
+      toast.success('Postagem criada e enviada para aprovação!')
       await sendApprovalNotification(form.clientId)
       setSuccessModal({ open: true, clientId: form.clientId })
     } catch (error) {
@@ -166,7 +166,7 @@ export default function NewPostPage() {
       <PageHeader
         icon={PlusSquare}
         title="Nova Postagem"
-        subtitle="Comece pelo cliente. Depois preencha o conteudo, escolha os canais e anexe os arquivos para aprovacao."
+        subtitle="Comece pelo cliente. Depois preencha o conteúdo, escolha os canais e anexe os arquivos para aprovação."
       />
 
       <Section number="1" title="Cliente e planejamento" description="Defina para quem esta postagem sera enviada.">
@@ -181,10 +181,10 @@ export default function NewPostPage() {
         </div>
       </Section>
 
-      <Section number="2" title="Conteudo" description="Nomeie a postagem e adicione o texto que sera revisado.">
+      <Section number="2" title="Conteúdo" description="Nomeie a postagem e adicione o texto que será revisado.">
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Titulo *" value={form.title} onChange={event => set('title', event.target.value)} placeholder="Ex: Post Instagram Marco #12" />
+            <Input label="Título *" value={form.title} onChange={event => set('title', event.target.value)} placeholder="Ex: Post Instagram Março #12" />
             <div>
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Tag de Funil
@@ -206,11 +206,11 @@ export default function NewPostPage() {
               </div>
             </div>
           </div>
-          <Textarea label="Legenda / Texto" value={form.caption} onChange={event => set('caption', event.target.value)} placeholder="Cole aqui o texto da publicacao..." />
+          <Textarea label="Legenda / Texto" value={form.caption} onChange={event => set('caption', event.target.value)} placeholder="Cole aqui o texto da publicação..." />
         </div>
       </Section>
 
-      <Section number="3" title="Canais e formatos" description="Escolha onde o conteudo sera publicado.">
+      <Section number="3" title="Canais e formatos" description="Escolha onde o conteúdo será publicado.">
         <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
           Canais *
         </label>
@@ -339,15 +339,15 @@ export default function NewPostPage() {
         <div className="flex flex-wrap justify-end gap-3">
           <Button variant="ghost" onClick={resetForm}>Limpar</Button>
           <Button onClick={handleSave} loading={loading} size="lg" className="px-6">
-            Salvar e Enviar para Aprovacao
+            Salvar e Enviar para Aprovação
           </Button>
         </div>
       </div>
 
       <Modal open={successModal.open} onClose={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/dashboard') }}
-        title="Postagem criada!" subtitle="A postagem foi enviada para aprovacao do cliente.">
+        title="Postagem criada!" subtitle="A postagem foi enviada para aprovação do cliente.">
         <div className="py-4 text-center">
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">O cliente ja pode revisar os arquivos na area de aprovacao.</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">O cliente já pode revisar os arquivos na área de aprovação.</p>
         </div>
         <div className="mt-2 flex gap-3">
           <Button variant="secondary" className="flex-1 justify-center"

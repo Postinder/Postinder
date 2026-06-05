@@ -1,13 +1,37 @@
 # Database
 
-Este diretorio mantem o schema PostgreSQL usado pela API Express atual.
+Este diretório mantém o schema PostgreSQL do Postinder.
 
-## Arquivo ativo
+## Caminho recomendado
 
-- `001_initial_schema.sql`: cria as tabelas principais, indices e dados seed para desenvolvimento local.
+Use as migrations versionadas em `database/migrations`.
 
-## Como aplicar
+No backend:
 
-Use o PostgreSQL local do Docker e execute o arquivo com `psql`, ou rode manualmente pelo seu cliente SQL preferido.
+```bash
+cd backend
+npm run db:migrate
+```
 
-Arquivos de modelos antigos foram removidos para evitar conflito com o backend atual.
+O comando cria a tabela `schema_migrations`, aplica apenas arquivos ainda não executados e registra cada migration aplicada.
+
+## Arquivos
+
+- `migrations/001_core_schema.sql`: tabelas, índices e extensões.
+- `migrations/002_development_seed.sql`: usuário admin e cliente inicial para teste.
+- `001_initial_schema.sql`: schema legado consolidado, mantido por compatibilidade.
+
+## Antes de publicar
+
+Configure `DATABASE_URL` apontando para o PostgreSQL online e rode:
+
+```bash
+cd backend
+npm run db:migrate
+```
+
+Depois valide a conexão com:
+
+```text
+GET /health/db
+```

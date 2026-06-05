@@ -18,12 +18,35 @@ import EmailPage from './features/settings/EmailPage'
 import IntegrationsPage from './features/settings/IntegrationsPage'
 import ClientSwipePage from './features/approvals/ClientSwipePage'
 import ClientSummary from './features/approvals/ClientSummary'
+import { ROLE_PERMISSIONS } from './utils/constants'
+
+function getAllowedPermissions(user) {
+  if (!user) return []
+  const role = String(user.role || '').trim().toLowerCase()
+  if (role === 'admin') return ROLE_PERMISSIONS.admin
+  if (role === 'viewer') return ROLE_PERMISSIONS.viewer
+  if (Array.isArray(user.permissions) && user.permissions.length) return user.permissions
+  return ROLE_PERMISSIONS[role] || []
+}
 
 function RequireAdmin({ children }) {
   const { user } = useAuthStore()
   if (!user || user.type !== 'admin') return <Navigate to="/login" replace />
   return children
 }
+
+function RequirePermission({ permission, children }) {
+  const { user } = useAuthStore()
+  if (!user || user.type !== 'admin') return <Navigate to="/login" replace />
+  const role = String(user.role || '').trim().toLowerCase()
+  if (role === 'admin') return children
+  if (permission === 'integrations' && role === 'gestor') return children
+  if (!getAllowedPermissions(user).includes(permission)) {
+    return <Navigate to="/admin/dashboard" replace />
+  }
+  return children
+}
+
 function RequireClient({ children }) {
   const { user } = useAuthStore()
   if (!user || user.type !== 'client') return <Navigate to="/login" replace />
@@ -42,16 +65,16 @@ export default function App() {
       <Route path="/recover" element={<RecoverPage />} />
       <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
         <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="clients" element={<ClientsPage />} />
-        <Route path="clients/:id" element={<ClientDetailsPage />} />
-        <Route path="posts/new" element={<NewPostPage />} />
-        <Route path="approvals" element={<ApprovalsPage />} />
-        <Route path="feed" element={<FeedPreviewPage />} />
-        <Route path="insights" element={<InsightsPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="email" element={<EmailPage />} />
-        <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="dashboard" element={<RequirePermission permission="dashboard"><DashboardPage /></RequirePermission>} />
+        <Route path="clients" element={<RequirePermission permission="clients"><ClientsPage /></RequirePermission>} />
+        <Route path="clients/:id" element={<RequirePermission permission="clients"><ClientDetailsPage /></RequirePermission>} />
+        <Route path="posts/new" element={<RequirePermission permission="posts/new"><NewPostPage /></RequirePermission>} />
+        <Route path="approvals" element={<RequirePermission permission="approvals"><ApprovalsPage /></RequirePermission>} />
+        <Route path="feed" element={<RequirePermission permission="feed"><FeedPreviewPage /></RequirePermission>} />
+        <Route path="insights" element={<RequirePermission permission="insights"><InsightsPage /></RequirePermission>} />
+        <Route path="users" element={<RequirePermission permission="users"><UsersPage /></RequirePermission>} />
+        <Route path="email" element={<RequirePermission permission="email"><EmailPage /></RequirePermission>} />
+        <Route path="integrations" element={<RequirePermission permission="integrations"><IntegrationsPage /></RequirePermission>} />
       </Route>
       <Route path="/aprovar" element={<RequireClient><ClientLayout /></RequireClient>}>
         <Route index element={<ClientSwipePage />} />

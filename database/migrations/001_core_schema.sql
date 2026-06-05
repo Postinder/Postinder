@@ -1,11 +1,5 @@
--- ═══════════════════════════════════════════════════════════════════
--- Postinder v2.0 - Initial Database Schema
--- PostgreSQL
--- ═══════════════════════════════════════════════════════════════════
-
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Create users table (admin/manager)
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -19,7 +13,6 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create clients table (clientes da plataforma)
 CREATE TABLE IF NOT EXISTS clients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -35,7 +28,6 @@ CREATE TABLE IF NOT EXISTS clients (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create posts table
 CREATE TABLE IF NOT EXISTS posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -55,7 +47,6 @@ CREATE TABLE IF NOT EXISTS posts (
   approved_at TIMESTAMP
 );
 
--- Create files table (imagens/videos dos posts)
 CREATE TABLE IF NOT EXISTS files (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
@@ -69,7 +60,6 @@ CREATE TABLE IF NOT EXISTS files (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create feedback table
 CREATE TABLE IF NOT EXISTS feedback (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -80,7 +70,6 @@ CREATE TABLE IF NOT EXISTS feedback (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create activity events table (dashboard timeline/audit)
 CREATE TABLE IF NOT EXISTS activity_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID,
@@ -95,7 +84,6 @@ CREATE TABLE IF NOT EXISTS activity_events (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create notification reads table (read/unread state per user)
 CREATE TABLE IF NOT EXISTS notification_reads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID,
@@ -106,7 +94,6 @@ CREATE TABLE IF NOT EXISTS notification_reads (
   UNIQUE (user_id, notification_id)
 );
 
--- Create indexes
 CREATE INDEX IF NOT EXISTS idx_posts_client_id ON posts(client_id);
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
 CREATE INDEX IF NOT EXISTS idx_posts_company_id ON posts(company_id);
@@ -124,35 +111,3 @@ CREATE INDEX IF NOT EXISTS idx_activity_events_created_at ON activity_events(cre
 CREATE INDEX IF NOT EXISTS idx_notification_reads_user_id ON notification_reads(user_id);
 CREATE INDEX IF NOT EXISTS idx_notification_reads_notification_id ON notification_reads(notification_id);
 CREATE INDEX IF NOT EXISTS idx_notification_reads_company_id ON notification_reads(company_id);
-
--- Insert test users
--- Admin password: Admin@123456
-INSERT INTO users (name, email, password_hash, role, permissions, is_active)
-VALUES (
-  'Administrador Postinder',
-  'admin@postinder.local',
-  '$2a$10$mZ7UBznnaEVfUJQySHYiVOq3Bc9C77zqe2z4JQG6mlPOHFU3YYPae',
-  'admin',
-  ARRAY['dashboard', 'clients', 'posts', 'approvals', 'insights', 'users', 'email', 'integrations'],
-  true
-)
-ON CONFLICT (email) DO NOTHING;
-
--- Insert test client (password: Cliente@123456)
-INSERT INTO clients (name, email, password_hash, whatsapp, segment, color, deadline_days, is_active)
-VALUES (
-  'Acme Corp',
-  'cliente@example.com',
-  '$2a$10$V7UOjiO7mSRpSHNDYdRHYOWiWqqbG3HS9I/aytMm7ZYOfYpUj7UKS',
-  '(11) 99999-9999',
-  'Tecnologia',
-  '#A7014B',
-  7,
-  true
-)
-ON CONFLICT (email) DO NOTHING;
-
--- Verification query
-SELECT 'USERS' as table_name, COUNT(*) as count FROM users
-UNION ALL
-SELECT 'CLIENTS' as table_name, COUNT(*) as count FROM clients;

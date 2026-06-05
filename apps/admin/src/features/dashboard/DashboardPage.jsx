@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Trash2, Edit3, RotateCcw, Plus, Search,
-  Building2, SlidersHorizontal, X, ArrowUpDown, CalendarDays, Paperclip, UploadCloud
+  Building2, SlidersHorizontal, X, ArrowUpDown, CalendarDays, Paperclip, UploadCloud,
+  Activity, CheckCircle, MessageSquare, UserPlus
 } from 'lucide-react'
 import { fetchPosts, softDeletePost, computePostStatus, updatePost, resubmitPost, replacePostFile } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
+import { fetchActivities } from '../../services/activities.service'
+import { useAuthStore } from '../../store/authStore'
 import { StatusBadge, Avatar } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -50,6 +53,192 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date)
 }
 
+function startOfWeek(date) {
+  const start = new Date(date)
+  const day = start.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() + diff)
+  return start
+}
+
+function getWeeklyTrend(posts, statusKey, clientFilter) {
+  const now = new Date()
+  const currentStart = startOfWeek(now)
+  const previousStart = new Date(currentStart)
+  previousStart.setDate(previousStart.getDate() - 7)
+
+  const inScope = post => {
+    const date = getPostDate(post)
+    const status = computePostStatus(post)
+    const matchesClient = !clientFilter || getPostClientId(post) === clientFilter
+    const matchesStatus = statusKey === 'all' || status === statusKey
+    return matchesClient && matchesStatus && date.getTime() > 0
+  }
+
+  const current = posts.filter(post => {
+    const date = getPostDate(post)
+    return inScope(post) && date >= currentStart && date <= now
+  }).length
+
+  const previous = posts.filter(post => {
+    const date = getPostDate(post)
+    return inScope(post) && date >= previousStart && date < currentStart
+  }).length
+
+  const diff = current - previous
+  const percent = previous ? Math.round((diff / previous) * 100) : null
+
+  if (!current && !previous) return { tone: 'neutral', text: 'Nenhum movimento nesta semana' }
+  if (percent === null) return { tone: 'positive', text: `+${current} esta semana` }
+  if (diff === 0) return { tone: 'neutral', text: 'Estável vs semana anterior' }
+
+  return {
+    tone: diff > 0 ? 'positive' : 'negative',
+    text: `${diff > 0 ? '+' : ''}${diff} esta semana (${diff > 0 ? '+' : ''}${percent}%)`,
+  }
+}
+
+function getTrendClass(tone) {
+  if (tone === 'positive') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300'
+  if (tone === 'negative') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+  return 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400'
+}
+
+function formatActivityTime(value) {
+  const date = value instanceof Date ? value : new Date(value || 0)
+  if (Number.isNaN(date.getTime())) return 'Sem data'
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function getActivityIcon(type) {
+  if (['post_approved', 'file_approved'].includes(type)) return CheckCircle
+  if (['feedback_sent', 'monthly_feedback_sent', 'post_rejected'].includes(type)) return MessageSquare
+  if (['client_created', 'client_updated', 'approval_notification_sent'].includes(type)) return UserPlus
+  return Activity
+}
+
+function getActivityTone(type, fallback = 'neutral') {
+  if (['post_approved', 'file_approved'].includes(type)) return 'green'
+  if (['feedback_sent', 'monthly_feedback_sent', 'post_rejected'].includes(type)) return 'red'
+  if (['client_created', 'client_updated', 'approval_notification_sent', 'insights_exported'].includes(type)) return 'teal'
+  return fallback
+}
+
+function buildRecentActivities(posts, clients, clientFilter, backendActivities = []) {
+  const activities = []
+  const clientById = new Map(clients.map(client => [client.id, client]))
+  const isCurrentClient = id => !clientFilter || id === clientFilter
+  const seen = new Set()
+
+  function addActivity(item) {
+    const key = `${item.type || 'activity'}-${item.postId || item.post_id || ''}-${item.clientId || item.client_id || ''}`
+    if (key !== 'activity--' && seen.has(key)) return
+    seen.add(key)
+    activities.push(item)
+  }
+
+  backendActivities.forEach(item => {
+    const clientId = item.clientId || item.client_id
+    if (clientFilter && clientId !== clientFilter) return
+    addActivity({
+      id: item.id,
+      type: item.type,
+      title: item.title,
+      description: item.description || 'Atividade registrada no sistema.',
+      date: item.createdAt || item.created_at,
+      icon: getActivityIcon(item.type),
+      tone: getActivityTone(item.type),
+      clientId,
+      postId: item.postId || item.post_id,
+    })
+  })
+
+  clients.forEach(client => {
+    const date = client.createdAt || client.created_at
+    if (!date || !isCurrentClient(client.id)) return
+    addActivity({
+      id: `client-${client.id}`,
+      type: 'client_created',
+      title: 'Cliente criado',
+      description: client.name,
+      date,
+      icon: UserPlus,
+      tone: 'teal',
+      clientId: client.id,
+    })
+  })
+
+  posts.forEach(post => {
+    const clientId = getPostClientId(post)
+    if (!isCurrentClient(clientId)) return
+
+    const client = clientById.get(clientId)
+    const status = computePostStatus(post)
+    const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
+
+    if (post.createdAt || post.created_at) {
+      addActivity({
+        id: `post-created-${post.id}`,
+        type: 'post_created',
+        title: 'Post criado',
+        description: `${post.title || 'Post sem título'}${client?.name ? ` · ${client.name}` : ''}`,
+        date: post.createdAt || post.created_at,
+        icon: Plus,
+        tone: 'neutral',
+        clientId,
+        postId: post.id,
+      })
+    }
+
+    if (status === 'approved') {
+      addActivity({
+        id: `post-approved-${post.id}`,
+        type: 'post_approved',
+        title: 'Post aprovado',
+        description: `${post.title || 'Post sem título'}${client?.name ? ` · ${client.name}` : ''}`,
+        date: post.approvedAt || post.approved_at || updatedAt,
+        icon: CheckCircle,
+        tone: 'green',
+        clientId,
+        postId: post.id,
+      })
+    }
+
+    ;(post.files || []).forEach(file => {
+      if (!file.rejection_reason && !file.rejection_tags?.length) return
+      addActivity({
+        id: `feedback-${file.id || file.name}-${post.id}`,
+        type: 'feedback_sent',
+        title: 'Feedback enviado',
+        description: `${post.title || 'Post sem título'}${client?.name ? ` · ${client.name}` : ''}`,
+        date: file.updated_at || updatedAt,
+        icon: MessageSquare,
+        tone: 'red',
+        clientId,
+        postId: post.id,
+      })
+    })
+  })
+
+  return activities
+    .filter(item => item.date)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 6)
+}
+
+function getActivityToneClass(tone) {
+  if (tone === 'green') return 'bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-300'
+  if (tone === 'red') return 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300'
+  if (tone === 'teal') return 'bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-300'
+  return 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300'
+}
+
 function EditPostModal({ post, open, onClose, onSave }) {
   const [title, setTitle] = useState('')
   const [caption, setCaption] = useState('')
@@ -90,7 +279,7 @@ function EditPostModal({ post, open, onClose, onSave }) {
         }
         await Promise.all(rejectedFiles.map(file => replacePostFile(post.id, file.id, replacementFiles[file.id])))
         await resubmitPost(post.id, { title, caption, justificativa: just })
-        toast.success('Reenviado para aprovacao!')
+        toast.success('Reenviado para aprovação!')
       } else {
         await updatePost(post.id, { title, description: caption })
         toast.success('Postagem atualizada!')
@@ -110,7 +299,7 @@ function EditPostModal({ post, open, onClose, onSave }) {
       open={open}
       onClose={onClose}
       title={isRej ? 'Corrigir arquivos reprovados' : 'Editar Postagem'}
-      subtitle={isRej ? 'Substitua cada arquivo reprovado por uma nova versao antes de reenviar ao cliente.' : 'Edite os dados da postagem.'}
+      subtitle={isRej ? 'Substitua cada arquivo reprovado por uma nova versão antes de reenviar ao cliente.' : 'Edite os dados da postagem.'}
     >
       <div className="space-y-4">
         {isRej ? (
@@ -161,8 +350,8 @@ function EditPostModal({ post, open, onClose, onSave }) {
           </>
         ) : (
           <>
-            <Input label="Titulo" value={title} onChange={e => setTitle(e.target.value)} />
-            <Textarea label="Legenda / Descricao" value={caption} onChange={e => setCaption(e.target.value)} />
+            <Input label="Título" value={title} onChange={e => setTitle(e.target.value)} />
+            <Textarea label="Legenda / Descrição" value={caption} onChange={e => setCaption(e.target.value)} />
           </>
         )}
 
@@ -188,8 +377,10 @@ function EditPostModal({ post, open, onClose, onSave }) {
 export default function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { user } = useAuthStore()
   const [posts, setPosts] = useState([])
   const [clients, setClients] = useState([])
+  const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setSF] = useState('all')
@@ -197,6 +388,7 @@ export default function DashboardPage() {
   const [editPost, setEditPost] = useState(null)
 
   const clientFilter = searchParams.get('client') || ''
+  const isReadOnly = String(user?.role || '').trim().toLowerCase() === 'viewer'
 
   function setClientFilter(id) {
     if (id) setSearchParams({ client: id })
@@ -204,8 +396,8 @@ export default function DashboardPage() {
   }
 
   const load = useCallback(() => {
-    Promise.all([fetchPosts(), fetchClients()])
-      .then(([p, c]) => { setPosts(p); setClients(c) })
+    Promise.all([fetchPosts(), fetchClients(), fetchActivities({ limit: 30 })])
+      .then(([p, c, a]) => { setPosts(p); setClients(c); setActivities(a) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -224,7 +416,7 @@ export default function DashboardPage() {
       await notifyClient(clientId)
       toast.success('Mensagem via WhatsApp foi enviada.')
     } catch (e) {
-      toast.error(e.response?.data?.error || e.message || 'Nao foi possivel enviar o WhatsApp.')
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível enviar o WhatsApp.')
     }
   }
 
@@ -259,6 +451,16 @@ export default function DashboardPage() {
     rejected: posts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'rejected').length,
     draft: posts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'draft').length,
   }
+  const metricCards = [
+    { label: 'Total de Posts', value: counts.all, color: 'text-neutral-900 dark:text-white', key: 'all', description: 'Postagens no contexto atual' },
+    { label: 'Pendentes', value: counts.pending_approval, color: 'text-amber-600', key: 'pending_approval', description: 'Aguardando aprovação' },
+    { label: 'Aprovados', value: counts.approved, color: 'text-green-600', key: 'approved', description: 'Conteúdos liberados' },
+    { label: 'Recusados', value: counts.rejected, color: 'text-red-600', key: 'rejected', description: 'Precisam de correção' },
+  ].map(metric => ({
+    ...metric,
+    trend: getWeeklyTrend(posts, metric.key, clientFilter),
+  }))
+  const recentActivities = buildRecentActivities(posts, clients, clientFilter, activities)
 
   const activeStatus = STATUS_OPTIONS.find(s => s.key === statusFilter)?.label || 'Todos'
 
@@ -275,24 +477,19 @@ export default function DashboardPage() {
             </>
           ) : 'Dashboard'
         }
-        actions={
+        actions={!isReadOnly ? (
           <Button size="md" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')} className="px-5 shadow-sm shadow-mag-500/20">
             Nova Postagem
           </Button>
-        }
+        ) : null}
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: 'Total', value: counts.all, color: 'text-neutral-900 dark:text-white', key: 'all', description: 'Postagens no contexto atual' },
-          { label: 'Pendentes', value: counts.pending_approval, color: 'text-amber-600', key: 'pending_approval', description: 'Aguardando aprovacao' },
-          { label: 'Aprovados', value: counts.approved, color: 'text-green-600', key: 'approved', description: 'Conteudos liberados' },
-          { label: 'Recusados', value: counts.rejected, color: 'text-red-600', key: 'rejected', description: 'Precisam de correcao' },
-        ].map(m => (
+        {metricCards.map(m => (
           <button
             key={m.key}
             onClick={() => setSF(statusFilter === m.key ? 'all' : m.key)}
-            className={`group text-left p-5 rounded-xl border transition-all bg-white dark:bg-neutral-900 ${statusFilter === m.key ? 'border-mag-500 shadow-[inset_0_0_0_1px_#A7014B]' : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700'}`}
+            className={`group text-left p-5 rounded-xl border bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-neutral-900/5 dark:bg-neutral-900 dark:hover:shadow-black/20 ${statusFilter === m.key ? 'border-mag-500 shadow-[inset_0_0_0_1px_#A7014B]' : 'border-neutral-200 dark:border-neutral-800 hover:border-mag-300 dark:hover:border-mag-500/60'}`}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -302,9 +499,67 @@ export default function DashboardPage() {
               <span className={`mt-1 h-2.5 w-2.5 rounded-full ${statusFilter === m.key ? 'bg-mag-500' : 'bg-neutral-200 dark:bg-neutral-700 group-hover:bg-neutral-300 dark:group-hover:bg-neutral-600'}`} />
             </div>
             <div className="mt-3 text-xs text-neutral-400">{m.description}</div>
+            <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${getTrendClass(m.trend.tone)}`}>
+              {m.trend.text}
+            </div>
           </button>
         ))}
       </div>
+
+      <Card className="mb-4 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-300">
+              <Activity size={17} />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-neutral-900 dark:text-white">Atividade recente</div>
+              <div className="mt-0.5 text-xs text-neutral-400">
+                {activeClient ? `Últimos eventos de ${activeClient.name}` : 'Últimos eventos do sistema'}
+              </div>
+            </div>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
+            {recentActivities.length} evento{recentActivities.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        {loading ? (
+          <div className="space-y-3 p-4">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-9 w-9 rounded-lg" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-3 w-40" />
+                  <Skeleton className="h-2 w-64" />
+                </div>
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : recentActivities.length ? (
+          <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+            {recentActivities.map(item => {
+              const Icon = item.icon
+              return (
+                <div key={item.id} className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900/70">
+                  <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${getActivityToneClass(item.tone)}`}>
+                    <Icon size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">{item.title}</div>
+                    <div className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">{item.description}</div>
+                  </div>
+                  <div className="shrink-0 text-[11px] font-medium text-neutral-400">{formatActivityTime(item.date)}</div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="p-6 text-center text-sm text-neutral-400">
+            Nenhuma atividade recente encontrada para este filtro.
+          </div>
+        )}
+      </Card>
 
       <Card className="mb-4">
         <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-900 px-4 py-3">
@@ -339,7 +594,7 @@ export default function DashboardPage() {
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Buscar</span>
             <div className="relative">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por titulo, descricao ou cliente..."
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por título, descrição ou cliente..."
                 className="w-full rounded-lg border border-neutral-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-mag-500 dark:border-neutral-700 dark:bg-neutral-800" />
             </div>
           </label>
@@ -376,7 +631,7 @@ export default function DashboardPage() {
               <option value="updated">Mais recentes</option>
               <option value="client">Cliente</option>
               <option value="status">Status</option>
-              <option value="title">Titulo</option>
+              <option value="title">Título</option>
             </Select>
           </label>
         </div>
@@ -421,11 +676,11 @@ export default function DashboardPage() {
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50/70 dark:border-neutral-800 dark:bg-neutral-900/80">
                   <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Cliente</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Conteudo</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Conteúdo</th>
                   <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Arquivos</th>
                   <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Status</th>
                   <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Atualizado</th>
-                  <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Acoes</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -453,13 +708,13 @@ export default function DashboardPage() {
                           <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-800">
                             {firstFile?.file_type === 'IMAGE' && resolveMediaUrl(firstFile?.storage_url)
                               ? <img src={resolveMediaUrl(firstFile.storage_url)} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
-                              : <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem midia'}</div>
+                              : <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem mídia'}</div>
                             }
                           </div>
                           <div className="min-w-0">
-                            <div className="line-clamp-1 font-semibold text-neutral-900 dark:text-white">{post.title || '(sem titulo)'}</div>
+                            <div className="line-clamp-1 font-semibold text-neutral-900 dark:text-white">{post.title || '(sem título)'}</div>
                             <div className="mt-1 line-clamp-1 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-                              {post.description || 'Sem descricao cadastrada.'}
+                              {post.description || 'Sem descrição cadastrada.'}
                             </div>
                           </div>
                         </div>
@@ -487,21 +742,27 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-4 py-3 align-middle">
                         <div className="flex justify-end gap-1 items-center">
-                          {isRej ? (
-                            <button onClick={() => setEditPost(post)}
-                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 text-xs font-semibold">
-                              <RotateCcw size={11} /> Corrigir
-                            </button>
+                          {isReadOnly ? (
+                            <span className="text-xs font-semibold text-neutral-400">Somente leitura</span>
                           ) : (
-                            <button onClick={() => setEditPost(post)}
-                              className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500" title="Editar">
-                              <Edit3 size={14} />
-                            </button>
+                            <>
+                              {isRej ? (
+                                <button onClick={() => setEditPost(post)}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 text-xs font-semibold">
+                                  <RotateCcw size={11} /> Corrigir
+                                </button>
+                              ) : (
+                                <button onClick={() => setEditPost(post)}
+                                  className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500" title="Editar">
+                                  <Edit3 size={14} />
+                                </button>
+                              )}
+                              <button onClick={() => handleDelete(post.id)}
+                                className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-neutral-400 hover:text-red-500" title="Excluir">
+                                <Trash2 size={14} />
+                              </button>
+                            </>
                           )}
-                          <button onClick={() => handleDelete(post.id)}
-                            className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-neutral-400 hover:text-red-500" title="Excluir">
-                            <Trash2 size={14} />
-                          </button>
                         </div>
                       </td>
                     </tr>

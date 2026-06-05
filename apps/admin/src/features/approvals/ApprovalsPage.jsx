@@ -120,7 +120,7 @@ export default function ApprovalsPage() {
       await notifyClient(clientId)
       toast.success('Mensagem via WhatsApp foi enviada.')
     } catch (e) {
-      toast.error(e.response?.data?.error || e.message || 'Nao foi possivel enviar o WhatsApp.')
+      toast.error(e.response?.data?.error || e.message || 'Não foi possível enviar o WhatsApp.')
     }
   }
 
@@ -175,7 +175,7 @@ export default function ApprovalsPage() {
         : item))
 
       closeResubmitModal()
-      toast.success('Arquivos corrigidos e reenviados para aprovacao!')
+      toast.success('Arquivos corrigidos e reenviados para aprovação!')
       await sendApprovalNotification(getClientId(post))
     } catch (e) {
       toast.error(e.response?.data?.error || e.message)
@@ -227,8 +227,8 @@ export default function ApprovalsPage() {
                   <StatusBadge status={status} />
                   <span className="text-xs font-medium text-neutral-400">{client.name || 'Cliente nao informado'}</span>
                 </div>
-                <h3 className="line-clamp-1 text-base font-bold text-neutral-900 dark:text-white">{post.title || '(sem titulo)'}</h3>
-                <p className="mt-1 line-clamp-2 text-sm text-neutral-500 dark:text-neutral-400">{post.description || 'Sem descricao cadastrada.'}</p>
+                <h3 className="line-clamp-1 text-base font-bold text-neutral-900 dark:text-white">{post.title || '(sem título)'}</h3>
+                <p className="mt-1 line-clamp-2 text-sm text-neutral-500 dark:text-neutral-400">{post.description || 'Sem descrição cadastrada.'}</p>
               </div>
               <div className="rounded-xl bg-neutral-100 px-3 py-2 text-right text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
                 <div className="font-bold text-neutral-900 dark:text-white">{files.length}</div>
@@ -308,7 +308,7 @@ export default function ApprovalsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
             <span className="h-2 w-2 rounded-full bg-mag-500" />
-            Voce esta visualizando como <strong className="text-neutral-900 dark:text-white">administrador</strong>
+            Você está visualizando como <strong className="text-neutral-900 dark:text-white">administrador</strong>
           </div>
           <div className="w-full sm:w-80">
             <Select value={filter} onChange={event => setFilter(event.target.value)}>
@@ -352,7 +352,7 @@ export default function ApprovalsPage() {
         open={resubmitModal.open}
         onClose={closeResubmitModal}
         title="Corrigir arquivos reprovados"
-        subtitle="Substitua cada arquivo reprovado por uma nova versao antes de reenviar ao cliente."
+        subtitle="Substitua cada arquivo reprovado por uma nova versão antes de reenviar ao cliente."
       >
         <div className="space-y-4">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
@@ -444,7 +444,7 @@ export default function ApprovalsPage() {
                   <span className="text-xs font-medium text-neutral-400">{FILE_LABELS[(fileViewer.file.file_type || '').toUpperCase()] || 'Arquivo'}</span>
                 </div>
                 <h3 className="break-words text-sm font-bold text-neutral-900 dark:text-white">{fileViewer.file.name}</h3>
-                <p className="mt-1 text-xs text-neutral-400">{fileViewer.post?.title || 'Post sem titulo'}</p>
+                <p className="mt-1 text-xs text-neutral-400">{fileViewer.post?.title || 'Post sem título'}</p>
               </div>
 
               <div className="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/30">

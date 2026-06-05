@@ -173,7 +173,7 @@ export default function GlobalSearch() {
           return {
             id: `post-${post.id}`,
             type: 'post',
-            title: post.title || 'Postagem sem titulo',
+            title: post.title || 'Postagem sem título',
             description: `${client?.name || 'Cliente'} · ${STATUS_LABELS[status] || status}`,
             target: clientId ? `/admin/feed?client=${clientId}&post=${post.id}` : `/admin/feed?post=${post.id}`,
             icon: FileText,

@@ -136,7 +136,7 @@ export default function UsersPage() {
             <Select label="Perfil" value={form.role} onChange={e => handleRoleChange(e.target.value)}>
               <option value="admin">Admin - acesso total</option>
               <option value="manager">Manager - acesso operacional</option>
-              <option value="editor">Editor - conteudo e aprovacoes</option>
+              <option value="editor">Editor - conteúdo e aprovações</option>
               <option value="viewer">Viewer - somente leitura</option>
             </Select>
           </div>

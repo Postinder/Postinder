@@ -62,8 +62,9 @@ export class AuthService {
   }
 
   private buildAdminTokens(user: any): TokenResponseDTO {
+    const role = String(user.role || '').trim().toLowerCase()
     const accessToken = this.jwtProvider.sign(
-      { userId: user.id, email: user.email, companyId: user.company_id ?? null, role: user.role, type: 'admin' },
+      { userId: user.id, email: user.email, companyId: user.company_id ?? null, role, permissions: user.permissions || [], type: 'admin' },
       `${env.JWT_EXPIRY_MINUTES}m`,
     )
     const refreshToken = this.jwtProvider.sign(
@@ -73,7 +74,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role, type: 'admin' },
+      user: { id: user.id, email: user.email, name: user.name, role, permissions: user.permissions || [], type: 'admin' },
     }
   }
 

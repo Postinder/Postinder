@@ -5,6 +5,7 @@ export interface User {
   email: string
   name: string
   role: string
+  permissions: string[]
   password_hash?: string
   is_active: boolean
   company_id?: string
@@ -29,7 +30,7 @@ export interface Client {
 export class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
     const result = await query(
-      'SELECT id, email, name, role, password_hash, is_active, created_at, updated_at, company_id FROM users WHERE email = $1 AND is_active = true',
+      'SELECT id, email, name, role, permissions, password_hash, is_active, created_at, updated_at, company_id FROM users WHERE email = $1 AND is_active = true',
       [email]
     )
     return result.rows[0] || null

@@ -173,7 +173,7 @@ function PaginationControls({ page, pageSize, totalItems, onPageChange, onPageSi
           disabled={page >= totalPages}
           className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-600 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300"
         >
-          Proxima
+          Próxima
         </button>
       </div>
     </div>
@@ -642,7 +642,7 @@ export default function InsightsPage() {
         },
         {
           title: 'Posts do recorte',
-          headers: ['Titulo', 'Cliente', 'Status', 'Canais', 'Data'],
+          headers: ['Título', 'Cliente', 'Status', 'Canais', 'Data'],
           rows: postRows,
         },
         {

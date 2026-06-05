@@ -31,7 +31,8 @@ export class UsersController {
 
   async create(req: AuthRequest, res: Response) {
     if (!this.ensureAdmin(req, res)) return
-    const { name, email, password, role = 'viewer', permissions = [] } = req.body
+    const { name, email, password, permissions = [] } = req.body
+    const role = String(req.body.role || 'viewer').trim().toLowerCase()
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' })
@@ -54,13 +55,15 @@ export class UsersController {
 
   async update(req: AuthRequest, res: Response) {
     if (!this.ensureAdmin(req, res)) return
-    const { role } = req.body
+    const role = req.body.role !== undefined
+      ? String(req.body.role).trim().toLowerCase()
+      : undefined
 
     if (role !== undefined && !allowedRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role' })
     }
 
-    const user = await this.usersRepository.update(req.params.id, req.body, req.tenantId)
+    const user = await this.usersRepository.update(req.params.id, { ...req.body, role }, req.tenantId)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
     res.json(user)
