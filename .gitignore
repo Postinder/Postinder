@@ -2,11 +2,16 @@
 node_modules
 /.pnpm-store
 pnpm-lock.yaml
+package-lock.json
+**/package-lock.json
 
-# Environment variables
+# Environment variables and secrets
 .env
-.env.local
-.env.*.local
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
 
 # Build outputs
 dist
@@ -48,4 +53,3 @@ backend/uploads/
 create-test-users.js
 
 .claude/
-

@@ -3,13 +3,14 @@ import { Mail } from 'lucide-react'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input, { Textarea, Select } from '../../components/ui/Input'
+import PageHeader from '../../components/ui/PageHeader'
 import { fetchClients } from '../../services/clients.service'
 import toast from 'react-hot-toast'
 
 const DEFAULT_CONFIG = {
   sender_name: '20cinco comunicacao',
   reply_to: '',
-  subject: 'Você tem conteúdos aguardando aprovação!',
+  subject: 'Voce tem conteudos aguardando aprovacao!',
   body_template: '',
 }
 
@@ -34,7 +35,7 @@ export default function EmailPage() {
     setSaving(true)
     localStorage.setItem('postinder-email-config', JSON.stringify({ ...cfg, updated_at: new Date().toISOString() }))
     setSaving(false)
-    toast.success('Configurações salvas!')
+    toast.success('Configuracoes salvas!')
   }
 
   function handleSend() {
@@ -48,10 +49,7 @@ export default function EmailPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-6">
-        <Mail size={20} className="text-mag-500" />
-        <h1 className="text-xl font-bold">Configuração de E-mail</h1>
-      </div>
+      <PageHeader icon={Mail} title="Configuracao de E-mail" />
 
       <Card className="p-6 mb-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
@@ -87,8 +85,8 @@ export default function EmailPage() {
         <div className="p-6">
           <div className="text-xl font-extrabold text-mag-500 mb-4">Post<span className="text-neutral-900 dark:text-white">inder</span></div>
           <p className="text-sm mb-3">Ola, <strong>[Nome do Cliente]</strong></p>
-          <p className="text-sm text-neutral-500 leading-relaxed mb-4">{cfg.body_template || 'Seus conteúdos estão prontos para aprovação.'}</p>
-          <p className="text-sm mb-4">Você tem <strong>[X] postagens</strong> aguardando revisão.</p>
+          <p className="text-sm text-neutral-500 leading-relaxed mb-4">{cfg.body_template || 'Seus conteudos estao prontos para aprovacao.'}</p>
+          <p className="text-sm mb-4">Voce tem <strong>[X] postagens</strong> aguardando revisao.</p>
           <button className="bg-mag-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold pointer-events-none">Revisar agora</button>
           <p className="text-xs text-neutral-400 mt-4">Sem login necessario. Qualquer duvida, fale pelo WhatsApp.</p>
         </div>

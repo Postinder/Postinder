@@ -34,9 +34,8 @@ postinder/
 ├── apps/admin/                # Tela web em React
 ├── backend/                   # API em Express + TypeScript
 ├── database/                  # Schema do banco PostgreSQL
+├── docs/deploy/               # Guias e scripts de setup/deploy
 ├── docker-compose.yml         # Configuracao do banco local
-├── setup.ps1                  # Setup automatico no Windows/PowerShell
-├── iniciar.bat                # Atalho para iniciar o projeto no Windows
 └── README.md
 ```
 
@@ -47,7 +46,7 @@ postinder/
 Abra o PowerShell na pasta do projeto e rode:
 
 ```powershell
-.\setup.ps1
+.\docs\deploy\setup.ps1
 ```
 
 Esse script faz:
@@ -142,7 +141,7 @@ npm run dev
 No Windows, tambem pode dar dois cliques em:
 
 ```text
-iniciar.bat
+docs\deploy\iniciar.bat
 ```
 
 Ele encerra processos antigos nas portas `3001` e `5173` e inicia o projeto.
@@ -153,7 +152,7 @@ Ele encerra processos antigos nas portas `3001` e `5173` e inicia o projeto.
 - `3001`: API backend
 - `5433`: PostgreSQL local via Docker
 
-Se alguma dessas portas estiver ocupada, feche o processo antigo ou use o `iniciar.bat`.
+Se alguma dessas portas estiver ocupada, feche o processo antigo ou use o `docs\deploy\iniciar.bat`.
 
 ## Comandos uteis
 
@@ -225,7 +224,7 @@ Confirme se frontend e backend estao nas portas certas:
 - http://localhost:5173
 - http://localhost:3001/health
 
-Se necessario, pare tudo e rode `iniciar.bat`.
+Se necessario, pare tudo e rode `docs\deploy\iniciar.bat`.
 
 ## Observacoes para o time
 

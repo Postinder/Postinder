@@ -1,3 +1,4 @@
+import cors from 'cors'
 import express, { Express } from 'express'
 import path from 'path'
 import { requestLogger } from './shared/middlewares/requestLogger'
@@ -10,10 +11,20 @@ import { createUsersRoutes } from './modules/users/presentation/routes/users.rou
 import { createApprovalsRoutes, createFilesRoutes, createFeedbackRoutes } from './modules/approvals/presentation/routes/approvals.routes'
 import { createActivitiesRoutes } from './modules/activities/presentation/routes/activities.routes'
 import { pool } from './shared/database/pool'
+import { env } from './config/environment'
 
 export function createApp(): Express {
   const app = express()
 
+  const allowedOrigins = [
+    env.APP_PUBLIC_URL,
+    'http://localhost:5173',
+  ].filter(Boolean) as string[]
+
+  app.use(cors({
+    origin: allowedOrigins,
+    credentials: true,
+  }))
   app.use(express.json())
   app.use(requestLogger)
 

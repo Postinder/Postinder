@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react'
-import { Plus, ShieldCheck, UserPlus } from 'lucide-react'
+import { Plus, ShieldCheck } from 'lucide-react'
 import { createUser, fetchUsers } from '../../services/users.service'
 import { PERMISSION_SCREENS, ROLE_PERMISSIONS } from '../../utils/constants'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Input, { Select } from '../../components/ui/Input'
-import EmptyState from '../../components/ui/EmptyState'
-import Skeleton from '../../components/ui/Skeleton'
 import { Avatar } from '../../components/ui/Badge'
+import PageHeader from '../../components/ui/PageHeader'
 import toast from 'react-hot-toast'
 
 const ROLE_STYLES = {
@@ -71,7 +70,7 @@ export default function UsersPage() {
       setUsers(current => [user, ...current])
       setShowNew(false)
       setForm({ name: '', email: '', password: '', role: 'manager', permissions: ROLE_PERMISSIONS.manager })
-      toast.success(`Usuário ${form.name} criado!`)
+      toast.success(`Usuario ${form.name} criado!`)
     } catch (e) {
       toast.error(e.message)
     } finally {
@@ -81,37 +80,18 @@ export default function UsersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <ShieldCheck size={20} className="text-mag-500" />
-          <h1 className="text-xl font-bold">Usuários do sistema</h1>
-        </div>
-        <Button size="sm" icon={<Plus size={14} />} onClick={() => setShowNew(true)}>Novo Usuário</Button>
-      </div>
+      <PageHeader
+        icon={ShieldCheck}
+        title="Usuarios do sistema"
+        actions={<Button size="sm" icon={<Plus size={14} />} onClick={() => setShowNew(true)}>Novo Usuario</Button>}
+      />
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map(item => (
-            <Card key={item} className="p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <Skeleton className="h-11 w-11 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-5 w-20 rounded-full" />
-                </div>
-              </div>
-              <Skeleton className="h-6 w-full" />
-            </Card>
-          ))}
-        </div>
+        <div className="text-center py-16 text-neutral-400">Carregando...</div>
       ) : users.length === 0 ? (
-        <EmptyState
-          icon={<UserPlus size={34} />}
-          title="Nenhum usuario cadastrado"
-          description="Crie usuários internos para organizar acessos e permissões do sistema."
-          action={<Button size="sm" icon={<Plus size={14} />} onClick={() => setShowNew(true)}>Novo Usuário</Button>}
-        />
+        <Card className="p-12 text-center text-neutral-400">
+          <p className="text-sm">Nenhum usuario cadastrado.</p>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {users.map(user => {
@@ -147,7 +127,7 @@ export default function UsersPage() {
         </div>
       )}
 
-      <Modal open={showNew} onClose={() => setShowNew(false)} title="Novo Usuário" subtitle="Defina o perfil e as telas que este usuário poderá acessar.">
+      <Modal open={showNew} onClose={() => setShowNew(false)} title="Novo Usuario" subtitle="Defina o perfil e as telas que este usuario podera acessar.">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Input label="Nome completo *" value={form.name} onChange={e => set('name', e.target.value)} />
@@ -156,7 +136,7 @@ export default function UsersPage() {
             <Select label="Perfil" value={form.role} onChange={e => handleRoleChange(e.target.value)}>
               <option value="admin">Admin - acesso total</option>
               <option value="manager">Manager - acesso operacional</option>
-              <option value="editor">Editor - conteúdo e aprovações</option>
+              <option value="editor">Editor - conteudo e aprovacoes</option>
               <option value="viewer">Viewer - somente leitura</option>
             </Select>
           </div>

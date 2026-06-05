@@ -4,7 +4,7 @@ import { CheckCircle, XCircle, RotateCcw, FileText, Mail, X } from 'lucide-react
 import { useAuthStore } from '../../store/authStore'
 import { fetchClientQueue, approveFile, rejectFile, submitClientFeedback } from '../../services/approvals.service'
 import { REJECTION_TAGS } from '../../utils/constants'
-import { StatusDot, getStatusDotClass } from '../../components/ui/Badge'
+import { resolveMediaUrl } from '../../utils/mediaUrl'
 import toast from 'react-hot-toast'
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -24,6 +24,7 @@ function MediaPreview({ file, isEmail, post, compact = false }) {
   const ft = (file?.file_type || '').toUpperCase()
   const name = file?.name || ''
   const h = compact ? 'min-h-[120px]' : 'min-h-[260px]'
+  const mediaUrl = resolveMediaUrl(file?.storage_url || file?.url)
 
   if (isEmail) return (
     <div className={`flex flex-col items-center justify-center gap-3 p-6 bg-blue-950/30 ${h}`}>
@@ -39,7 +40,7 @@ function MediaPreview({ file, isEmail, post, compact = false }) {
     <div className={`bg-black flex items-center justify-center ${h}`}>
       {compact
         ? <span className="text-4xl">🎬</span>
-        : <video src={file?.storage_url} controls className="w-full max-h-[400px] outline-none" preload="metadata" />
+        : <video src={mediaUrl} controls className="w-full max-h-[400px] outline-none" preload="metadata" />
       }
     </div>
   )
@@ -47,7 +48,7 @@ function MediaPreview({ file, isEmail, post, compact = false }) {
   if (ft === 'AUDIO' || /\.(mp3|wav|ogg|aac|flac)$/i.test(name)) return (
     <div className={`flex flex-col items-center justify-center gap-3 bg-purple-950/30 ${h}`}>
       <span className="text-5xl">🎵</span>
-      {!compact && <audio src={file?.storage_url} controls className="w-full max-w-xs px-4" />}
+      {!compact && <audio src={mediaUrl} controls className="w-full max-w-xs px-4" />}
       <p className="text-xs text-purple-300 px-4 text-center truncate max-w-full">{name}</p>
     </div>
   )
@@ -56,8 +57,8 @@ function MediaPreview({ file, isEmail, post, compact = false }) {
     <div className={`flex flex-col items-center justify-center gap-3 bg-orange-950/30 ${h}`}>
       <FileText size={compact ? 32 : 52} className="text-orange-400" />
       <p className="text-sm font-medium text-center px-4 line-clamp-2">{name}</p>
-      {!compact && file?.storage_url &&
-        <a href={file.storage_url} target="_blank" rel="noopener noreferrer"
+      {!compact && mediaUrl &&
+        <a href={mediaUrl} target="_blank" rel="noopener noreferrer"
           className="bg-orange-500 text-white px-5 py-2 rounded-lg text-sm font-semibold">
           ⬇ Abrir PDF
         </a>
@@ -66,14 +67,14 @@ function MediaPreview({ file, isEmail, post, compact = false }) {
   )
 
   if (ft === 'IMAGE' || /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(name)) {
-    if (!imgErr && file?.storage_url) return (
-      <img src={file.storage_url} alt={name} onError={() => setImgErr(true)}
+    if (!imgErr && mediaUrl) return (
+      <img src={mediaUrl} alt={name} onError={() => setImgErr(true)}
         className={`w-full object-contain bg-neutral-900 ${compact ? 'h-[120px]' : 'max-h-[400px]'}`} />
     )
   }
 
-  if (!imgErr && file?.storage_url && ft !== 'DOC' && ft !== 'SHEET' && ft !== 'PPTX') return (
-    <img src={file.storage_url} alt={name} onError={() => setImgErr(true)}
+  if (!imgErr && mediaUrl && ft !== 'DOC' && ft !== 'SHEET' && ft !== 'PPTX') return (
+    <img src={mediaUrl} alt={name} onError={() => setImgErr(true)}
       className={`w-full object-contain bg-neutral-900 ${compact ? 'h-[120px]' : 'max-h-[400px]'}`} />
   )
 
@@ -385,9 +386,9 @@ export default function ClientSwipePage() {
 
   // Stat pill config
   const stats = [
-    { key: 'pending', count: pendingCount,          label: 'pendente',  labelPlural: 'pendentes' },
-    { key: 'approved', count: approvedItems.length,   label: 'aprovado',  labelPlural: 'aprovados' },
-    { key: 'rejected', count: rejectedItems.length,   label: 'recusado',  labelPlural: 'recusados' },
+    { key: 'pending',  dot: 'bg-amber-400', count: pendingCount,          label: 'pendente',  labelPlural: 'pendentes' },
+    { key: 'approved', dot: 'bg-green-500', count: approvedItems.length,   label: 'aprovado',  labelPlural: 'aprovados' },
+    { key: 'rejected', dot: 'bg-red-500',   count: rejectedItems.length,   label: 'recusado',  labelPlural: 'recusados' },
   ]
 
   const drawerMeta = {
@@ -411,7 +412,7 @@ export default function ClientSwipePage() {
         {stats.map(s => (
           <button key={s.key} onClick={() => setDrawer(s.key)}
             className="flex items-center gap-1.5 bg-white dark:bg-neutral-900 rounded-full px-3.5 py-1.5 text-sm font-medium shadow-sm border border-neutral-200 dark:border-neutral-800 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors active:scale-95">
-            <StatusDot status={s.key} className="h-2 w-2" />
+            <span className={`w-2 h-2 rounded-full ${s.dot}`} />
             <strong>{s.count}</strong>
             <span className="text-neutral-400">{s.count === 1 ? s.label : s.labelPlural}</span>
           </button>
@@ -438,11 +439,11 @@ export default function ClientSwipePage() {
           {/* Summary stats */}
           <div className="flex gap-3 mb-6">
             {[
-              { status: 'approved', count: approvedItems.length, label: 'aprovados' },
-              { status: 'rejected', count: rejectedItems.length, label: 'recusados' },
+              { color: 'bg-green-500', count: approvedItems.length, label: 'aprovados' },
+              { color: 'bg-red-500',   count: rejectedItems.length, label: 'recusados' },
             ].filter(s => s.count > 0).map(s => (
               <div key={s.label} className="flex items-center gap-1.5 bg-white dark:bg-neutral-900 rounded-full px-4 py-2 shadow border border-neutral-200 dark:border-neutral-800 text-sm font-medium">
-                <span className={`w-2.5 h-2.5 rounded-full ${getStatusDotClass(s.status)}`} />
+                <span className={`w-2.5 h-2.5 rounded-full ${s.color}`} />
                 <strong>{s.count}</strong> {s.label}
               </div>
             ))}
