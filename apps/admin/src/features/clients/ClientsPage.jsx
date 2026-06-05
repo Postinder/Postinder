@@ -17,7 +17,7 @@ const DOC_MASK = {
   cnpj: v => { v=v.replace(/\D/g,'').slice(0,14); if(v.length>12)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8,12)+'-'+v.slice(12); if(v.length>8)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8); if(v.length>5)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5); if(v.length>2)return v.slice(0,2)+'.'+v.slice(2); return v },
 }
 
-function ClientCard({ client, posts, onEdit, onDelete, onViewPosts }) {
+function ClientCard({ client, posts, onEdit, onDelete, onViewPosts, onViewDetails }) {
   const cp  = posts.filter(p => p.client_id === client.id)
   const apv = cp.filter(p => computePostStatus(p) === 'approved').length
   const pnd = cp.filter(p => computePostStatus(p) === 'pending_approval').length
@@ -70,6 +70,9 @@ function ClientCard({ client, posts, onEdit, onDelete, onViewPosts }) {
       <div className="flex gap-2 flex-wrap">
         <button onClick={openWA} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-green-500/20">
           <MessageCircle size={12}/> WhatsApp
+        </button>
+        <button onClick={() => onViewDetails(client.id)} className="text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-teal-400 hover:text-teal-500 transition-all">
+          Detalhes
         </button>
         <button onClick={() => onViewPosts(client.id)} className="flex-1 text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-mag-400 hover:text-mag-500 transition-all">
           <Eye size={12} className="inline mr-1"/> Ver posts
@@ -183,7 +186,7 @@ function VCFImport({ open, onClose, onImport }) {
             </table>
           </div>
           <div className="flex gap-3 mt-4">
-            <Button onClick={handleImport} className="flex-1 justify-center">⬆ Importar selecionados</Button>
+            <Button onClick={handleImport} className="flex-1 justify-center">Importar selecionados</Button>
             <Button variant="secondary" onClick={onClose}>Cancelar</Button>
           </div>
         </>
@@ -244,12 +247,16 @@ export default function ClientsPage() {
     navigate(`/admin/dashboard?client=${clientId}`)
   }
 
+  function viewDetails(clientId) {
+    navigate(`/admin/clients/${clientId}`)
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
         icon={Users}
         title={<>Clientes cadastrados <span className="text-neutral-400 font-semibold text-base">({clients.length})</span></>}
-        subtitle="Gerencie acessos, contatos e aprovacoes por cliente."
+        subtitle="Gerencie acessos, contatos e aprovações por cliente."
         actions={
           <>
             <Button variant="secondary" size="md" icon={<Upload size={15}/>} onClick={()=>setShowVCF(true)}>Importar VCF</Button>
@@ -271,7 +278,7 @@ export default function ClientsPage() {
         <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-4">
           {clients.map(c => (
             <ClientCard key={c.id} client={c} posts={posts}
-              onEdit={setEditClient} onDelete={handleDelete} onViewPosts={viewPosts} />
+              onEdit={setEditClient} onDelete={handleDelete} onViewPosts={viewPosts} onViewDetails={viewDetails} />
           ))}
         </div>
       )}
