@@ -23,6 +23,24 @@ function RequireAdmin({ children }) {
   if (!user || user.type !== 'admin') return <Navigate to="/login" replace />
   return children
 }
+
+function RequireRole({ children, screen, roles }) {
+  const { user } = useAuthStore()
+  if (!user) return <Navigate to="/login" replace />
+  const isAdmin  = user.role === 'admin'
+  const isGestor = user.role === 'gestor'
+  const isEquipe = user.role === 'equipe'
+
+  // Admin and gestor always have access (unless adminOnly)
+  if (roles === 'adminOnly' && !isAdmin) return <Navigate to="/admin/dashboard" replace />
+  if (isAdmin || isGestor) return children
+
+  // Equipe: check individual permissions
+  if (isEquipe && screen && (user.permissions || []).includes(screen)) return children
+
+  return <Navigate to="/admin/dashboard" replace />
+}
+
 function RequireClient({ children }) {
   const { user } = useAuthStore()
   if (!user || user.type !== 'client') return <Navigate to="/login" replace />
@@ -41,15 +59,15 @@ export default function App() {
       <Route path="/recover" element={<RecoverPage />} />
       <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
         <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="clients" element={<ClientsPage />} />
-        <Route path="posts/new" element={<NewPostPage />} />
-        <Route path="approvals" element={<ApprovalsPage />} />
-        <Route path="feed" element={<FeedPreviewPage />} />
-        <Route path="insights" element={<InsightsPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="email" element={<EmailPage />} />
-        <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="dashboard"    element={<DashboardPage />} />
+        <Route path="clients"      element={<RequireRole screen="clients"    roles="adminOrGestor"><ClientsPage /></RequireRole>} />
+        <Route path="posts/new"    element={<RequireRole screen="posts/new"                      ><NewPostPage /></RequireRole>} />
+        <Route path="approvals"    element={<RequireRole screen="approvals"                      ><ApprovalsPage /></RequireRole>} />
+        <Route path="feed"         element={<RequireRole screen="feed"                           ><FeedPreviewPage /></RequireRole>} />
+        <Route path="insights"     element={<RequireRole screen="insights"   roles="adminOrGestor"><InsightsPage /></RequireRole>} />
+        <Route path="users"        element={<RequireRole                     roles="adminOnly"    ><UsersPage /></RequireRole>} />
+        <Route path="email"        element={<RequireRole                     roles="adminOrGestor"><EmailPage /></RequireRole>} />
+        <Route path="integrations" element={<RequireRole                     roles="adminOrGestor"><IntegrationsPage /></RequireRole>} />
       </Route>
       <Route path="/aprovar" element={<RequireClient><ClientLayout /></RequireClient>}>
         <Route index element={<ClientSwipePage />} />
