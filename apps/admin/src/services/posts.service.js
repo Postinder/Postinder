@@ -6,17 +6,22 @@ export async function fetchPosts(filters) {
 }
 
 export async function createPost(postData, files = []) {
-  const { data: post } = await apiClient.post('/posts', postData)
+  try {
+    const { data: post } = await apiClient.post('/posts', postData)
 
-  if (files.length > 0) {
-    const formData = new FormData()
-    files.forEach(file => formData.append('files', file))
-    await apiClient.post(`/posts/${post.id}/files`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    if (files.length > 0) {
+      const formData = new FormData()
+      files.forEach(file => formData.append('files', file))
+      await apiClient.post(`/posts/${post.id}/files`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    }
+
+    return post
+  } catch (error) {
+    const message = error.response?.data?.error || error.response?.data?.message || error.message
+    throw new Error(message)
   }
-
-  return post
 }
 
 export async function updatePost(postId, updates) {
