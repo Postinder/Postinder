@@ -7,6 +7,7 @@ import {
   Edit3,
   Eye,
   FilePlus,
+  ImageIcon,
   Filter,
   FolderKanban,
   Plus,
@@ -90,6 +91,91 @@ function getPostChannels(post) {
   return post.channels || []
 }
 
+function getAttachmentName(file) {
+  return file?.name || file?.original_name || file?.originalName || file?.file?.name || 'Arquivo'
+}
+
+function getAttachmentType(file) {
+  return file?.file_type || file?.fileType || file?.type || file?.file?.type || ''
+}
+
+function isImageAttachment(file) {
+  const type = String(getAttachmentType(file)).toLowerCase()
+  const name = getAttachmentName(file)
+  return type.startsWith('image/') || type === 'image' || /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(name)
+}
+
+function getAttachmentPreviewUrl(file) {
+  if (file?.file instanceof File) return URL.createObjectURL(file.file)
+  return resolveMediaUrl(file?.storage_url || file?.url)
+}
+
+function CompactFeedPreview({ form, channels, files }) {
+  const activeChannels = Object.keys(channels)
+  const firstFile = files[0]
+  const previewUrl = getAttachmentPreviewUrl(firstFile)
+  const image = firstFile && isImageAttachment(firstFile)
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-4 py-3 dark:border-neutral-800">
+        <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-900 dark:text-white">
+          <ImageIcon size={16} className="text-mag-500" />
+          Previa rapida do feed
+        </div>
+        <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
+          {files.length || 0} arquivo(s)
+        </span>
+      </div>
+
+      <div className="p-4">
+        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950">
+          <div className="relative flex aspect-square max-h-64 items-center justify-center">
+            {image && previewUrl ? (
+              <img src={previewUrl} alt={getAttachmentName(firstFile)} className="h-full w-full object-cover" />
+            ) : firstFile ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
+                <FilePlus size={28} />
+                <span className="max-w-[80%] truncate text-xs font-bold">{getAttachmentName(firstFile)}</span>
+              </div>
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
+                <ImageIcon size={28} />
+                <span className="text-xs font-bold">Sem arquivo</span>
+              </div>
+            )}
+            {files.length > 1 ? (
+              <span className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-black text-white">
+                1/{files.length}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <div className="line-clamp-2 text-sm font-extrabold text-neutral-950 dark:text-white">
+            {form.title || 'Titulo da postagem'}
+          </div>
+          <p className="line-clamp-3 whitespace-pre-line text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+            {form.caption || 'Legenda da postagem aparecera aqui enquanto voce edita.'}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {activeChannels.length ? activeChannels.map(channel => (
+              <span key={channel} className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
+                {CHANNELS[channel]?.icon} {channel}
+              </span>
+            )) : (
+              <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-bold text-neutral-400 dark:bg-neutral-800">
+                Sem canais
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EditPostModal({ post, clients, open, onClose, onSaved }) {
   const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', funnelTag: '' })
   const [channels, setChannels] = useState({})
@@ -122,6 +208,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
   const status = computePostStatus(post)
   const isApproved = status === 'approved'
   const isSent = ['sent', 'pending_approval'].includes(status)
+  const previewFiles = [...existingFiles, ...files]
 
   async function handleSave() {
     if (isApproved && !confirm('Este post ja foi aprovado. Deseja alterar mesmo assim?')) return
@@ -177,15 +264,21 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Select label="Cliente" value={form.clientId} onChange={event => setForm(current => ({ ...current, clientId: event.target.value }))}>
-            {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
-          </Select>
-          <Input label="Data planejada" type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} />
-        </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select label="Cliente" value={form.clientId} onChange={event => setForm(current => ({ ...current, clientId: event.target.value }))}>
+                {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </Select>
+              <Input label="Data planejada" type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} />
+            </div>
 
-        <Input label="Titulo" value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
-        <Textarea label="Legenda / texto" value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} />
+            <Input label="Titulo" value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
+            <Textarea label="Legenda / texto" value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} />
+          </div>
+
+          <CompactFeedPreview form={form} channels={channels} files={previewFiles} />
+        </div>
 
         <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Tag de funil</label>
