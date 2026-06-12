@@ -51,12 +51,28 @@ export class ClientRepository {
   async findById(id: string, companyId?: string) {
     try {
       const params: any[] = [id]
-      let sql = `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, created_at, updated_at
-         FROM clients WHERE id = $1 AND is_active = true`
+      let sql = `
+        SELECT
+          c.id,
+          c.name,
+          c.email,
+          c.whatsapp,
+          c.segment,
+          c.color,
+          c.deadline_days,
+          c.company_id,
+          c.is_active,
+          COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
+          c.created_at,
+          c.updated_at
+        FROM clients c
+        LEFT JOIN client_portal_tokens t ON t.client_id = c.id
+        WHERE c.id = $1 AND c.is_active = true`
       if (companyId) {
         params.push(companyId)
-        sql += ` AND company_id = $${params.length}`
+        sql += ` AND c.company_id = $${params.length}`
       }
+      sql += ` GROUP BY c.id`
       const result = await query(
         sql,
         params,
@@ -99,7 +115,7 @@ export class ClientRepository {
   async findByEmail(email: string) {
     try {
       const result = await query(
-        `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, created_at, updated_at
+        `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, last_access_at, created_at, updated_at
          FROM clients WHERE email = $1 AND is_active = true`,
         [email]
       )
@@ -122,8 +138,10 @@ export class ClientRepository {
           c.color,
           c.deadline_days,
           c.company_id,
+          COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
           c.created_at
         FROM clients c
+        LEFT JOIN client_portal_tokens t ON t.client_id = c.id
         WHERE c.is_active = true`
       const params: any[] = []
 
@@ -132,7 +150,7 @@ export class ClientRepository {
         params.push(companyId)
       }
 
-      sql += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+      sql += ` GROUP BY c.id ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
       params.push(limit)
       params.push(offset)
 

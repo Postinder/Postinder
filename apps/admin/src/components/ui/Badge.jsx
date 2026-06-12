@@ -2,10 +2,13 @@ import clsx from 'clsx'
 
 const statusStyles = {
   draft:            'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400',
+  ready:            'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
+  sent:             'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
   pending:          'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
   pending_approval: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
   approved:         'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300',
   rejected:         'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
+  archived:         'bg-neutral-100 text-neutral-400 dark:bg-neutral-900 dark:text-neutral-500',
   updated:          'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
   delivered:        'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
   completed:        'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
@@ -16,8 +19,10 @@ const statusStyles = {
 }
 
 const statusLabels = {
-  draft: 'Rascunho', pending: 'Pendente', pending_approval: 'Aguardando',
+  draft: 'Rascunho', ready: 'Pronto', sent: 'Enviado',
+  pending: 'Pendente', pending_approval: 'Aguardando',
   approved: 'Aprovado', rejected: 'Recusado',
+  archived: 'Arquivado',
   updated: 'Atualizado', delivered: 'Entregue',
   completed: 'Concluido', concluded: 'Concluido',
   topo: 'Topo', meio: 'Meio', fundo: 'Fundo',
@@ -25,10 +30,13 @@ const statusLabels = {
 
 const statusDots = {
   draft: 'bg-neutral-300',
+  ready: 'bg-blue-500',
+  sent: 'bg-amber-400',
   pending: 'bg-amber-400',
   pending_approval: 'bg-amber-400',
   approved: 'bg-green-500',
   rejected: 'bg-red-500',
+  archived: 'bg-neutral-400',
   updated: 'bg-blue-500',
   delivered: 'bg-blue-500',
   completed: 'bg-blue-500',

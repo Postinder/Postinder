@@ -33,6 +33,8 @@ export class AuthService {
     const valid = await bcryptjs.compare(dto.password, client.password_hash)
     if (!valid) throw new UnauthorizedException('Invalid credentials')
 
+    await this.userRepository.updateClientLastAccess(client.id).catch(() => {})
+
     return this.buildClientTokens(client)
   }
 

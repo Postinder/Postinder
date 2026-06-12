@@ -24,6 +24,11 @@ export async function notifyClient(clientId) {
   return data
 }
 
+export async function generateClientPortalLink(clientId, days = 15) {
+  const { data } = await apiClient.post(`/clients/${clientId}/portal-link`, { days })
+  return data
+}
+
 export function parseVCFText(text) {
   const contacts = []
   const vcfEntries = text.split('BEGIN:VCARD')

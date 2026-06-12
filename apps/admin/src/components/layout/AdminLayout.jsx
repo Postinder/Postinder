@@ -95,6 +95,7 @@ export default function AdminLayout() {
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-3 pb-1">Principal</div>
         {canAccess('dashboard') && <NavItem to="/admin/dashboard"  icon={LayoutDashboard} label="Dashboard" />}
         {canAccess('clients') && <NavItem to="/admin/clients"    icon={Users}           label="Clientes" />}
+        {canAccess('posts') && <NavItem to="/admin/posts" icon={Grid} label="Postagens" />}
         {canAccess('posts/new') && <NavItem to="/admin/posts/new"  icon={PlusSquare}      label="Nova Postagem" />}
         {canAccess('approvals') && <NavItem to="/admin/approvals"  icon={CheckCircle}     label="Aprovações" />}
         {canAccess('feed') && <NavItem to="/admin/feed"       icon={Grid}            label="Prévia do Feed" />}

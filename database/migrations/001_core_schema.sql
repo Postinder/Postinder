@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS files (
   original_name VARCHAR(255),
   file_type VARCHAR(50),
   status VARCHAR(50) DEFAULT 'pending',
+  sort_order INTEGER,
   rejection_reason TEXT,
   rejection_tags TEXT[],
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -98,6 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_client_id ON posts(client_id);
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
 CREATE INDEX IF NOT EXISTS idx_posts_company_id ON posts(company_id);
 CREATE INDEX IF NOT EXISTS idx_files_post_id ON files(post_id);
+CREATE INDEX IF NOT EXISTS idx_files_post_sort_order ON files(post_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
 CREATE INDEX IF NOT EXISTS idx_feedback_client_id ON feedback(client_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

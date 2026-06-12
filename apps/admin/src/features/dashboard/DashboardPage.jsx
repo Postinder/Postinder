@@ -130,7 +130,7 @@ function getActivityTone(type, fallback = 'neutral') {
   return fallback
 }
 
-function buildRecentActivities(posts, clients, clientFilter, backendActivities = []) {
+function buildRecentActivities(posts, clients, clientFilter, backendActivities = [], limit = 50) {
   const activities = []
   const clientById = new Map(clients.map(client => [client.id, client]))
   const isCurrentClient = id => !clientFilter || id === clientFilter
@@ -229,7 +229,7 @@ function buildRecentActivities(posts, clients, clientFilter, backendActivities =
   return activities
     .filter(item => item.date)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 6)
+    .slice(0, limit)
 }
 
 function getActivityToneClass(tone) {
@@ -385,6 +385,8 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setSF] = useState('all')
   const [sortBy, setSortBy] = useState('updated')
+  const [activityLimit, setActivityLimit] = useState(5)
+  const [activityPage, setActivityPage] = useState(1)
   const [editPost, setEditPost] = useState(null)
 
   const clientFilter = searchParams.get('client') || ''
@@ -396,7 +398,7 @@ export default function DashboardPage() {
   }
 
   const load = useCallback(() => {
-    Promise.all([fetchPosts(), fetchClients(), fetchActivities({ limit: 30 })])
+    Promise.all([fetchPosts(), fetchClients(), fetchActivities({ limit: 50 })])
       .then(([p, c, a]) => { setPosts(p); setClients(c); setActivities(a) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -460,9 +462,30 @@ export default function DashboardPage() {
     ...metric,
     trend: getWeeklyTrend(posts, metric.key, clientFilter),
   }))
-  const recentActivities = buildRecentActivities(posts, clients, clientFilter, activities)
+  useEffect(() => {
+    setActivityPage(1)
+  }, [clientFilter, activityLimit])
+
+  const recentActivities = buildRecentActivities(posts, clients, clientFilter, activities, 50)
+  const activityTotalPages = Math.max(1, Math.ceil(recentActivities.length / activityLimit))
+  const currentActivityPage = Math.min(activityPage, activityTotalPages)
+  const visibleActivities = recentActivities.slice((currentActivityPage - 1) * activityLimit, currentActivityPage * activityLimit)
 
   const activeStatus = STATUS_OPTIONS.find(s => s.key === statusFilter)?.label || 'Todos'
+
+  function openPostsFromMetric(statusKey) {
+    const params = new URLSearchParams()
+    if (clientFilter) params.set('client', clientFilter)
+
+    if (statusKey === 'approved') {
+      params.set('view', 'completed')
+    } else if (statusKey !== 'all') {
+      params.set('status', statusKey)
+    }
+
+    const query = params.toString()
+    navigate(`/admin/posts${query ? `?${query}` : ''}`)
+  }
 
   return (
     <div>
@@ -478,88 +501,16 @@ export default function DashboardPage() {
           ) : 'Dashboard'
         }
         actions={!isReadOnly ? (
-          <Button size="md" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')} className="px-5 shadow-sm shadow-mag-500/20">
-            Nova Postagem
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="md" variant="secondary" onClick={() => navigate('/admin/posts')}>
+              Gerenciar postagens
+            </Button>
+            <Button size="md" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')} className="px-5 shadow-sm shadow-mag-500/20">
+              Nova Postagem
+            </Button>
+          </div>
         ) : null}
       />
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {metricCards.map(m => (
-          <button
-            key={m.key}
-            onClick={() => setSF(statusFilter === m.key ? 'all' : m.key)}
-            className={`group text-left p-5 rounded-xl border bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-neutral-900/5 dark:bg-neutral-900 dark:hover:shadow-black/20 ${statusFilter === m.key ? 'border-mag-500 shadow-[inset_0_0_0_1px_#A7014B]' : 'border-neutral-200 dark:border-neutral-800 hover:border-mag-300 dark:hover:border-mag-500/60'}`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">{m.label}</div>
-                <div className={`text-4xl font-extrabold ${m.color}`}>{m.value}</div>
-              </div>
-              <span className={`mt-1 h-2.5 w-2.5 rounded-full ${statusFilter === m.key ? 'bg-mag-500' : 'bg-neutral-200 dark:bg-neutral-700 group-hover:bg-neutral-300 dark:group-hover:bg-neutral-600'}`} />
-            </div>
-            <div className="mt-3 text-xs text-neutral-400">{m.description}</div>
-            <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${getTrendClass(m.trend.tone)}`}>
-              {m.trend.text}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <Card className="mb-4 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-300">
-              <Activity size={17} />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-neutral-900 dark:text-white">Atividade recente</div>
-              <div className="mt-0.5 text-xs text-neutral-400">
-                {activeClient ? `Últimos eventos de ${activeClient.name}` : 'Últimos eventos do sistema'}
-              </div>
-            </div>
-          </div>
-          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
-            {recentActivities.length} evento{recentActivities.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        {loading ? (
-          <div className="space-y-3 p-4">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="flex items-center gap-3">
-                <Skeleton className="h-9 w-9 rounded-lg" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-3 w-40" />
-                  <Skeleton className="h-2 w-64" />
-                </div>
-                <Skeleton className="h-3 w-16" />
-              </div>
-            ))}
-          </div>
-        ) : recentActivities.length ? (
-          <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {recentActivities.map(item => {
-              const Icon = item.icon
-              return (
-                <div key={item.id} className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900/70">
-                  <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${getActivityToneClass(item.tone)}`}>
-                    <Icon size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">{item.title}</div>
-                    <div className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">{item.description}</div>
-                  </div>
-                  <div className="shrink-0 text-[11px] font-medium text-neutral-400">{formatActivityTime(item.date)}</div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="p-6 text-center text-sm text-neutral-400">
-            Nenhuma atividade recente encontrada para este filtro.
-          </div>
-        )}
-      </Card>
 
       <Card className="mb-4">
         <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-900 px-4 py-3">
@@ -614,6 +565,127 @@ export default function DashboardPage() {
             </Select>
           </label>
         </div>
+      </Card>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        {metricCards.map(m => (
+          <button
+            key={m.key}
+            onClick={() => openPostsFromMetric(m.key)}
+            className="group text-left p-5 rounded-xl border bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-mag-300 hover:shadow-lg hover:shadow-neutral-900/5 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-mag-500/60 dark:hover:shadow-black/20"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">{m.label}</div>
+                <div className={`text-4xl font-extrabold ${m.color}`}>{m.value}</div>
+              </div>
+              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-neutral-200 transition-colors group-hover:bg-mag-500 dark:bg-neutral-700" />
+            </div>
+            <div className="mt-3 text-xs text-neutral-400">{m.description}</div>
+            <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${getTrendClass(m.trend.tone)}`}>
+              {m.trend.text}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <Card className="mb-4 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-300">
+              <Activity size={17} />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-neutral-900 dark:text-white">Atividade recente</div>
+              <div className="mt-0.5 text-xs text-neutral-400">
+                {activeClient ? `Últimos eventos de ${activeClient.name}` : 'Últimos eventos do sistema'}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
+              {recentActivities.length} evento{recentActivities.length !== 1 ? 's' : ''}
+            </span>
+            <Select value={activityLimit} onChange={event => setActivityLimit(Number(event.target.value))} className="w-28">
+              <option value={5}>5 itens</option>
+              <option value={10}>10 itens</option>
+            </Select>
+          </div>
+        </div>
+        {loading ? (
+          <div className="space-y-3 p-4">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-9 w-9 rounded-lg" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-3 w-40" />
+                  <Skeleton className="h-2 w-64" />
+                </div>
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : recentActivities.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-sm">
+              <thead>
+                <tr className="border-b border-neutral-100 bg-neutral-50/60 dark:border-neutral-800 dark:bg-neutral-900/80">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Evento</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Detalhe</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Quando</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {visibleActivities.map(item => {
+                  const Icon = item.icon
+                  return (
+                    <tr key={item.id} className="transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900/70">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${getActivityToneClass(item.tone)}`}>
+                            <Icon size={15} />
+                          </div>
+                          <span className="font-semibold text-neutral-900 dark:text-white">{item.title}</span>
+                        </div>
+                      </td>
+                      <td className="max-w-[340px] px-4 py-3">
+                        <div className="truncate text-neutral-500 dark:text-neutral-400">{item.description}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs font-semibold text-neutral-400">{formatActivityTime(item.date)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-4 py-3 text-xs font-semibold text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+              <span>
+                Página {currentActivityPage} de {activityTotalPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActivityPage(page => Math.max(1, page - 1))}
+                  disabled={currentActivityPage <= 1}
+                  className="rounded-lg border border-neutral-200 px-3 py-1.5 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700"
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActivityPage(page => Math.min(activityTotalPages, page + 1))}
+                  disabled={currentActivityPage >= activityTotalPages}
+                  className="rounded-lg border border-neutral-200 px-3 py-1.5 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700"
+                >
+                  Próxima
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 text-center text-sm text-neutral-400">
+            Nenhuma atividade recente encontrada para este filtro.
+          </div>
+        )}
       </Card>
 
       <Card>

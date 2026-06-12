@@ -3,21 +3,20 @@ import { useEffect } from 'react'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './store/authStore'
 import AdminLayout from './components/layout/AdminLayout'
-import ClientLayout from './components/layout/ClientLayout'
 import LoginPage from './features/auth/LoginPage'
 import RecoverPage from './features/auth/RecoverPage'
 import DashboardPage from './features/dashboard/DashboardPage'
 import ClientsPage from './features/clients/ClientsPage'
 import ClientDetailsPage from './features/clients/ClientDetailsPage'
 import NewPostPage from './features/posts/NewPostPage'
+import ManagePostsPage from './features/posts/ManagePostsPage'
 import ApprovalsPage from './features/approvals/ApprovalsPage'
 import FeedPreviewPage from './features/posts/FeedPreviewPage'
 import InsightsPage from './features/insights/InsightsPage'
 import UsersPage from './features/users/UsersPage'
 import EmailPage from './features/settings/EmailPage'
 import IntegrationsPage from './features/settings/IntegrationsPage'
-import ClientSwipePage from './features/approvals/ClientSwipePage'
-import ClientSummary from './features/approvals/ClientSummary'
+import ClientPortalPage from './features/portal/ClientPortalPage'
 import { ROLE_PERMISSIONS } from './utils/constants'
 
 function getAllowedPermissions(user) {
@@ -68,6 +67,7 @@ export default function App() {
         <Route path="dashboard" element={<RequirePermission permission="dashboard"><DashboardPage /></RequirePermission>} />
         <Route path="clients" element={<RequirePermission permission="clients"><ClientsPage /></RequirePermission>} />
         <Route path="clients/:id" element={<RequirePermission permission="clients"><ClientDetailsPage /></RequirePermission>} />
+        <Route path="posts" element={<RequirePermission permission="posts"><ManagePostsPage /></RequirePermission>} />
         <Route path="posts/new" element={<RequirePermission permission="posts/new"><NewPostPage /></RequirePermission>} />
         <Route path="approvals" element={<RequirePermission permission="approvals"><ApprovalsPage /></RequirePermission>} />
         <Route path="feed" element={<RequirePermission permission="feed"><FeedPreviewPage /></RequirePermission>} />
@@ -76,10 +76,9 @@ export default function App() {
         <Route path="email" element={<RequirePermission permission="email"><EmailPage /></RequirePermission>} />
         <Route path="integrations" element={<RequirePermission permission="integrations"><IntegrationsPage /></RequirePermission>} />
       </Route>
-      <Route path="/aprovar" element={<RequireClient><ClientLayout /></RequireClient>}>
-        <Route index element={<ClientSwipePage />} />
-        <Route path="resumo" element={<ClientSummary />} />
-      </Route>
+      <Route path="/aprovar" element={<RequireClient><ClientPortalPage mode="auth" /></RequireClient>} />
+      <Route path="/aprovar/resumo" element={<Navigate to="/aprovar" replace />} />
+      <Route path="/portal/:token" element={<ClientPortalPage />} />
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

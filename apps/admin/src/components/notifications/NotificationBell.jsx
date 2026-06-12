@@ -25,11 +25,13 @@ function formatDate(value) {
 }
 
 function getNotificationIcon(notification) {
+  if (notification.type === 'correction') return CheckCircle
   return notification.type === 'rejected' ? XCircle : Clock
 }
 
 function getNotificationIconClass(notification) {
   if (notification.type === 'rejected') return 'text-red-500 bg-red-50 dark:bg-red-950/40'
+  if (notification.type === 'correction') return 'text-teal-500 bg-teal-50 dark:bg-teal-950/40'
   return 'text-amber-500 bg-amber-50 dark:bg-amber-950/40'
 }
 

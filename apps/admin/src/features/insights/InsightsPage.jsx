@@ -180,29 +180,11 @@ function PaginationControls({ page, pageSize, totalItems, onPageChange, onPageSi
   )
 }
 
-function PaginatedFeedbacksCard({ posts, clients, clientFilter }) {
+function PaginatedFeedbacksCard({ posts, clients, clientFilter, historicalFeedbacks = [] }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
 
-  const feedbackItems = posts
-    .filter(p =>
-      (p.files || []).some(f => f.feedbacks?.length > 0) &&
-      (!clientFilter || p.client_id === clientFilter)
-    )
-    .flatMap(p => {
-      const client = clients.find(c => c.id === p.client_id)
-      const ini = client ? client.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'
-
-      return (p.files || [])
-        .filter(f => f.feedbacks?.length)
-        .flatMap(f => f.feedbacks.map((fb, i) => ({
-          key: `${f.id}-${i}`,
-          post: p,
-          feedback: fb,
-          client,
-          initials: ini,
-        })))
-    })
+  const feedbackItems = getFileFeedbackItems(posts, clients, clientFilter, historicalFeedbacks)
 
   useEffect(() => {
     setPage(1)
@@ -233,6 +215,7 @@ function PaginatedFeedbacksCard({ posts, clients, clientFilter }) {
                     style={{ background: '#f4e6ed', color: '#A7014B' }}>{t}</span>
                 ))}
                 {item.feedback.comment && <span className="text-xs text-neutral-400 italic">"{item.feedback.comment}"</span>}
+                {!item.feedback.comment && <span className="text-xs text-neutral-400 italic">Sem comentario detalhado</span>}
               </div>
             </div>
           </div>
@@ -364,6 +347,199 @@ function getStatus(post) {
   return computePostStatus(post.files)
 }
 
+function getSubmittedDate(post) {
+  const value = post.submittedAt || post.submitted_at || post.createdAt || post.created_at
+  const date = new Date(value || 0)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getDecisionDate(post) {
+  const value = post.approvedAt || post.approved_at || post.updatedAt || post.updated_at
+  const date = new Date(value || 0)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getFeedbackPostId(feedback) {
+  return feedback.post_id || feedback.postId
+}
+
+function getHistoricalFeedbackDate(feedback) {
+  const date = new Date(feedback.created_at || feedback.createdAt || 0)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getHistoricalRejectedPostIds(posts, historicalFeedbacks = []) {
+  const postIds = new Set(posts.map(post => post.id))
+  const rejectedIds = new Set()
+
+  historicalFeedbacks.forEach(feedback => {
+    const postId = getFeedbackPostId(feedback)
+    if (postId && postIds.has(postId)) rejectedIds.add(postId)
+  })
+
+  posts.forEach(post => {
+    if ((post.files || []).some(file => file.rejection_reason || file.rejection_tags?.length || file.status === 'rejected')) {
+      rejectedIds.add(post.id)
+    }
+  })
+
+  return rejectedIds
+}
+
+function getFileName(file) {
+  return file?.name || file?.original_name || file?.originalName || file?.storage_url || file?.url || 'arquivo'
+}
+
+function getFileKey(postId, file) {
+  return `${postId}:${file?.id || getFileName(file)}`
+}
+
+function getHistoricalRejectedFileKeys(posts, historicalFeedbacks = []) {
+  const postById = new Map(posts.map(post => [post.id, post]))
+  const rejectedKeys = new Set()
+
+  posts.forEach(post => {
+    ;(post.files || []).forEach(file => {
+      if (file.status === 'rejected' || file.rejection_reason || file.rejection_tags?.length) {
+        rejectedKeys.add(getFileKey(post.id, file))
+      }
+    })
+  })
+
+  historicalFeedbacks.forEach(feedback => {
+    const postId = getFeedbackPostId(feedback)
+    const post = postById.get(postId)
+    if (!post) return
+    const rejectedFiles = Array.isArray(feedback.rejected_files) ? feedback.rejected_files : []
+
+    const validRejectedFiles = rejectedFiles.filter(item =>
+      item?.fileId || item?.file_id || item?.fileName || item?.file_name || (Array.isArray(item?.tags) && item.tags.length)
+    )
+
+    validRejectedFiles.forEach(item => {
+      const fileId = item.fileId || item.file_id
+      const fileName = item.fileName || item.file_name
+      const matchedFile = fileId
+        ? (post.files || []).find(file => file.id === fileId)
+        : (post.files || []).find(file => getFileName(file) === fileName)
+
+      if (matchedFile) rejectedKeys.add(getFileKey(post.id, matchedFile))
+      else if (fileName || fileId) rejectedKeys.add(`${post.id}:${fileId || fileName}`)
+    })
+
+    if (!validRejectedFiles.length && (feedback.text || feedback.tags?.length)) {
+      rejectedKeys.add(`${post.id}:historical-feedback:${feedback.id}`)
+    }
+  })
+
+  return rejectedKeys
+}
+
+function getFileFeedbackItems(posts, clients, clientFilter = '', historicalFeedbacks = []) {
+  const postById = new Map(posts.map(post => [post.id, post]))
+  const currentItems = posts
+    .filter(post => !clientFilter || getPostClientId(post) === clientFilter)
+    .flatMap(post => {
+      const client = clients.find(c => c.id === getPostClientId(post))
+      const initials = client ? client.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'
+
+      return (post.files || [])
+        .filter(file => file.rejection_reason || file.rejection_tags?.length)
+        .map(file => ({
+          key: `${post.id}-${file.id}`,
+          post,
+          file,
+          client,
+          initials,
+          feedback: {
+            tags: file.rejection_tags || [],
+            comment: file.rejection_reason || '',
+            created_at: file.updated_at || file.created_at || post.updatedAt || post.updated_at,
+          },
+        }))
+    })
+
+  const currentKeys = new Set(currentItems.map(item => `${item.post.id}-${item.feedback.comment}`))
+  const historicalItems = historicalFeedbacks
+    .filter(feedback => getFeedbackPostId(feedback))
+    .filter(feedback => !clientFilter || feedback.client_id === clientFilter || feedback.clientId === clientFilter)
+    .map(feedback => {
+      const post = postById.get(getFeedbackPostId(feedback)) || { id: getFeedbackPostId(feedback), title: feedback.post_title || feedback.postTitle || 'Postagem' }
+      const client = clients.find(c => c.id === (feedback.client_id || feedback.clientId)) || feedback.client
+      const initials = client ? client.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'
+      return {
+        key: `historical-${feedback.id}`,
+        post,
+        file: { name: 'Feedback historico' },
+        client,
+        initials,
+        feedback: {
+          tags: feedback.tags || [],
+          comment: feedback.text || '',
+          created_at: feedback.created_at || feedback.createdAt,
+        },
+      }
+    })
+    .filter(item => item.feedback.comment)
+    .filter(item => {
+      const key = `${item.post.id}-${item.feedback.comment}`
+      if (currentKeys.has(key)) return false
+      currentKeys.add(key)
+      return true
+    })
+
+  return [...currentItems, ...historicalItems]
+    .sort((a, b) => new Date(b.feedback.created_at || 0) - new Date(a.feedback.created_at || 0))
+}
+
+function getTagAnalysis(posts, historicalFeedbacks = []) {
+  const postsWithTag = new Map()
+  const rejectedPostIds = new Set()
+  const validPostIds = new Set(posts.map(post => post.id))
+
+  posts.forEach(post => {
+    const tags = new Set()
+    ;(post.files || []).forEach(file => {
+      ;(file.rejection_tags || []).forEach(tag => tags.add(tag))
+    })
+    if (!tags.size) return
+    rejectedPostIds.add(post.id)
+    tags.forEach(tag => {
+      if (!postsWithTag.has(tag)) postsWithTag.set(tag, new Set())
+      postsWithTag.get(tag).add(post.id)
+    })
+  })
+
+  historicalFeedbacks.forEach(feedback => {
+    const postId = getFeedbackPostId(feedback)
+    if (!postId || !validPostIds.has(postId)) return
+    const tags = Array.isArray(feedback.tags) ? feedback.tags.filter(Boolean) : []
+    if (!tags.length) return
+    rejectedPostIds.add(postId)
+    tags.forEach(tag => {
+      if (!postsWithTag.has(tag)) postsWithTag.set(tag, new Set())
+      postsWithTag.get(tag).add(postId)
+    })
+  })
+
+  const denominator = rejectedPostIds.size || 0
+  return Array.from(postsWithTag.entries())
+    .map(([label, postIds]) => ({
+      label,
+      count: postIds.size,
+      value: denominator ? Math.round((postIds.size / denominator) * 100) : 0,
+    }))
+    .sort((a, b) => b.value - a.value || b.count - a.count)
+}
+
+function formatAverageDuration(hours) {
+  if (!hours) return 'Sem dados'
+  if (hours < 24) return `${Math.round(hours)}h`
+  const days = Math.floor(hours / 24)
+  const rest = Math.round(hours % 24)
+  return rest ? `${days}d ${rest}h` : `${days}d`
+}
+
 function getActivityData(posts, period, periodRange) {
   if (period === 'week') {
     const labels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab']
@@ -465,6 +641,7 @@ export default function InsightsPage() {
   const [clients, setClients] = useState([])
   const [posts, setPosts]     = useState([])
   const [feedbacks, setFeedbacks] = useState([])
+  const [historicalFeedbacks, setHistoricalFeedbacks] = useState([])
   const [metricsClientFilter, setMetricsClientFilter] = useState(savedFilters.metricsClientFilter || '')
   const [fbFilter, setFbFilter]   = useState(savedFilters.fbFilter || '')
   const [fbClientFilter, setFbClientFilter] = useState(savedFilters.fbClientFilter || '')
@@ -474,8 +651,8 @@ export default function InsightsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([fetchClients(), fetchPosts()])
-      .then(([c, p]) => { setClients(c); setPosts(p) })
+    Promise.all([fetchClients(), fetchPosts(), fetchMonthlyFeedbacks()])
+      .then(([c, p, hf]) => { setClients(c); setPosts(p); setHistoricalFeedbacks(hf) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -516,19 +693,38 @@ export default function InsightsPage() {
 
   const total     = metricsPosts.length
   const approved  = metricsPosts.filter(p => getStatus(p) === 'approved').length
-  const rejected  = metricsPosts.filter(p => getStatus(p) === 'rejected').length
+  const currentRejected  = metricsPosts.filter(p => getStatus(p) === 'rejected').length
   const pending   = metricsPosts.filter(p => ['pending_approval','pending','updated','draft'].includes(getStatus(p))).length
-  const approvalRate  = total ? Math.round(approved / total * 100) : 0
-  const rejectionRate = total ? Math.round(rejected / total * 100) : 0
+  const historicalRejectedPostIds = getHistoricalRejectedPostIds(metricsPosts, historicalFeedbacks)
+  const initiallyRejected = historicalRejectedPostIds.size
+  const initiallyApproved = metricsPosts.filter(post => getStatus(post) === 'approved' && !historicalRejectedPostIds.has(post.id)).length
+  const initialDecisionTotal = initiallyApproved + initiallyRejected
+  const approvalRate  = initialDecisionTotal ? Math.round(initiallyApproved / initialDecisionTotal * 100) : 0
+  const rejectionRate = initialDecisionTotal ? Math.round(initiallyRejected / initialDecisionTotal * 100) : 0
+  const concludedWithRevision = metricsPosts.filter(post => getStatus(post) === 'approved' && historicalRejectedPostIds.has(post.id)).length
+  const concludedWithoutRevision = metricsPosts.filter(post => getStatus(post) === 'approved' && !historicalRejectedPostIds.has(post.id)).length
+  const totalFiles = metricsPosts.reduce((sum, post) => sum + (post.files || []).length, 0)
+  const rejectedFileKeys = getHistoricalRejectedFileKeys(metricsPosts, historicalFeedbacks)
+  const rejectedFiles = Math.min(rejectedFileKeys.size, totalFiles)
+  const approvedFiles = Math.max(0, totalFiles - rejectedFiles)
+  const fileApprovalRate = totalFiles ? Math.round((approvedFiles / totalFiles) * 100) : 0
+  const fileRejectionRate = totalFiles ? Math.round((rejectedFiles / totalFiles) * 100) : 0
+  const decisionDurations = metricsPosts
+    .filter(post => ['approved', 'rejected'].includes(getStatus(post)))
+    .map(post => {
+      const submitted = getSubmittedDate(post)
+      const decided = getDecisionDate(post)
+      if (!submitted || !decided || decided < submitted) return null
+      return (decided - submitted) / 36e5
+    })
+    .filter(value => Number.isFinite(value) && value >= 0)
+  const averageDecisionHours = decisionDurations.length
+    ? decisionDurations.reduce((sum, value) => sum + value, 0) / decisionDurations.length
+    : 0
 
-  const tagCounts = {}
-  metricsPosts.forEach(p => (p.files||[]).forEach(f =>
-    (f.feedbacks||[]).forEach(fb =>
-      (fb.tags||[]).forEach(t => { tagCounts[t] = (tagCounts[t]||0) + 1 })
-    )
-  ))
-  const rejTagsData = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,8)
-    .map(([label, value]) => ({ label, value }))
+  const rejectionFeedbackItems = getFileFeedbackItems(metricsPosts, clients, '', historicalFeedbacks)
+  const tagAnalysisData = getTagAnalysis(metricsPosts, historicalFeedbacks)
+  const rejTagsData = tagAnalysisData.slice(0, 8)
 
   const chanCounts = {}
   metricsPosts.forEach(p => (p.channels||[]).forEach(ch => {
@@ -552,7 +748,10 @@ export default function InsightsPage() {
       const date = getPostDate(p)
       return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
     })
-    const r  = cp.length ? Math.round(cp.filter(p => getStatus(p) === 'approved').length / cp.length * 100) : 0
+    const rejectedIds = getHistoricalRejectedPostIds(cp, historicalFeedbacks)
+    const firstApproved = cp.filter(p => getStatus(p) === 'approved' && !rejectedIds.has(p.id)).length
+    const firstTotal = firstApproved + rejectedIds.size
+    const r  = firstTotal ? Math.round(firstApproved / firstTotal * 100) : 0
     return { label: c.name, value: r }
   })
   const clientRejection = clients.map(c => {
@@ -560,7 +759,10 @@ export default function InsightsPage() {
       const date = getPostDate(p)
       return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
     })
-    const r  = cp.length ? Math.round(cp.filter(p => getStatus(p) === 'rejected').length / cp.length * 100) : 0
+    const rejectedIds = getHistoricalRejectedPostIds(cp, historicalFeedbacks)
+    const firstApproved = cp.filter(p => getStatus(p) === 'approved' && !rejectedIds.has(p.id)).length
+    const firstTotal = firstApproved + rejectedIds.size
+    const r  = firstTotal ? Math.round(rejectedIds.size / firstTotal * 100) : 0
     return { label: c.name, value: r }
   })
   const approvalChartData = activeMetricsClient
@@ -583,18 +785,13 @@ export default function InsightsPage() {
 
   function handleExportMetrics() {
     const clientLabel = activeMetricsClient?.name || 'Todos os clientes'
-    const feedbackRows = metricsPosts.flatMap(post => {
-      const client = clientById.get(getPostClientId(post))
-      return (post.files || []).flatMap(file =>
-        (file.feedbacks || []).map(feedback => [
-          client?.name || '',
-          post.title || '',
-          file.name || file.original_name || file.originalName || '',
-          (feedback.tags || []).join(', '),
-          feedback.comment || '',
-        ])
-      )
-    })
+    const feedbackRows = rejectionFeedbackItems.map(item => [
+      item.client?.name || '',
+      item.post.title || '',
+      item.file.name || item.file.original_name || item.file.originalName || '',
+      (item.feedback.tags || []).join(', '),
+      item.feedback.comment || '',
+    ])
 
     const postRows = metricsPosts.map(post => {
       const client = clientById.get(getPostClientId(post))
@@ -619,10 +816,20 @@ export default function InsightsPage() {
             ['Cliente', clientLabel],
             ['Total de posts', total],
             ['Aprovados', approved],
-            ['Reprovados', rejected],
+            ['Recusados atualmente', currentRejected],
+            ['Recusados na primeira analise', initiallyRejected],
+            ['Aprovados sem revisao', initiallyApproved],
             ['Pendentes ou em andamento', pending],
+            ['Concluidos com revisao', concludedWithRevision],
+            ['Concluidos sem revisao', concludedWithoutRevision],
+            ['Arquivos analisados', totalFiles],
+            ['Arquivos aprovados inicialmente', approvedFiles],
+            ['Arquivos recusados inicialmente', rejectedFiles],
+            ['Taxa de aprovacao inicial por item', `${fileApprovalRate}%`],
+            ['Taxa de recusa inicial por item', `${fileRejectionRate}%`],
             ['Taxa de aprovação', `${approvalRate}%`],
             ['Taxa de reprovação', `${rejectionRate}%`],
+            ['Tempo médio de análise', formatAverageDuration(averageDecisionHours)],
           ],
         },
         {
@@ -632,8 +839,8 @@ export default function InsightsPage() {
         },
         {
           title: 'Motivos de reprovação',
-          headers: ['Motivo', 'Quantidade'],
-          rows: rejTagsData.map(item => [item.label, item.value]),
+          headers: ['Motivo', 'Percentual', 'Postagens'],
+          rows: rejTagsData.map(item => [item.label, `${item.value}%`, item.count]),
         },
         {
           title: 'Posts por canal',
@@ -715,21 +922,49 @@ export default function InsightsPage() {
               <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">
                 Visao: {activeMetricsClient?.name || 'Todos os clientes'}
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-6">
                 <MetricCard label="Total de Posts"     value={total}              color="text-neutral-900 dark:text-white" sub="no período" />
                 <MetricCard label="Taxa de Aprovação"  value={`${approvalRate}%`} color="text-green-600"  sub="dos conteúdos" />
                 <MetricCard label="Taxa de Reprovação" value={`${rejectionRate}%`}color="text-red-600"    sub="precisam ajuste" />
                 <MetricCard label="Concluídos"         value={approved}           color="text-teal-600"   sub="aprovados" />
+                <MetricCard label="Tempo médio"         value={formatAverageDuration(averageDecisionHours)} color="text-blue-600" sub="aprovar/reprovar" />
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <MetricCard label="Aprovacao inicial" value={`${approvalRate}%`} color="text-green-600" sub="sem revisao" />
+                <MetricCard label="Recusa inicial" value={`${rejectionRate}%`} color="text-red-600" sub="teve apontamento" />
+                <MetricCard label="Concluidos com revisao" value={concludedWithRevision} color="text-amber-600" sub="corrigidos e aprovados" />
+                <MetricCard label="Concluidos sem revisao" value={concludedWithoutRevision} color="text-teal-600" sub="aprovados direto" />
+              </div>
+
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                Visao por item / arquivo
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <MetricCard label="Arquivos analisados" value={totalFiles} color="text-neutral-900 dark:text-white" sub="itens no periodo" />
+                <MetricCard label="Aprovacao inicial por item" value={`${fileApprovalRate}%`} color="text-green-600" sub={`${approvedFiles} sem ajuste`} />
+                <MetricCard label="Recusa inicial por item" value={`${fileRejectionRate}%`} color="text-red-600" sub={`${rejectedFiles} com apontamento`} />
+                <MetricCard label="Itens com ajuste" value={rejectedFiles} color="text-amber-600" sub="condicao inicial" />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 
                 <Card className="p-5">
-                  <h3 className="font-bold text-sm mb-4">Motivos de reprovação</h3>
+                  <h3 className="font-bold text-sm mb-4">Análise de tags de reprovação</h3>
                   <VerticalBarChart
                     data={rejTagsData}
                     colorFn={i => COLORS[i % COLORS.length]}
                   />
+                  {rejTagsData.length ? (
+                    <div className="mt-4 space-y-2">
+                      {rejTagsData.map(item => (
+                        <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs dark:bg-neutral-800">
+                          <span className="font-semibold text-neutral-700 dark:text-neutral-200">{item.label}</span>
+                          <span className="font-bold text-mag-600">{item.value}% das postagens com feedback</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </Card>
 
                 <Card className="p-5">
@@ -771,12 +1006,12 @@ export default function InsightsPage() {
               <Card className="p-5 mb-4">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                   <h3 className="font-bold text-sm">Feedbacks de reprovação (por arquivo)</h3>
-                  <Select value={fbClientFilter} onChange={e => setFbClientFilter(e.target.value)} className="w-52">
+                  <Select value={metricsClientFilter || fbClientFilter} onChange={e => setFbClientFilter(e.target.value)} disabled={Boolean(metricsClientFilter)} className="w-52">
                     <option value="">Todos os clientes</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </Select>
                 </div>
-                <PaginatedFeedbacksCard posts={posts} clients={clients} clientFilter={fbClientFilter} />
+                <PaginatedFeedbacksCard posts={metricsPosts} clients={clients} clientFilter={metricsClientFilter || fbClientFilter} historicalFeedbacks={historicalFeedbacks} />
               </Card>
 
               <AIInsightsPanel posts={metricsPosts} clients={activeMetricsClient ? [activeMetricsClient] : clients} period={period} />

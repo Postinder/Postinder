@@ -12,7 +12,7 @@ NODE_ENV=production
 JWT_SECRET=uma-chave-longa-e-segura
 ```
 
-Antes de iniciar o backend em produção, aplique as migrations:
+Antes de iniciar o backend em producao, aplique as migrations:
 
 ```bash
 cd backend
@@ -22,7 +22,7 @@ npm run db:migrate
 
 ## 2. Backend
 
-Variáveis recomendadas:
+Variaveis recomendadas:
 
 ```env
 NODE_ENV=production
@@ -57,12 +57,12 @@ GET /health/db
 
 ## 3. Uploads
 
-Em produção, configure Supabase Storage:
+Em producao, configure Supabase Storage:
 
 1. Crie um projeto no Supabase.
 2. Abra Storage.
 3. Crie um bucket chamado `postinder-uploads`.
-4. Deixe o bucket público para que os arquivos possam ser visualizados no frontend.
+4. Deixe o bucket publico para que os arquivos possam ser visualizados no frontend.
 5. Copie a URL do projeto e a service role key para o backend.
 
 ```env
@@ -71,7 +71,7 @@ SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_STORAGE_BUCKET=postinder-uploads
 ```
 
-Sem essas variáveis, uploads em produção retornam erro porque o backend tenta usar storage online.
+Sem essas variaveis, uploads em producao retornam erro porque o backend tenta usar storage online.
 
 Valide depois do deploy:
 
@@ -99,11 +99,19 @@ npm run build
 
 - Login admin.
 - Criar cliente.
+- Gerar link do portal na tela de detalhes do cliente.
+- Abrir `/portal/:token` em janela anonima e conferir se o portal carrega sem login.
 - Criar post com arquivo.
-- Conferir post na prévia do feed.
-- Aprovar/reprovar como cliente.
-- Ver notificações lidas/não lidas.
-- Testar usuário Viewer e confirmar que ele não consegue criar/editar/excluir.
-- Exportar insights.
+- Reordenar arquivos/anexos e salvar.
+- Editar post recusado, remover arquivo antigo, adicionar novo arquivo e reenviar para aprovacao.
+- Conferir post na previa do feed.
+- Aprovar/reprovar como cliente pelo swipe e pelos botoes.
+- Confirmar que o cliente nao consegue voltar depois que o projeto inteiro foi aprovado.
+- Conferir aba de recusados no portal e edicao de feedback antes do reenvio.
+- Ver notificacoes lidas/nao lidas.
+- Conferir aba de postagens com projetos em andamento e concluidos.
+- Testar usuario Viewer e confirmar que ele nao consegue criar/editar/excluir.
+- Conferir insights de aprovacao inicial, recusa inicial, revisao e metricas por item.
+- Conferir detalhes do cliente, incluindo ultimo acesso apos abrir o portal.
 - Conferir `/health/db`.
 - Conferir `/health/storage`.

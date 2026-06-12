@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, BarChart2, CalendarDays, CheckCircle, Clock, Grid, Mail, MessageCircle, PieChart, UserRound } from 'lucide-react'
-import { fetchClients } from '../../services/clients.service'
+import { ArrowLeft, BarChart2, CalendarDays, CheckCircle, Clock, Copy, Grid, Link2, Mail, MessageCircle, PieChart, RefreshCw, UserRound } from 'lucide-react'
+import { fetchClients, generateClientPortalLink } from '../../services/clients.service'
 import { computePostStatus, fetchPosts } from '../../services/posts.service'
+import { fetchMonthlyFeedbacks } from '../../services/insights.service'
 import { Avatar, StatusBadge } from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
@@ -77,13 +78,18 @@ export default function ClientDetailsPage() {
   const navigate = useNavigate()
   const [clients, setClients] = useState([])
   const [posts, setPosts] = useState([])
+  const [feedbacks, setFeedbacks] = useState([])
   const [loading, setLoading] = useState(true)
+  const [portalLink, setPortalLink] = useState(null)
+  const [portalBusy, setPortalBusy] = useState(false)
+  const [portalDays, setPortalDays] = useState(15)
 
   useEffect(() => {
-    Promise.all([fetchClients(), fetchPosts()])
-      .then(([loadedClients, loadedPosts]) => {
+    Promise.all([fetchClients(), fetchPosts(), fetchMonthlyFeedbacks({ clientId: id })])
+      .then(([loadedClients, loadedPosts, loadedFeedbacks]) => {
         setClients(loadedClients)
         setPosts(loadedPosts)
+        setFeedbacks(loadedFeedbacks)
       })
       .catch(error => toast.error(error.message || 'Não foi possível carregar o cliente.'))
       .finally(() => setLoading(false))
@@ -99,11 +105,31 @@ export default function ClientDetailsPage() {
     const total = clientPosts.length
     const approved = clientPosts.filter(post => computePostStatus(post) === 'approved').length
     const pending = clientPosts.filter(post => computePostStatus(post) === 'pending_approval').length
-    const rejected = clientPosts.filter(post => computePostStatus(post) === 'rejected').length
-    const approvalRate = total ? Math.round((approved / total) * 100) : 0
+    const currentlyRejected = clientPosts.filter(post => computePostStatus(post) === 'rejected').length
+    const postIds = new Set(clientPosts.map(post => post.id))
+    const rejectedPostIds = new Set()
 
-    return { total, approved, pending, rejected, approvalRate }
-  }, [clientPosts])
+    feedbacks.forEach(feedback => {
+      const postId = feedback.post_id || feedback.postId
+      if (postId && postIds.has(postId)) rejectedPostIds.add(postId)
+    })
+
+    clientPosts.forEach(post => {
+      if ((post.files || []).some(file => file.status === 'rejected' || file.rejection_reason || file.rejection_tags?.length)) {
+        rejectedPostIds.add(post.id)
+      }
+    })
+
+    const initiallyRejected = rejectedPostIds.size
+    const initiallyApproved = clientPosts.filter(post => computePostStatus(post) === 'approved' && !rejectedPostIds.has(post.id)).length
+    const initialDecisionTotal = initiallyApproved + initiallyRejected
+    const approvalRate = initialDecisionTotal ? Math.round((initiallyApproved / initialDecisionTotal) * 100) : 0
+    const rejectionRate = initialDecisionTotal ? Math.round((initiallyRejected / initialDecisionTotal) * 100) : 0
+    const concludedWithRevision = clientPosts.filter(post => computePostStatus(post) === 'approved' && rejectedPostIds.has(post.id)).length
+    const concludedWithoutRevision = clientPosts.filter(post => computePostStatus(post) === 'approved' && !rejectedPostIds.has(post.id)).length
+
+    return { total, approved, pending, currentlyRejected, initiallyRejected, initiallyApproved, approvalRate, rejectionRate, concludedWithRevision, concludedWithoutRevision }
+  }, [clientPosts, feedbacks])
 
   const channelData = useMemo(() => {
     const counts = {}
@@ -124,6 +150,34 @@ export default function ClientDetailsPage() {
 
   const lastPostDate = recentPosts[0] ? getPostDate(recentPosts[0]) : null
   const lastAccess = client?.last_access_at || client?.lastAccessAt
+
+  async function handleGeneratePortalLink() {
+    setPortalBusy(true)
+    try {
+      const result = await generateClientPortalLink(id, portalDays)
+      setPortalLink(result)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(result.portalUrl)
+        toast.success('Link do portal gerado e copiado.')
+      } else {
+        toast.success('Link do portal gerado.')
+      }
+    } catch (error) {
+      toast.error(error.message || 'Nao foi possivel gerar o link do portal.')
+    } finally {
+      setPortalBusy(false)
+    }
+  }
+
+  async function handleCopyPortalLink() {
+    if (!portalLink?.portalUrl) return
+    try {
+      await navigator.clipboard.writeText(portalLink.portalUrl)
+      toast.success('Link copiado.')
+    } catch {
+      toast.error('Nao foi possivel copiar automaticamente.')
+    }
+  }
 
   if (loading) {
     return (
@@ -173,17 +227,44 @@ export default function ClientDetailsPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <select
+              value={portalDays}
+              onChange={event => setPortalDays(Number(event.target.value))}
+              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold text-neutral-600 outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+            >
+              <option value={7}>7 dias</option>
+              <option value={15}>15 dias</option>
+            </select>
+            {portalLink?.portalUrl ? (
+              <Button variant="secondary" onClick={handleCopyPortalLink} icon={<Copy size={16} />}>Copiar link do portal</Button>
+            ) : null}
+            <Button variant="secondary" loading={portalBusy} onClick={handleGeneratePortalLink} icon={portalLink ? <RefreshCw size={16} /> : <Link2 size={16} />}>
+              {portalLink ? 'Regerar link' : 'Gerar link do portal'}
+            </Button>
             <Button variant="secondary" onClick={() => navigate(`/admin/dashboard?client=${client.id}`)}>Ver posts</Button>
             <Button onClick={() => navigate(`/admin/feed?client=${client.id}`)}>Ver feed</Button>
           </div>
         </div>
+        {portalLink?.portalUrl ? (
+          <div className="mt-4 rounded-lg border border-mag-100 bg-mag-50 p-3 text-sm text-mag-900 dark:border-mag-500/20 dark:bg-mag-500/10 dark:text-mag-100">
+            <div className="font-bold">Link privado do portal</div>
+            <div className="mt-1 break-all text-xs">{portalLink.portalUrl}</div>
+            <div className="mt-1 text-xs opacity-70">Valido ate {formatDate(portalLink.expiresAt)}. Ao regerar, o link anterior deixa de ser usado.</div>
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={<Grid size={20} />} label="Total de posts" value={stats.total} sub="postagens vinculadas" />
-        <MetricCard icon={<CheckCircle size={20} />} label="Taxa de aprovação" value={`${stats.approvalRate}%`} sub={`${stats.approved} aprovado(s)`} color="text-green-600" />
+        <MetricCard icon={<CheckCircle size={20} />} label="Aprovacao inicial" value={`${stats.approvalRate}%`} sub={`${stats.initiallyApproved} sem revisao`} color="text-green-600" />
         <MetricCard icon={<Clock size={20} />} label="Último acesso" value={lastAccess ? formatDate(lastAccess) : 'Não registrado'} sub="aguardando dados de login" color="text-amber-600" />
         <MetricCard icon={<CalendarDays size={20} />} label="Última atividade" value={lastPostDate ? formatDate(lastPostDate) : 'Sem posts'} sub="post mais recente" color="text-teal-600" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard icon={<RefreshCw size={20} />} label="Recusa inicial" value={`${stats.rejectionRate}%`} sub={`${stats.initiallyRejected} com apontamento`} color="text-red-600" />
+        <MetricCard icon={<CheckCircle size={20} />} label="Concluidos sem revisao" value={stats.concludedWithoutRevision} sub="aprovados direto" color="text-green-600" />
+        <MetricCard icon={<RefreshCw size={20} />} label="Concluidos com revisao" value={stats.concludedWithRevision} sub="corrigidos e aprovados" color="text-amber-600" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -202,7 +283,7 @@ export default function ClientDetailsPage() {
               <div className="text-xs font-semibold text-green-700/70 dark:text-green-300/70">Aprovados</div>
             </div>
             <div className="rounded-lg bg-red-50 p-3 text-center dark:bg-red-950/40">
-              <div className="text-2xl font-extrabold text-red-700 dark:text-red-300">{stats.rejected}</div>
+              <div className="text-2xl font-extrabold text-red-700 dark:text-red-300">{stats.currentlyRejected}</div>
               <div className="text-xs font-semibold text-red-700/70 dark:text-red-300/70">Recusados</div>
             </div>
           </div>

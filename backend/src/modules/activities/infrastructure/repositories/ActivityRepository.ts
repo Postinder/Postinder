@@ -121,6 +121,7 @@ export class ActivityRepository {
       metadata: {
         postTitle,
         clientName: row.client_name,
+        fileId: row.id,
         fileName: row.original_name,
         ...(data.metadata || {}),
       },

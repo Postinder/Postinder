@@ -19,6 +19,9 @@ export class ApprovalsController {
   }
 
   async approveFile(req: AuthRequest, res: Response) {
+    if (!req.user?.clientId) {
+      return res.status(403).json({ error: 'Only clients can approve files' })
+    }
     const approved = await repo.approveFile(req.params.id, {
       clientId: req.user?.clientId,
       companyId: req.tenantId,
@@ -35,6 +38,9 @@ export class ApprovalsController {
   }
 
   async rejectFile(req: AuthRequest, res: Response) {
+    if (!req.user?.clientId) {
+      return res.status(403).json({ error: 'Only clients can reject files' })
+    }
     const { tags = [], comment = '' } = req.body
     const rejected = await repo.rejectFile(req.params.id, tags, comment, {
       clientId: req.user?.clientId,
@@ -82,29 +88,4 @@ export class ApprovalsController {
     res.json({ feedbacks })
   }
 
-  async approvePost(req: AuthRequest, res: Response) {
-    const approved = await repo.approveAllFiles(req.params.id, req.tenantId)
-    if (!approved) return res.status(404).json({ error: 'Post not found' })
-    await activityRepo.createForPost(req.params.id, {
-      companyId: req.tenantId,
-      actorId: req.user?.userId || req.user?.clientId,
-      actorRole: req.user?.role,
-      type: 'post_approved',
-      title: 'Post aprovado',
-    }).catch(() => {})
-    res.json({ success: true })
-  }
-
-  async rejectPost(req: AuthRequest, res: Response) {
-    const rejected = await repo.rejectAllFiles(req.params.id, req.tenantId)
-    if (!rejected) return res.status(404).json({ error: 'Post not found' })
-    await activityRepo.createForPost(req.params.id, {
-      companyId: req.tenantId,
-      actorId: req.user?.userId || req.user?.clientId,
-      actorRole: req.user?.role,
-      type: 'post_rejected',
-      title: 'Post recusado',
-    }).catch(() => {})
-    res.json({ success: true })
-  }
 }

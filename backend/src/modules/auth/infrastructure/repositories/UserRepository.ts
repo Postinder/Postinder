@@ -23,6 +23,7 @@ export interface Client {
   color?: string
   is_active: boolean
   company_id?: string
+  last_access_at?: Date
   created_at: Date
   updated_at: Date
 }
@@ -38,7 +39,7 @@ export class UserRepository {
 
   async findClientByEmail(email: string): Promise<Client | null> {
     const result = await query(
-      'SELECT id, email, name, password_hash, whatsapp, segment, color, is_active, created_at, updated_at, company_id FROM clients WHERE email = $1 AND is_active = true',
+      'SELECT id, email, name, password_hash, whatsapp, segment, color, is_active, last_access_at, created_at, updated_at, company_id FROM clients WHERE email = $1 AND is_active = true',
       [email]
     )
     return result.rows[0] || null
@@ -46,10 +47,17 @@ export class UserRepository {
 
   async findClientById(id: string): Promise<Client | null> {
     const result = await query(
-      'SELECT id, email, name, password_hash, whatsapp, segment, color, is_active, created_at, updated_at, company_id FROM clients WHERE id = $1 AND is_active = true',
+      'SELECT id, email, name, password_hash, whatsapp, segment, color, is_active, last_access_at, created_at, updated_at, company_id FROM clients WHERE id = $1 AND is_active = true',
       [id],
     )
     return result.rows[0] || null
+  }
+
+  async updateClientLastAccess(id: string): Promise<void> {
+    await query(
+      'UPDATE clients SET last_access_at = NOW(), updated_at = NOW() WHERE id = $1 AND is_active = true',
+      [id],
+    )
   }
 
 }
