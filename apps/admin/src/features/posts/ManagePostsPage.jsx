@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Archive,
   CheckCircle,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Edit3,
   Eye,
@@ -25,6 +27,7 @@ import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import Skeleton from '../../components/ui/Skeleton'
 import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
+import { resolveMediaUrl } from '../../utils/mediaUrl'
 import {
   computePostStatus,
   duplicatePost,
@@ -110,62 +113,94 @@ function getAttachmentPreviewUrl(file) {
   return resolveMediaUrl(file?.storage_url || file?.url)
 }
 
-function CompactFeedPreview({ form, channels, files }) {
+function CompactFeedPreview({ channels, files }) {
+  const [activeIndex, setActiveIndex] = useState(0)
   const activeChannels = Object.keys(channels)
-  const firstFile = files[0]
-  const previewUrl = getAttachmentPreviewUrl(firstFile)
-  const image = firstFile && isImageAttachment(firstFile)
+  const totalFiles = files.length
+  const safeIndex = totalFiles ? Math.min(activeIndex, totalFiles - 1) : 0
+  const activeFile = files[safeIndex]
+  const previewUrl = getAttachmentPreviewUrl(activeFile)
+  const image = activeFile && isImageAttachment(activeFile)
+
+  useEffect(() => {
+    if (activeIndex > Math.max(totalFiles - 1, 0)) setActiveIndex(Math.max(totalFiles - 1, 0))
+  }, [activeIndex, totalFiles])
+
+  function goToPrevious() {
+    if (!totalFiles) return
+    setActiveIndex(current => (current - 1 + totalFiles) % totalFiles)
+  }
+
+  function goToNext() {
+    if (!totalFiles) return
+    setActiveIndex(current => (current + 1) % totalFiles)
+  }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
       <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-4 py-3 dark:border-neutral-800">
-        <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-900 dark:text-white">
-          <ImageIcon size={16} className="text-mag-500" />
-          Previa rapida do feed
+        <div className="flex items-center gap-2 text-base font-extrabold text-neutral-900 dark:text-white">
+          <ImageIcon size={18} className="text-mag-500" />
+          Previa rapida
         </div>
-        <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
-          {files.length || 0} arquivo(s)
+        <span className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
+          {totalFiles || 0} arquivo(s)
         </span>
       </div>
 
       <div className="p-4">
         <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950">
-          <div className="relative flex aspect-square max-h-64 items-center justify-center">
+          <div className="relative flex aspect-[4/3] max-h-[420px] min-h-[260px] items-center justify-center">
             {image && previewUrl ? (
-              <img src={previewUrl} alt={getAttachmentName(firstFile)} className="h-full w-full object-cover" />
-            ) : firstFile ? (
+              <img src={previewUrl} alt={getAttachmentName(activeFile)} className="h-full w-full object-contain" />
+            ) : activeFile ? (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
-                <FilePlus size={28} />
-                <span className="max-w-[80%] truncate text-xs font-bold">{getAttachmentName(firstFile)}</span>
+                <FilePlus size={34} />
+                <span className="max-w-[80%] truncate text-sm font-bold">{getAttachmentName(activeFile)}</span>
               </div>
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
-                <ImageIcon size={28} />
-                <span className="text-xs font-bold">Sem arquivo</span>
+                <ImageIcon size={34} />
+                <span className="text-sm font-bold">Sem arquivo</span>
               </div>
             )}
-            {files.length > 1 ? (
-              <span className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-black text-white">
-                1/{files.length}
-              </span>
+            {totalFiles > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={goToPrevious}
+                  className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white shadow-lg transition hover:bg-black/85"
+                  aria-label="Arquivo anterior"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <button
+                  type="button"
+                  onClick={goToNext}
+                  className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white shadow-lg transition hover:bg-black/85"
+                  aria-label="Proximo arquivo"
+                >
+                  <ChevronRight size={20} />
+                </button>
+                <span className="absolute right-3 top-3 rounded-full bg-black/70 px-3 py-1.5 text-xs font-black text-white">
+                  {safeIndex + 1}/{totalFiles}
+                </span>
+              </>
             ) : null}
           </div>
         </div>
 
-        <div className="mt-3 space-y-2">
-          <div className="line-clamp-2 text-sm font-extrabold text-neutral-950 dark:text-white">
-            {form.title || 'Titulo da postagem'}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 truncate text-sm font-bold text-neutral-700 dark:text-neutral-200">
+            {activeFile ? getAttachmentName(activeFile) : 'Nenhum arquivo selecionado'}
           </div>
-          <p className="line-clamp-3 whitespace-pre-line text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-            {form.caption || 'Legenda da postagem aparecera aqui enquanto voce edita.'}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap justify-end gap-1.5">
             {activeChannels.length ? activeChannels.map(channel => (
-              <span key={channel} className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
+              <span key={channel} className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
                 {CHANNELS[channel]?.icon} {channel}
               </span>
             )) : (
-              <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-bold text-neutral-400 dark:bg-neutral-800">
+              <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-400 dark:bg-neutral-800">
                 Sem canais
               </span>
             )}
@@ -264,20 +299,17 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
           </div>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Select label="Cliente" value={form.clientId} onChange={event => setForm(current => ({ ...current, clientId: event.target.value }))}>
-                {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
-              </Select>
-              <Input label="Data planejada" type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} />
-            </div>
-
-            <Input label="Titulo" value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
-            <Textarea label="Legenda / texto" value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} />
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select label="Cliente" value={form.clientId} onChange={event => setForm(current => ({ ...current, clientId: event.target.value }))}>
+              {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+            </Select>
+            <Input label="Data planejada" type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} />
           </div>
 
-          <CompactFeedPreview form={form} channels={channels} files={previewFiles} />
+          <Input label="Titulo" value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
+          <CompactFeedPreview channels={channels} files={previewFiles} />
+          <Textarea label="Legenda / texto" value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} />
         </div>
 
         <div>

@@ -26,6 +26,8 @@ function normalizePost(row: any) {
 
 const pendingFileStatusSql = "LOWER(COALESCE(NULLIF(f.status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent')"
 const approvableFileStatusSql = "LOWER(COALESCE(NULLIF(f.status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent', 'rejected')"
+const clientVisiblePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval', 'rejected', 'approved', 'executed')"
+const clientReviewablePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval', 'rejected')"
 
 export class PortalRepository {
   async getClient(clientId: string, companyId?: string) {
@@ -158,7 +160,7 @@ export class PortalRepository {
 
   async listPosts(clientId: string, companyId?: string) {
     const params: any[] = [clientId]
-    const conditions = ['p.client_id = $1', 'p.deleted_at IS NULL']
+    const conditions = ['p.client_id = $1', 'p.deleted_at IS NULL', clientVisiblePostStatusSql]
     if (companyId) {
       params.push(companyId)
       conditions.push(`p.company_id = $${params.length}`)
@@ -204,7 +206,7 @@ export class PortalRepository {
       conditions.push(`company_id = $${params.length}`)
     }
 
-    const post = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
+    const post = await query(`SELECT id FROM posts p WHERE ${conditions.join(' AND ')} AND ${clientReviewablePostStatusSql}`, params)
     if (!post.rows[0]) return false
 
     await query(`UPDATE files SET status = 'approved', updated_at = NOW() WHERE post_id = $1`, [postId])
@@ -255,7 +257,7 @@ export class PortalRepository {
 
   async approveFile(fileId: string, scope: { clientId: string; companyId?: string }) {
     const params: any[] = [fileId, scope.clientId]
-    const conditions = ['f.id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL', approvableFileStatusSql]
+    const conditions = ['f.id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL', clientReviewablePostStatusSql, approvableFileStatusSql]
     if (scope.companyId) {
       params.push(scope.companyId)
       conditions.push(`p.company_id = $${params.length}`)
@@ -281,7 +283,7 @@ export class PortalRepository {
 
   async rejectFile(fileId: string, comment: string, tags: string[], scope: { clientId: string; companyId?: string }) {
     const params: any[] = [fileId, scope.clientId, comment, tags]
-    const conditions = ['f.id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL', pendingFileStatusSql]
+    const conditions = ['f.id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL', clientReviewablePostStatusSql, pendingFileStatusSql]
     if (scope.companyId) {
       params.push(scope.companyId)
       conditions.push(`p.company_id = $${params.length}`)
@@ -307,7 +309,7 @@ export class PortalRepository {
 
   async updateRejectedFileFeedback(fileId: string, comment: string, tags: string[], scope: { clientId: string; companyId?: string }) {
     const params: any[] = [fileId, scope.clientId, comment, tags]
-    const conditions = ['f.id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL', "LOWER(f.status) = 'rejected'"]
+    const conditions = ['f.id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL', clientReviewablePostStatusSql, "LOWER(f.status) = 'rejected'"]
     if (scope.companyId) {
       params.push(scope.companyId)
       conditions.push(`p.company_id = $${params.length}`)
@@ -334,7 +336,7 @@ export class PortalRepository {
     const conditions = [
       'p.client_id = $2',
       'p.deleted_at IS NULL',
-      "LOWER(COALESCE(p.status, '')) NOT IN ('approved', 'done', 'executed')",
+      clientReviewablePostStatusSql,
       "f.status IN ('approved', 'rejected')",
     ]
     if (scope.companyId) {
@@ -381,7 +383,7 @@ export class PortalRepository {
       conditions.push(`company_id = $${params.length}`)
     }
 
-    const post = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
+    const post = await query(`SELECT id FROM posts p WHERE ${conditions.join(' AND ')} AND ${clientReviewablePostStatusSql}`, params)
     if (!post.rows[0]) return false
 
     await query(
@@ -405,7 +407,7 @@ export class PortalRepository {
         params.push(input.companyId)
         conditions.push(`company_id = $${params.length}`)
       }
-      const post = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
+      const post = await query(`SELECT id FROM posts p WHERE ${conditions.join(' AND ')} AND ${clientVisiblePostStatusSql}`, params)
       if (!post.rows[0]) return false
     }
 
