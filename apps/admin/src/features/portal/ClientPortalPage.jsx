@@ -282,16 +282,16 @@ function SwipeReviewCard({ post, file, fileIndex, totalFiles, onApprove, onRejec
 
         <div className="relative bg-neutral-100 dark:bg-neutral-950">
           {isImage && mediaUrl ? (
-            <img src={mediaUrl} alt={fileName} className="h-[420px] w-full object-contain" />
+            <img src={mediaUrl} alt={fileName} className="h-[min(420px,55vh)] w-full object-contain" />
           ) : mediaUrl ? (
-            <div className="flex h-[420px] flex-col items-center justify-center gap-4 text-neutral-500">
+            <div className="flex h-[min(420px,55vh)] flex-col items-center justify-center gap-4 text-neutral-500">
               <FileText size={52} />
               <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-mag-600 px-4 py-2 text-sm font-bold text-white">
                 Abrir arquivo
               </a>
             </div>
           ) : (
-            <div className="flex h-[420px] items-center justify-center text-neutral-400">Arquivo indisponivel</div>
+            <div className="flex h-[min(420px,55vh)] items-center justify-center text-neutral-400">Arquivo indisponivel</div>
           )}
           <span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1.5 text-xs font-black text-white">
             {fileIndex + 1}/{totalFiles}
@@ -315,7 +315,7 @@ function SwipeReviewCard({ post, file, fileIndex, totalFiles, onApprove, onRejec
         </div>
       </div>
 
-      <div className="mt-5 flex items-center justify-center gap-5">
+      <div className="sticky bottom-3 z-20 mt-5 flex items-center justify-center gap-5 rounded-full bg-neutral-100/90 py-2 backdrop-blur dark:bg-neutral-950/90 sm:static sm:bg-transparent sm:py-0 sm:backdrop-blur-none">
         <button
           type="button"
           onClick={onReject}

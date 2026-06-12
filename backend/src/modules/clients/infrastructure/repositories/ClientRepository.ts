@@ -1,5 +1,6 @@
-import { query } from '../../../../shared/database/pool'
+import { pool, query } from '../../../../shared/database/pool'
 import { logger } from '../../../../shared/utils/Logger'
+import { removeStoredFile } from '../../../../shared/upload/storage'
 
 export interface CreateClientDTO {
   name: string
@@ -21,15 +22,31 @@ export interface UpdateClientDTO {
 }
 
 export class ClientRepository {
+  private normalizeEmail(email: string) {
+    return String(email || '').trim().toLowerCase()
+  }
+
+  private duplicateScopeConditions(params: any[], companyId?: string) {
+    if (!companyId) return ''
+    params.push(companyId)
+    return ` AND (company_id = $${params.length} OR company_id IS NULL)`
+  }
+
   async create(dto: CreateClientDTO) {
     try {
+      const email = this.normalizeEmail(dto.email)
+      const duplicate = await this.emailExistsInUsersOrClients(email, dto.company_id)
+      if (duplicate) {
+        throw new Error('Email already exists')
+      }
+
       const result = await query(
         `INSERT INTO clients (name, email, password_hash, whatsapp, segment, color, deadline_days, company_id, is_active)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
          RETURNING id, name, email, whatsapp, segment, color, deadline_days, created_at`,
         [
           dto.name,
-          dto.email,
+          email,
           dto.password_hash,
           dto.whatsapp || null,
           dto.segment || null,
@@ -40,12 +57,36 @@ export class ClientRepository {
       )
       return result.rows[0]
     } catch (error: any) {
+      if (error.message === 'Email already exists') {
+        throw error
+      }
       if (error.code === '23505') {
         throw new Error('Email already exists')
       }
       logger.error('Failed to create client', { error })
       throw new Error('Failed to create client')
     }
+  }
+
+  async emailExistsInUsersOrClients(email: string, companyId?: string) {
+    const normalizedEmail = this.normalizeEmail(email)
+    const userParams: any[] = [normalizedEmail]
+    const clientParams: any[] = [normalizedEmail]
+    const userScope = this.duplicateScopeConditions(userParams, companyId)
+    const clientScope = this.duplicateScopeConditions(clientParams, companyId)
+
+    const userResult = await query(
+      `SELECT 1 FROM users WHERE LOWER(email) = $1${userScope} LIMIT 1`,
+      userParams,
+    )
+    if (userResult.rows[0]) return true
+
+    const clientResult = await query(
+      `SELECT 1 FROM clients WHERE LOWER(email) = $1${clientScope} LIMIT 1`,
+      clientParams,
+    )
+
+    return Boolean(clientResult.rows[0])
   }
 
   async findById(id: string, companyId?: string) {
@@ -116,8 +157,8 @@ export class ClientRepository {
     try {
       const result = await query(
         `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, last_access_at, created_at, updated_at
-         FROM clients WHERE email = $1 AND is_active = true`,
-        [email]
+         FROM clients WHERE LOWER(email) = $1 AND is_active = true`,
+        [this.normalizeEmail(email)]
       )
       return result.rows[0] || null
     } catch (error) {
@@ -270,6 +311,56 @@ export class ClientRepository {
     } catch (error) {
       logger.error('Failed to delete client', { error })
       throw new Error('Failed to delete client')
+    }
+  }
+
+  async deletePermanently(id: string, companyId?: string) {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      const params: any[] = [id]
+      const conditions = ['id = $1']
+      if (companyId) {
+        params.push(companyId)
+        conditions.push(`company_id = $${params.length}`)
+      }
+
+      const existing = await client.query(
+        `SELECT id FROM clients WHERE ${conditions.join(' AND ')}`,
+        params,
+      )
+      if (!existing.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
+
+      const files = await client.query(
+        `SELECT f.url
+         FROM files f
+         JOIN posts p ON p.id = f.post_id
+         WHERE p.client_id = $1`,
+        [id],
+      )
+
+      await Promise.all(files.rows.map(row => removeStoredFile(row.url).catch(() => {})))
+
+      await client.query(
+        `DELETE FROM activity_events
+         WHERE client_id = $1
+            OR post_id IN (SELECT id FROM posts WHERE client_id = $1)`,
+        [id],
+      )
+
+      await client.query(`DELETE FROM clients WHERE ${conditions.join(' AND ')}`, params)
+      await client.query('COMMIT')
+      return true
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      logger.error('Failed to permanently delete client', { error })
+      throw new Error('Failed to permanently delete client')
+    } finally {
+      client.release()
     }
   }
 

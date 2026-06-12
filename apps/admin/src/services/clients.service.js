@@ -1,4 +1,8 @@
-﻿import { apiClient } from '../lib/axios'
+import { apiClient } from '../lib/axios'
+
+function getApiError(error) {
+  return new Error(error.response?.data?.error || error.message || 'Erro ao processar solicitacao.')
+}
 
 export async function fetchClients(options = {}) {
   const params = {}
@@ -8,8 +12,12 @@ export async function fetchClients(options = {}) {
 }
 
 export async function createClient(clientData) {
-  const { data } = await apiClient.post('/clients', clientData)
-  return data.data || data
+  try {
+    const { data } = await apiClient.post('/clients', clientData)
+    return data.data || data
+  } catch (error) {
+    throw getApiError(error)
+  }
 }
 
 export async function updateClient(clientId, updates) {
@@ -18,7 +26,19 @@ export async function updateClient(clientId, updates) {
 }
 
 export async function softDeleteClient(clientId) {
-  await apiClient.delete(`/clients/${clientId}`)
+  try {
+    await apiClient.delete(`/clients/${clientId}`)
+  } catch (error) {
+    throw getApiError(error)
+  }
+}
+
+export async function deleteClientPermanently(clientId) {
+  try {
+    await apiClient.delete(`/clients/${clientId}/permanent`)
+  } catch (error) {
+    throw getApiError(error)
+  }
 }
 
 export async function activateClient(clientId) {

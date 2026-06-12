@@ -87,7 +87,10 @@ export class ClientsController {
       res.status(201).json({ data: client })
     } catch (error: any) {
       const status = error.message === 'Email already exists' ? 400 : 500
-      res.status(status).json({ error: error.message })
+      const message = error.message === 'Email already exists'
+        ? 'Este e-mail ja esta em uso por um usuario ou cliente.'
+        : error.message
+      res.status(status).json({ error: message })
     }
   }
 
@@ -162,6 +165,19 @@ export class ClientsController {
       const { id } = req.params
       await this.clientRepository.delete(id, req.tenantId)
       res.json({ message: 'Client disabled successfully' })
+    } catch (error: any) {
+      res.status(500).json({ error: error.message })
+    }
+  }
+
+  async deletePermanently(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params
+      const deleted = await this.clientRepository.deletePermanently(id, req.tenantId)
+      if (!deleted) {
+        return res.status(404).json({ error: 'Client not found' })
+      }
+      res.json({ message: 'Client permanently deleted successfully' })
     } catch (error: any) {
       res.status(500).json({ error: error.message })
     }

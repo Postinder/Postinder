@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, Trash2, Edit3, RotateCcw, Plus, Search,
+  LayoutDashboard, Trash2, Edit3, RotateCcw, Plus, Search, Eye,
   Building2, SlidersHorizontal, X, ArrowUpDown, CalendarDays, Paperclip, UploadCloud,
   Activity, CheckCircle, MessageSquare, UserPlus
 } from 'lucide-react'
@@ -750,7 +750,7 @@ export default function DashboardPage() {
             </Select>
           </label>
         </div>
-        <div className="overflow-x-auto">
+        <div>
           {loading ? (
             <div className="p-4 space-y-3">
               {[1, 2, 3].map(i => (
@@ -779,6 +779,60 @@ export default function DashboardPage() {
               </button>
             </div>
           ) : (
+            <>
+            <div className="space-y-3 p-3 md:hidden">
+              {sortedPosts.map(post => {
+                const st = computePostStatus(post)
+                const client = getPostClient(post)
+                const files = post.files || []
+                const isRej = st === 'rejected'
+                const firstFile = files[0]
+                const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
+                return (
+                  <article key={post.id} className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar name={client.name} color={client.color} size="md" />
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold text-neutral-900 dark:text-white">{client.name || '--'}</div>
+                          <div className="text-xs text-neutral-400">{formatDate(updatedAt)}</div>
+                        </div>
+                      </div>
+                      <StatusBadge status={st} />
+                    </div>
+                    <div className="mt-3 flex gap-3">
+                      <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-800">
+                        {firstFile?.file_type === 'IMAGE' && resolveMediaUrl(firstFile?.storage_url)
+                          ? <img src={resolveMediaUrl(firstFile.storage_url)} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
+                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem midia'}</div>
+                        }
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="line-clamp-2 text-sm font-extrabold text-neutral-950 dark:text-white">{post.title || '(sem titulo)'}</div>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">{post.description || 'Sem descricao cadastrada.'}</p>
+                        <div className="mt-2 text-xs font-semibold text-neutral-400">{files.length} arquivo(s)</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                      <button onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-bold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+                        <Eye size={13} /> Feed
+                      </button>
+                      {!isReadOnly && (
+                        <>
+                          {isRej ? (
+                            <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-3 py-2 text-xs font-bold text-teal-600 dark:bg-teal-900/30 dark:text-teal-400"><RotateCcw size={13} /> Corrigir</button>
+                          ) : (
+                            <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-bold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"><Edit3 size={13} /> Editar</button>
+                          )}
+                          <button onClick={() => handleDelete(post.id)} className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-950/30"><Trash2 size={13} /> Arquivar</button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[1040px] table-fixed text-sm">
               <colgroup>
                 <col className="w-[22%]" />
@@ -885,6 +939,8 @@ export default function DashboardPage() {
                 })}
               </tbody>
             </table>
+            </div>
+            </>
           )}
         </div>
       </Card>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, MessageCircle, Trash2, Edit3, Upload, Eye, Users, RotateCcw } from 'lucide-react'
-import { fetchClients, createClient, updateClient, softDeleteClient, activateClient, parseVCFText } from '../../services/clients.service'
+import { Archive, MoreVertical, Plus, MessageCircle, Trash2, Edit3, Upload, Eye, Users, RotateCcw } from 'lucide-react'
+import { fetchClients, createClient, updateClient, softDeleteClient, deleteClientPermanently, activateClient, parseVCFText } from '../../services/clients.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { Avatar } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
@@ -17,7 +17,8 @@ const DOC_MASK = {
   cnpj: v => { v=v.replace(/\D/g,'').slice(0,14); if(v.length>12)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8,12)+'-'+v.slice(12); if(v.length>8)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8); if(v.length>5)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5); if(v.length>2)return v.slice(0,2)+'.'+v.slice(2); return v },
 }
 
-function ClientCard({ client, posts, onEdit, onDeactivate, onActivate, onViewPosts, onViewDetails }) {
+function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, onViewPosts, onViewDetails }) {
+  const [actionsOpen, setActionsOpen] = useState(false)
   const inactive = client.is_active === false || client.isActive === false
   const cp  = posts.filter(p => p.client_id === client.id)
   const apv = cp.filter(p => computePostStatus(p) === 'approved').length
@@ -50,13 +51,35 @@ function ClientCard({ client, posts, onEdit, onDeactivate, onActivate, onViewPos
             </div>
           </div>
         </div>
-        <div className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 opacity-80 transition-opacity group-hover:opacity-100 dark:border-neutral-800 dark:bg-neutral-950/60">
+        <div className="hidden gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 opacity-80 transition-opacity group-hover:opacity-100 dark:border-neutral-800 dark:bg-neutral-950/60 sm:flex">
           <button onClick={() => onEdit(client)} disabled={inactive} className="p-1.5 rounded-md hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500 transition-colors" title="Editar"><Edit3 size={14}/></button>
           {!inactive ? (
-            <button onClick={() => onDeactivate(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition-colors" title="Desativar"><Trash2 size={14}/></button>
+            <>
+              <button onClick={() => onArchive(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-amber-600 transition-colors" title="Arquivar cliente"><Archive size={14}/></button>
+              <button onClick={() => onDelete(client)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition-colors" title="Excluir definitivamente"><Trash2 size={14}/></button>
+            </>
           ) : (
-            <button onClick={() => onActivate(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-green-600 transition-colors" title="Reativar"><RotateCcw size={14}/></button>
+            <>
+              <button onClick={() => onActivate(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-green-600 transition-colors" title="Reativar"><RotateCcw size={14}/></button>
+              <button onClick={() => onDelete(client)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition-colors" title="Excluir definitivamente"><Trash2 size={14}/></button>
+            </>
           )}
+        </div>
+        <div className="relative sm:hidden">
+          <button onClick={() => setActionsOpen(open => !open)} className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950/60" title="Acoes">
+            <MoreVertical size={16} />
+          </button>
+          {actionsOpen ? (
+            <div className="absolute right-0 top-10 z-20 w-48 overflow-hidden rounded-lg border border-neutral-200 bg-white p-1.5 shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+              <button onClick={() => { setActionsOpen(false); onEdit(client) }} disabled={inactive} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-neutral-600 hover:bg-neutral-100 disabled:opacity-40 dark:text-neutral-300 dark:hover:bg-neutral-800"><Edit3 size={14}/> Editar</button>
+              {!inactive ? (
+                <button onClick={() => { setActionsOpen(false); onArchive(client.id) }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"><Archive size={14}/> Arquivar</button>
+              ) : (
+                <button onClick={() => { setActionsOpen(false); onActivate(client.id) }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30"><RotateCcw size={14}/> Reativar</button>
+              )}
+              <button onClick={() => { setActionsOpen(false); onDelete(client) }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"><Trash2 size={14}/> Excluir definitivo</button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -107,11 +130,11 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
   return (
     <Modal open={open} onClose={onClose} title={title} size="lg">
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Nome *" value={form.name} onChange={e=>set('name',e.target.value)} placeholder="Nome ou empresa" />
-          <Input label="E-mail *" type="email" value={form.email} onChange={e=>set('email',e.target.value)} />
-          <Input label={initial ? 'Nova Senha (deixe vazio p/ manter)' : 'Senha *'} type="password" value={form.password||''} onChange={e=>set('password',e.target.value)} />
-          <Input label="WhatsApp" value={form.whatsapp||''} onChange={e=>set('whatsapp',e.target.value)} placeholder="(51) 9 9999-9999" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Input label="Nome *" name="client-name" autoComplete="off" value={form.name} onChange={e=>set('name',e.target.value)} placeholder="Nome ou empresa" />
+          <Input label="E-mail *" name="client-email" type="email" autoComplete="off" value={form.email} onChange={e=>set('email',e.target.value)} />
+          <Input label={initial ? 'Nova Senha (deixe vazio p/ manter)' : 'Senha *'} name="client-new-password" type="password" autoComplete="new-password" value={form.password||''} onChange={e=>set('password',e.target.value)} />
+          <Input label="WhatsApp" name="client-whatsapp" autoComplete="off" value={form.whatsapp||''} onChange={e=>set('whatsapp',e.target.value)} placeholder="(51) 9 9999-9999" />
         </div>
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 block mb-2">Documento</label>
@@ -122,7 +145,7 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
           </div>
           <Input value={form.document||''} onChange={e=>set('document',DOC_MASK[form.documentType](e.target.value))} placeholder={form.documentType==='cpf'?'000.000.000-00':'00.000.000/0000-00'} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input label="Segmento" value={form.segment||''} onChange={e=>set('segment',e.target.value)} placeholder="Ex: Restaurante" />
           <Input label="Prazo de aceite (dias)" type="number" min="1" max="30" value={form.deadlineDays||7} onChange={e=>set('deadlineDays',parseInt(e.target.value)||7)} />
         </div>
@@ -167,7 +190,7 @@ function VCFImport({ open, onClose, onImport }) {
   return (
     <Modal open={open} onClose={onClose} title="Importar Clientes via VCF" subtitle="Nome e WhatsApp são preenchidos automaticamente do arquivo." size="lg">
       {!contacts.length ? (
-        <div onClick={()=>fileRef.current?.click()} className="border-2 border-dashed border-neutral-200 dark:border-neutral-700 rounded-xl p-10 text-center cursor-pointer hover:border-mag-400 transition-colors">
+        <div onClick={()=>fileRef.current?.click()} className="border-2 border-dashed border-neutral-200 dark:border-neutral-700 rounded-xl p-6 text-center cursor-pointer hover:border-mag-400 transition-colors sm:p-10">
           <Upload size={32} className="text-neutral-300 mx-auto mb-3" />
           <p className="font-semibold text-sm">Clique para selecionar o arquivo VCF</p>
         </div>
@@ -185,9 +208,9 @@ function VCFImport({ open, onClose, onImport }) {
                     <td className="px-3 py-1.5"><input type="checkbox" checked={c.selected} onChange={e=>{const nc=[...contacts];nc[i].selected=e.target.checked;setContacts(nc)}} className="accent-mag-500" /></td>
                     <td className="px-3 py-1.5 font-medium">{c.name}</td>
                     <td className="px-3 py-1.5 text-neutral-500">{c.phone}</td>
-                    <td className="px-3 py-1.5"><input className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-36 bg-white dark:bg-neutral-800 outline-none" placeholder="email@..." onChange={e=>{const nc=[...contacts];nc[i].email=e.target.value;setContacts(nc)}} /></td>
-                    <td className="px-3 py-1.5"><input type="password" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-28 bg-white dark:bg-neutral-800 outline-none" placeholder="Senha" onChange={e=>{const nc=[...contacts];nc[i].password=e.target.value;setContacts(nc)}} /></td>
-                    <td className="px-3 py-1.5"><input className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-28 bg-white dark:bg-neutral-800 outline-none" placeholder="Segmento" onChange={e=>{const nc=[...contacts];nc[i].segment=e.target.value;setContacts(nc)}} /></td>
+                    <td className="px-3 py-1.5"><input name={`vcf-client-email-${i}`} autoComplete="off" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-36 bg-white dark:bg-neutral-800 outline-none" placeholder="email@..." onChange={e=>{const nc=[...contacts];nc[i].email=e.target.value;setContacts(nc)}} /></td>
+                    <td className="px-3 py-1.5"><input name={`vcf-client-password-${i}`} type="password" autoComplete="new-password" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-28 bg-white dark:bg-neutral-800 outline-none" placeholder="Senha" onChange={e=>{const nc=[...contacts];nc[i].password=e.target.value;setContacts(nc)}} /></td>
+                    <td className="px-3 py-1.5"><input name={`vcf-client-segment-${i}`} autoComplete="off" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-28 bg-white dark:bg-neutral-800 outline-none" placeholder="Segmento" onChange={e=>{const nc=[...contacts];nc[i].segment=e.target.value;setContacts(nc)}} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -244,11 +267,31 @@ export default function ClientsPage() {
     toast.success(`${created.length} cliente(s) importado(s)!`)
   }
 
-  async function handleDeactivate(id) {
-    if (!confirm('Desativar este cliente? As metricas serao mantidas, as postagens sairao das listas operacionais e os anexos serao limpos em 1 dia.')) return
-    await softDeleteClient(id)
-    setClients(c => c.map(x => x.id === id ? { ...x, is_active: false, isActive: false } : x))
-    toast.success('Cliente desativado.')
+  async function handleArchive(id) {
+    if (!confirm('Arquivar este cliente? As metricas serao mantidas, as postagens sairao das listas operacionais e os anexos serao limpos em 1 dia.')) return
+    try {
+      await softDeleteClient(id)
+      setClients(c => c.map(x => x.id === id ? { ...x, is_active: false, isActive: false } : x))
+      toast.success('Cliente arquivado.')
+    } catch (e) {
+      toast.error(e.message)
+    }
+  }
+
+  async function handlePermanentDelete(client) {
+    const confirmed = confirm(
+      `Excluir definitivamente o cliente ${client.name}?\n\nEssa acao apagara automaticamente todas as postagens, arquivos, feedbacks e metricas referentes a ele. Essa exclusao nao podera ser desfeita.`,
+    )
+    if (!confirmed) return
+
+    try {
+      await deleteClientPermanently(client.id)
+      setClients(c => c.filter(x => x.id !== client.id))
+      setPosts(p => p.filter(post => post.client_id !== client.id && post.clientId !== client.id))
+      toast.success('Cliente excluido definitivamente.')
+    } catch (e) {
+      toast.error(e.message)
+    }
   }
 
   async function handleActivate(id) {
@@ -283,7 +326,7 @@ export default function ClientsPage() {
       {loading ? (
         <div className="text-center py-16 text-neutral-400">Carregando...</div>
       ) : clients.length === 0 ? (
-        <Card className="p-12 text-center text-neutral-400">
+        <Card className="p-8 text-center text-neutral-400 sm:p-12">
           <div className="text-4xl mb-3">👥</div>
           <p className="text-sm">Nenhum cliente cadastrado ainda.</p>
           <Button className="mt-4" onClick={()=>setShowNew(true)}>+ Novo Cliente</Button>
@@ -292,7 +335,7 @@ export default function ClientsPage() {
         <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-4">
           {clients.map(c => (
             <ClientCard key={c.id} client={c} posts={posts}
-              onEdit={setEditClient} onDeactivate={handleDeactivate} onActivate={handleActivate} onViewPosts={viewPosts} onViewDetails={viewDetails} />
+              onEdit={setEditClient} onArchive={handleArchive} onDelete={handlePermanentDelete} onActivate={handleActivate} onViewPosts={viewPosts} onViewDetails={viewDetails} />
           ))}
         </div>
       )}

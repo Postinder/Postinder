@@ -37,6 +37,10 @@ export function createClientsRoutes(): Router {
     controller.update(req, res).catch(err => res.status(500).json({ error: err.message }))
   )
 
+  router.delete('/:id/permanent', (req: Request, res: Response) =>
+    controller.deletePermanently(req, res).catch(err => res.status(500).json({ error: err.message }))
+  )
+
   router.delete('/:id', (req: Request, res: Response) =>
     controller.delete(req, res).catch(err => res.status(500).json({ error: err.message }))
   )

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff, Flame } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
+import { useThemeStore } from '../../store/themeStore'
 import { loginAdmin, loginClient } from '../../services/auth.service'
 import Button from '../../components/ui/Button'
 import ThemeToggle from '../../components/ui/ThemeToggle'
@@ -37,6 +38,7 @@ export default function LoginPage() {
   const [showPw, setShowPw]     = useState(false)
   const [loading, setLoading]   = useState(false)
   const { setUser } = useAuthStore()
+  const { isDark } = useThemeStore()
   const navigate = useNavigate()
 
   async function handleSubmit(e) {
@@ -61,7 +63,11 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at 60% 40%, #2a0014 0%, #0d0d0d 60%, #000 100%)' }}
+      style={{
+        background: isDark
+          ? 'radial-gradient(ellipse at 60% 40%, #2a0014 0%, #0d0d0d 60%, #000 100%)'
+          : 'radial-gradient(ellipse at 60% 40%, #fff1f6 0%, #f8fafc 58%, #ffffff 100%)',
+      }}
     >
       <Particles />
 
@@ -71,11 +77,11 @@ export default function LoginPage() {
       </div>
 
       <div className="relative z-10 w-full max-w-sm mx-4">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-10 animate-slide-up">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-10 shadow-xl shadow-neutral-900/10 animate-slide-up dark:border-neutral-800 dark:bg-neutral-900 dark:shadow-black/30">
           {/* Logo */}
           <div className="text-center mb-8">
             <Flame size={36} className="text-mag-500 mx-auto mb-3 animate-float" />
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-3xl font-extrabold text-neutral-950 tracking-tight dark:text-white">
               Post<span className="text-mag-500">inder</span>
             </h1>
             <p className="text-neutral-500 text-xs mt-1 tracking-wider">
@@ -94,7 +100,7 @@ export default function LoginPage() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="seu@email.com"
                 autoComplete="email"
-                className="w-full bg-neutral-950 border border-neutral-700 focus:border-mag-500 rounded-xl px-4 py-3.5 text-white text-sm outline-none transition-colors placeholder:text-neutral-600"
+                className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3.5 text-sm text-neutral-950 outline-none transition-colors placeholder:text-neutral-400 focus:border-mag-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white dark:placeholder:text-neutral-600"
               />
             </div>
             <div>
@@ -109,12 +115,12 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   autoComplete="current-password"
                   onKeyDown={e => e.key === 'Enter' && handleSubmit(e)}
-                  className="w-full bg-neutral-950 border border-neutral-700 focus:border-mag-500 rounded-xl px-4 py-3.5 text-white text-sm outline-none transition-colors placeholder:text-neutral-600 pr-12"
+                  className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3.5 pr-12 text-sm text-neutral-950 outline-none transition-colors placeholder:text-neutral-400 focus:border-mag-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white dark:placeholder:text-neutral-600"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPw(v => !v)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
                 >
                   {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
