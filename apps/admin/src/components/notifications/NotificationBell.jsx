@@ -216,7 +216,7 @@ export default function NotificationBell() {
                   Nenhuma notificação agora
                 </div>
                 <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  Postagens pendentes ou recusadas aparecerão aqui.
+                  Postagens enviadas para o cliente ou recusadas aparecerão aqui.
                 </p>
               </div>
             ) : filteredNotifications.length === 0 ? (

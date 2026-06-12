@@ -6,15 +6,7 @@ export class NotificationRepository {
     const conditions = [
       'p.deleted_at IS NULL',
       "p.status <> 'archived'",
-      `(
-        p.status IN ('sent', 'pending_approval', 'rejected')
-        OR EXISTS (
-          SELECT 1
-          FROM files f_status
-          WHERE f_status.post_id = p.id
-            AND LOWER(COALESCE(f_status.status, 'pending')) IN ('pending', 'pending_approval', 'sent', 'rejected')
-        )
-      )`,
+      "p.status IN ('sent', 'pending_approval', 'rejected')",
     ]
 
     if (filters.companyId) {
@@ -32,7 +24,6 @@ export class NotificationRepository {
            p.updated_at,
            p.submitted_at,
            c.name AS client_name,
-           COUNT(f.id) FILTER (WHERE LOWER(COALESCE(f.status, 'pending')) IN ('pending', 'pending_approval', 'sent')) AS pending_files,
            COUNT(f.id) FILTER (WHERE LOWER(COALESCE(f.status, '')) = 'rejected') AS rejected_files,
            MAX(f.updated_at) FILTER (WHERE LOWER(COALESCE(f.status, '')) = 'rejected') AS last_rejected_at
          FROM posts p
@@ -43,26 +34,29 @@ export class NotificationRepository {
        )
        SELECT
          CASE
-           WHEN prs.rejected_files > 0 THEN 'rejected-' || prs.id::text
+           WHEN prs.rejected_files > 0 OR prs.status = 'rejected' THEN 'rejected-' || prs.id::text
            WHEN prs.status = 'pending_approval' THEN 'correction-' || prs.id::text
            ELSE 'pending-' || prs.id::text
          END AS id,
          CASE
-           WHEN prs.rejected_files > 0 THEN 'rejected'
+           WHEN prs.rejected_files > 0 OR prs.status = 'rejected' THEN 'rejected'
            WHEN prs.status = 'pending_approval' THEN 'correction'
            ELSE 'pending'
          END AS type,
          CASE
-           WHEN prs.rejected_files > 0 THEN 'Postagem recusada'
+           WHEN prs.rejected_files > 0 OR prs.status = 'rejected' THEN 'Postagem recusada'
            WHEN prs.status = 'pending_approval' THEN 'Correção enviada'
-           ELSE 'Aguardando aprovação'
+           ELSE 'Aguardando retorno do cliente'
          END AS title,
          CASE
-           WHEN prs.rejected_files > 0 THEN COALESCE(prs.client_name, 'Cliente') || ' solicitou ajustes em "' || COALESCE(prs.title, 'sem título') || '".'
+           WHEN prs.rejected_files > 0 OR prs.status = 'rejected' THEN COALESCE(prs.client_name, 'Cliente') || ' solicitou ajustes em "' || COALESCE(prs.title, 'sem título') || '".'
            WHEN prs.status = 'pending_approval' THEN '"' || COALESCE(prs.title, 'Postagem sem título') || '" voltou para análise após correção.'
-           ELSE '"' || COALESCE(prs.title, 'Postagem sem título') || '" está aguardando retorno do cliente.'
+           ELSE '"' || COALESCE(prs.title, 'Postagem sem título') || '" foi enviada e está aguardando retorno do cliente.'
          END AS message,
-         COALESCE(prs.last_rejected_at, prs.updated_at, prs.submitted_at) AS date,
+         CASE
+           WHEN prs.rejected_files > 0 OR prs.status = 'rejected' THEN COALESCE(prs.last_rejected_at, prs.updated_at, prs.submitted_at)
+           ELSE COALESCE(prs.submitted_at, prs.updated_at)
+         END AS date,
          prs.id AS post_id,
          prs.client_id,
          prs.title AS post_title,
@@ -71,15 +65,17 @@ export class NotificationRepository {
        FROM post_review_state prs
        LEFT JOIN notification_reads nr
          ON nr.notification_id = CASE
-           WHEN prs.rejected_files > 0 THEN 'rejected-' || prs.id::text
+           WHEN prs.rejected_files > 0 OR prs.status = 'rejected' THEN 'rejected-' || prs.id::text
            WHEN prs.status = 'pending_approval' THEN 'correction-' || prs.id::text
            ELSE 'pending-' || prs.id::text
          END
         AND nr.user_id = $1
        WHERE prs.rejected_files > 0
-          OR prs.pending_files > 0
           OR prs.status IN ('sent', 'pending_approval', 'rejected')
-       ORDER BY COALESCE(prs.last_rejected_at, prs.updated_at, prs.submitted_at) DESC`,
+       ORDER BY CASE
+         WHEN prs.rejected_files > 0 OR prs.status = 'rejected' THEN COALESCE(prs.last_rejected_at, prs.updated_at, prs.submitted_at)
+         ELSE COALESCE(prs.submitted_at, prs.updated_at)
+       END DESC`,
       params,
     )
 
