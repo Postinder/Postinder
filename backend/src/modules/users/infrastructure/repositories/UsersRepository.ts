@@ -150,13 +150,13 @@ export class UsersRepository {
     const clientScope = this.duplicateScopeConditions(clientParams, companyId)
 
     const userResult = await query(
-      `SELECT 1 FROM users WHERE LOWER(email) = $1${userScope} LIMIT 1`,
+      `SELECT 1 FROM users WHERE LOWER(email) = $1 AND is_active = true${userScope} LIMIT 1`,
       userParams,
     )
     if (userResult.rows[0]) return true
 
     const clientResult = await query(
-      `SELECT 1 FROM clients WHERE LOWER(email) = $1${clientScope} LIMIT 1`,
+      `SELECT 1 FROM clients WHERE LOWER(email) = $1 AND is_active = true${clientScope} LIMIT 1`,
       clientParams,
     )
 
