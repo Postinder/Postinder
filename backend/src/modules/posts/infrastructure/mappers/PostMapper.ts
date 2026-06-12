@@ -20,6 +20,8 @@ export class PostMapper {
     })
     ;(post as any).submittedAt = raw.submitted_at || null
     ;(post as any).approvedAt = raw.approved_at || null
+    ;(post as any).executedAt = raw.executed_at || null
+    ;(post as any).filesDeleteAfter = raw.files_delete_after || null
     return post
   }
 
@@ -71,6 +73,10 @@ export class PostMapper {
       submitted_at: (post as any).submittedAt,
       approvedAt: (post as any).approvedAt,
       approved_at: (post as any).approvedAt,
+      executedAt: (post as any).executedAt,
+      executed_at: (post as any).executedAt,
+      filesDeleteAfter: (post as any).filesDeleteAfter,
+      files_delete_after: (post as any).filesDeleteAfter,
     }
   }
 }

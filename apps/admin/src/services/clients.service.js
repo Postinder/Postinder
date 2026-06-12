@@ -1,7 +1,9 @@
 ﻿import { apiClient } from '../lib/axios'
 
-export async function fetchClients() {
-  const { data } = await apiClient.get('/clients')
+export async function fetchClients(options = {}) {
+  const params = {}
+  if (options.includeInactive) params.includeInactive = true
+  const { data } = await apiClient.get('/clients', { params })
   return data.data || data || []
 }
 
@@ -17,6 +19,11 @@ export async function updateClient(clientId, updates) {
 
 export async function softDeleteClient(clientId) {
   await apiClient.delete(`/clients/${clientId}`)
+}
+
+export async function activateClient(clientId) {
+  const { data } = await apiClient.patch(`/clients/${clientId}/activate`)
+  return data.data || data
 }
 
 export async function notifyClient(clientId) {

@@ -1,4 +1,5 @@
 import path from 'path'
+import fs from 'fs/promises'
 import { createClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
 import { env } from '../../config/environment'
@@ -55,4 +56,30 @@ export async function storeUploadedFile(file: Express.Multer.File): Promise<stri
 
   const { data } = supabase.storage.from(env.SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath)
   return data.publicUrl
+}
+
+export async function removeStoredFile(url?: string | null): Promise<void> {
+  if (!url) return
+
+  if (env.NODE_ENV !== 'production') {
+    if (!url.startsWith('/uploads/')) return
+    const filePath = path.join(process.cwd(), url.replace(/^\/+/, ''))
+    await fs.unlink(filePath).catch(() => {})
+    return
+  }
+
+  const supabase = getStorageClient()
+  if (!supabase) return
+
+  try {
+    const parsed = new URL(url)
+    const marker = `/storage/v1/object/public/${env.SUPABASE_STORAGE_BUCKET}/`
+    const markerIndex = parsed.pathname.indexOf(marker)
+    if (markerIndex < 0) return
+    const filePath = decodeURIComponent(parsed.pathname.slice(markerIndex + marker.length))
+    if (!filePath) return
+    await supabase.storage.from(env.SUPABASE_STORAGE_BUCKET).remove([filePath])
+  } catch {
+    // Ignore malformed or external URLs.
+  }
 }

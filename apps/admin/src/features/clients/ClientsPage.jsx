@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, MessageCircle, Trash2, Edit3, Upload, Eye, Users } from 'lucide-react'
-import { fetchClients, createClient, updateClient, softDeleteClient, parseVCFText } from '../../services/clients.service'
+import { Plus, MessageCircle, Trash2, Edit3, Upload, Eye, Users, RotateCcw } from 'lucide-react'
+import { fetchClients, createClient, updateClient, softDeleteClient, activateClient, parseVCFText } from '../../services/clients.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
 import { Avatar } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
@@ -17,7 +17,8 @@ const DOC_MASK = {
   cnpj: v => { v=v.replace(/\D/g,'').slice(0,14); if(v.length>12)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8,12)+'-'+v.slice(12); if(v.length>8)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8); if(v.length>5)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5); if(v.length>2)return v.slice(0,2)+'.'+v.slice(2); return v },
 }
 
-function ClientCard({ client, posts, onEdit, onDelete, onViewPosts, onViewDetails }) {
+function ClientCard({ client, posts, onEdit, onDeactivate, onActivate, onViewPosts, onViewDetails }) {
+  const inactive = client.is_active === false || client.isActive === false
   const cp  = posts.filter(p => p.client_id === client.id)
   const apv = cp.filter(p => computePostStatus(p) === 'approved').length
   const pnd = cp.filter(p => computePostStatus(p) === 'pending_approval').length
@@ -39,7 +40,10 @@ function ClientCard({ client, posts, onEdit, onDelete, onViewPosts, onViewDetail
         <div className="flex items-center gap-3">
           <Avatar name={client.name} color={client.color} size="lg" />
           <div className="min-w-0">
-            <div className="font-bold text-neutral-900 dark:text-white truncate">{client.name}</div>
+            <div className="flex items-center gap-2">
+              <div className="font-bold text-neutral-900 dark:text-white truncate">{client.name}</div>
+              {inactive ? <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold uppercase text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">Desativado</span> : null}
+            </div>
             <div className="text-xs text-neutral-400">{client.email}</div>
             <div className="text-xs text-neutral-400 mt-0.5">
               {cp.length} posts{client.segment ? ` · ${client.segment}` : ''} · prazo: {client.deadline_days || 7}d
@@ -47,8 +51,12 @@ function ClientCard({ client, posts, onEdit, onDelete, onViewPosts, onViewDetail
           </div>
         </div>
         <div className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 opacity-80 transition-opacity group-hover:opacity-100 dark:border-neutral-800 dark:bg-neutral-950/60">
-          <button onClick={() => onEdit(client)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500 transition-colors" title="Editar"><Edit3 size={14}/></button>
-          <button onClick={() => onDelete(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={14}/></button>
+          <button onClick={() => onEdit(client)} disabled={inactive} className="p-1.5 rounded-md hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500 transition-colors" title="Editar"><Edit3 size={14}/></button>
+          {!inactive ? (
+            <button onClick={() => onDeactivate(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition-colors" title="Desativar"><Trash2 size={14}/></button>
+          ) : (
+            <button onClick={() => onActivate(client.id)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-neutral-800 text-neutral-400 hover:text-green-600 transition-colors" title="Reativar"><RotateCcw size={14}/></button>
+          )}
         </div>
       </div>
 
@@ -68,13 +76,13 @@ function ClientCard({ client, posts, onEdit, onDelete, onViewPosts, onViewDetail
       </div>
 
       <div className="flex gap-2 flex-wrap">
-        <button onClick={openWA} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-green-500/20">
+        <button onClick={openWA} disabled={inactive} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-45 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-green-500/20">
           <MessageCircle size={12}/> WhatsApp
         </button>
         <button onClick={() => onViewDetails(client.id)} className="text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-teal-400 hover:text-teal-500 transition-all">
           Detalhes
         </button>
-        <button onClick={() => onViewPosts(client.id)} className="flex-1 text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-mag-400 hover:text-mag-500 transition-all">
+        <button onClick={() => onViewPosts(client.id)} disabled={inactive} className="flex-1 text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white disabled:cursor-not-allowed disabled:opacity-45 dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-mag-400 hover:text-mag-500 transition-all">
           <Eye size={12} className="inline mr-1"/> Ver posts
         </button>
       </div>
@@ -206,7 +214,7 @@ export default function ClientsPage() {
   const [editClient, setEditClient] = useState(null)
 
   useEffect(() => {
-    Promise.all([fetchClients(), fetchPosts()])
+    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ includeArchived: true, limit: 500 })])
       .then(([c,p]) => { setClients(c); setPosts(p) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -236,11 +244,17 @@ export default function ClientsPage() {
     toast.success(`${created.length} cliente(s) importado(s)!`)
   }
 
-  async function handleDelete(id) {
-    if (!confirm('Excluir este cliente e todos os seus posts?')) return
+  async function handleDeactivate(id) {
+    if (!confirm('Desativar este cliente? As metricas serao mantidas, as postagens sairao das listas operacionais e os anexos serao limpos em 1 dia.')) return
     await softDeleteClient(id)
-    setClients(c => c.filter(x => x.id !== id))
-    toast.success('Cliente excluído.')
+    setClients(c => c.map(x => x.id === id ? { ...x, is_active: false, isActive: false } : x))
+    toast.success('Cliente desativado.')
+  }
+
+  async function handleActivate(id) {
+    const updated = await activateClient(id)
+    setClients(c => c.map(x => x.id === id ? { ...x, ...updated, is_active: true, isActive: true } : x))
+    toast.success('Cliente reativado.')
   }
 
   function viewPosts(clientId) {
@@ -278,7 +292,7 @@ export default function ClientsPage() {
         <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-4">
           {clients.map(c => (
             <ClientCard key={c.id} client={c} posts={posts}
-              onEdit={setEditClient} onDelete={handleDelete} onViewPosts={viewPosts} onViewDetails={viewDetails} />
+              onEdit={setEditClient} onDeactivate={handleDeactivate} onActivate={handleActivate} onViewPosts={viewPosts} onViewDetails={viewDetails} />
           ))}
         </div>
       )}

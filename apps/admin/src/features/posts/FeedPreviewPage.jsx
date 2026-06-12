@@ -28,6 +28,11 @@ const STATUS_FILTERS = [
   { value: 'draft', label: 'Rascunho' },
 ]
 
+const FEED_SCOPE_OPTIONS = [
+  { value: 'active', label: 'Clientes ativos' },
+  { value: 'all', label: 'Geral' },
+]
+
 function normalizeFeedStatus(status) {
   if (['sent', 'pending', 'pending_approval'].includes(status)) return 'pending_approval'
   return status || 'draft'
@@ -35,6 +40,14 @@ function normalizeFeedStatus(status) {
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
+}
+
+function isClientActive(client) {
+  return client?.is_active !== false && client?.isActive !== false
+}
+
+function isPostArchived(post) {
+  return post?.archived === true || post?.is_archived === true || post?.isArchived === true || post?.status === 'archived'
 }
 
 function formatDate(value) {
@@ -286,6 +299,7 @@ export default function FeedPreviewPage() {
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedPost, setSelectedPost] = useState(null)
+  const [feedScope, setFeedScope] = useState('active')
 
   const filter = searchParams.get('client') || ''
   const selectedPostId = searchParams.get('post') || ''
@@ -310,13 +324,21 @@ export default function FeedPreviewPage() {
   }
 
   useEffect(() => {
-    Promise.all([fetchPosts(), fetchClients()])
+    Promise.all([fetchPosts({ includeArchived: true }), fetchClients({ includeInactive: true })])
       .then(([p, c]) => { setPosts(p); setClients(c) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
   }, [])
 
-  const filtered = posts
+  const activeClientIds = new Set(clients.filter(isClientActive).map(client => client.id))
+  const scopedClients = feedScope === 'active'
+    ? clients.filter(client => activeClientIds.has(client.id))
+    : clients
+  const scopedPosts = feedScope === 'active'
+    ? posts.filter(post => activeClientIds.has(getPostClientId(post)) && !isPostArchived(post))
+    : posts.filter(post => !isPostArchived(post) || !activeClientIds.has(getPostClientId(post)))
+
+  const filtered = scopedPosts
     .filter(p => !filter || p.client_id === filter || p.clientId === filter)
     .filter(p => !statusFilter || normalizeFeedStatus(computePostStatus(p)) === statusFilter)
     .sort((a, b) => {
@@ -325,7 +347,9 @@ export default function FeedPreviewPage() {
       return 0
     })
   const activeClient = clients.find(c => c.id === filter)
+  const selectedInactiveClient = activeClient && !isClientActive(activeClient)
   const activeStatusLabel = STATUS_FILTERS.find(item => item.value === statusFilter)?.label || 'Todos os estados'
+  const activeScopeLabel = FEED_SCOPE_OPTIONS.find(item => item.value === feedScope)?.label || 'Clientes ativos'
   const selectedClient = selectedPost ? clients.find(c => c.id === getPostClientId(selectedPost)) : null
 
   return (
@@ -350,7 +374,7 @@ export default function FeedPreviewPage() {
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Cliente selecionado</div>
-              <div className="text-sm font-semibold text-neutral-900 dark:text-white">{activeClient?.name || 'Todos os clientes'} · {activeStatusLabel}</div>
+              <div className="text-sm font-semibold text-neutral-900 dark:text-white">{activeClient?.name || activeScopeLabel} · {activeStatusLabel}</div>
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
@@ -358,10 +382,20 @@ export default function FeedPreviewPage() {
             Filtro do feed
           </div>
         </div>
-        <div className="grid gap-3 p-4 sm:max-w-2xl sm:grid-cols-2">
+        <div className="grid gap-3 p-4 sm:max-w-4xl sm:grid-cols-3">
+          <Select value={feedScope} onChange={e => setFeedScope(e.target.value)}>
+            {FEED_SCOPE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Select>
           <Select value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="">Todos os clientes</option>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {selectedInactiveClient && feedScope === 'active' ? (
+              <option value={activeClient.id}>{activeClient.name} (desativado)</option>
+            ) : null}
+            {scopedClients.map(c => (
+              <option key={c.id} value={c.id}>{c.name}{!isClientActive(c) ? ' (desativado)' : ''}</option>
+            ))}
           </Select>
           <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             {STATUS_FILTERS.map(option => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}

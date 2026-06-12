@@ -66,6 +66,11 @@ export async function updatePostStatus(postId, status) {
   return data
 }
 
+export async function markPostExecuted(postId, retention = 'never') {
+  const { data } = await apiClient.post(`/posts/${postId}/execute`, { retention })
+  return data
+}
+
 export async function getPost(postId) {
   const { data } = await apiClient.get(`/posts/${postId}`)
   return data
@@ -117,6 +122,8 @@ export function computePostStatus(post) {
   const files = Array.isArray(post?.files) ? post.files : []
   const fileStatus = files.length ? computePostStatus(files) : null
   const status = post?.status || 'draft'
+
+  if (status === 'executed') return 'executed'
 
   if (fileStatus === 'approved' && ['sent', 'pending_approval', 'rejected'].includes(status)) return 'approved'
   if (fileStatus === 'rejected' && ['sent', 'pending_approval', 'approved'].includes(status)) return 'rejected'

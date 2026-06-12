@@ -28,6 +28,7 @@ export function createPostsRoutes(): Router {
   router.delete('/:id', wrap(controller.delete.bind(controller)))
   router.post('/:id/duplicate', wrap(controller.duplicate.bind(controller)))
   router.patch('/:id/status', wrap(controller.updateStatus.bind(controller)))
+  router.post('/:id/execute', wrap(controller.markExecuted.bind(controller)))
   router.post('/:id/files', upload.array('files'), wrap(controller.uploadFiles.bind(controller)))
   router.patch('/:id/files/reorder', wrap(controller.reorderFiles.bind(controller)))
   router.post('/:id/files/:fileId/replace', upload.single('file'), wrap(controller.replaceFile.bind(controller)))

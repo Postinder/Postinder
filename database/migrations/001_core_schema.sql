@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS posts (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   submitted_at TIMESTAMP,
-  approved_at TIMESTAMP
+  approved_at TIMESTAMP,
+  executed_at TIMESTAMP,
+  files_delete_after TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS files (

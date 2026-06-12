@@ -27,6 +27,11 @@ const STATUS_OPTIONS = [
   { key: 'draft', label: 'Rascunhos' },
 ]
 
+const DASHBOARD_SCOPE_OPTIONS = [
+  { key: 'active', label: 'Clientes ativos' },
+  { key: 'all', label: 'Geral' },
+]
+
 const FILE_LABELS = {
   VIDEO: 'Video',
   AUDIO: 'Audio',
@@ -38,6 +43,14 @@ const FILE_LABELS = {
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
+}
+
+function isClientActive(client) {
+  return client?.is_active !== false && client?.isActive !== false
+}
+
+function isPostArchived(post) {
+  return post?.archived === true || post?.is_archived === true || post?.isArchived === true || post?.status === 'archived'
 }
 
 function getPostDate(post) {
@@ -384,6 +397,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setSF] = useState('all')
+  const [dashboardScope, setDashboardScope] = useState('active')
   const [sortBy, setSortBy] = useState('updated')
   const [activityLimit, setActivityLimit] = useState(5)
   const [activityPage, setActivityPage] = useState(1)
@@ -398,7 +412,7 @@ export default function DashboardPage() {
   }
 
   const load = useCallback(() => {
-    Promise.all([fetchPosts(), fetchClients(), fetchActivities({ limit: 50 })])
+    Promise.all([fetchPosts({ includeArchived: true }), fetchClients({ includeInactive: true }), fetchActivities({ limit: 50 })])
       .then(([p, c, a]) => { setPosts(p); setClients(c); setActivities(a) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -422,13 +436,26 @@ export default function DashboardPage() {
     }
   }
 
+  const activeClientIds = new Set(clients.filter(isClientActive).map(client => client.id))
+  const scopedClients = dashboardScope === 'active'
+    ? clients.filter(client => activeClientIds.has(client.id))
+    : clients
+  const scopedPosts = dashboardScope === 'active'
+    ? posts.filter(post => activeClientIds.has(getPostClientId(post)) && !isPostArchived(post))
+    : posts.filter(post => !isPostArchived(post) || !activeClientIds.has(getPostClientId(post)))
+  const scopedActivities = dashboardScope === 'active'
+    ? activities.filter(item => {
+      const clientId = item.clientId || item.client_id
+      return !clientId || activeClientIds.has(clientId)
+    })
+    : activities
   const activeClient = clients.find(c => c.id === clientFilter)
 
   function getPostClient(post) {
     return clients.find(c => c.id === getPostClientId(post)) || {}
   }
 
-  const filtered = posts.filter(p => {
+  const filtered = scopedPosts.filter(p => {
     const st = computePostStatus(p)
     const client = getPostClient(p)
     const haystack = `${p.title || ''} ${p.description || ''} ${client.name || ''}`.toLowerCase()
@@ -447,11 +474,11 @@ export default function DashboardPage() {
 
   const isCurrentClient = p => !clientFilter || getPostClientId(p) === clientFilter
   const counts = {
-    all: posts.filter(isCurrentClient).length,
-    pending_approval: posts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'pending_approval').length,
-    approved: posts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'approved').length,
-    rejected: posts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'rejected').length,
-    draft: posts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'draft').length,
+    all: scopedPosts.filter(isCurrentClient).length,
+    pending_approval: scopedPosts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'pending_approval').length,
+    approved: scopedPosts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'approved').length,
+    rejected: scopedPosts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'rejected').length,
+    draft: scopedPosts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'draft').length,
   }
   const metricCards = [
     { label: 'Total de Posts', value: counts.all, color: 'text-neutral-900 dark:text-white', key: 'all', description: 'Postagens no contexto atual' },
@@ -460,18 +487,20 @@ export default function DashboardPage() {
     { label: 'Recusados', value: counts.rejected, color: 'text-red-600', key: 'rejected', description: 'Precisam de correção' },
   ].map(metric => ({
     ...metric,
-    trend: getWeeklyTrend(posts, metric.key, clientFilter),
+    trend: getWeeklyTrend(scopedPosts, metric.key, clientFilter),
   }))
   useEffect(() => {
     setActivityPage(1)
-  }, [clientFilter, activityLimit])
+  }, [clientFilter, activityLimit, dashboardScope])
 
-  const recentActivities = buildRecentActivities(posts, clients, clientFilter, activities, 50)
+  const recentActivities = buildRecentActivities(scopedPosts, scopedClients, clientFilter, scopedActivities, 50)
   const activityTotalPages = Math.max(1, Math.ceil(recentActivities.length / activityLimit))
   const currentActivityPage = Math.min(activityPage, activityTotalPages)
   const visibleActivities = recentActivities.slice((currentActivityPage - 1) * activityLimit, currentActivityPage * activityLimit)
 
   const activeStatus = STATUS_OPTIONS.find(s => s.key === statusFilter)?.label || 'Todos'
+  const activeScope = DASHBOARD_SCOPE_OPTIONS.find(option => option.key === dashboardScope)?.label || 'Clientes ativos'
+  const selectedInactiveClient = activeClient && !isClientActive(activeClient)
 
   function openPostsFromMetric(statusKey) {
     const params = new URLSearchParams()
@@ -521,10 +550,15 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Empresa em foco</div>
-                <div className="text-sm font-semibold text-neutral-900 dark:text-white">{activeClient?.name || 'Todas as empresas'}</div>
+                <div className="text-sm font-semibold text-neutral-900 dark:text-white">
+                  {activeClient?.name || (dashboardScope === 'active' ? 'Todas as empresas ativas' : 'Todas as empresas')}
+                </div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="rounded-full bg-white px-3 py-1.5 font-medium dark:bg-neutral-800">
+                Visao: <strong className="text-neutral-800 dark:text-neutral-100">{activeScope}</strong>
+              </span>
               <span className="rounded-full bg-white px-3 py-1.5 font-medium dark:bg-neutral-800">
                 Status: <strong className="text-neutral-800 dark:text-neutral-100">{activeStatus}</strong>
               </span>
@@ -540,7 +574,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-        <div className="grid gap-3 p-4 lg:grid-cols-[minmax(260px,1.15fr)_minmax(260px,1fr)_220px]">
+        <div className="grid gap-3 p-4 lg:grid-cols-[minmax(240px,1.05fr)_220px_minmax(240px,1fr)_200px]">
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Buscar</span>
             <div className="relative">
@@ -550,10 +584,19 @@ export default function DashboardPage() {
             </div>
           </label>
           <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Visao</span>
+            <Select value={dashboardScope} onChange={e => setDashboardScope(e.target.value)}>
+              {DASHBOARD_SCOPE_OPTIONS.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </Select>
+          </label>
+          <label className="block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Empresa</span>
             <Select value={clientFilter} onChange={e => setClientFilter(e.target.value)}>
               <option value="">Todas as empresas</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {selectedInactiveClient && dashboardScope === 'active' ? (
+                <option value={activeClient.id}>{activeClient.name} (desativado)</option>
+              ) : null}
+              {scopedClients.map(c => <option key={c.id} value={c.id}>{c.name}{!isClientActive(c) ? ' (desativado)' : ''}</option>)}
             </Select>
           </label>
           <label className="block">
@@ -694,7 +737,7 @@ export default function DashboardPage() {
             <div className="text-sm font-semibold text-neutral-900 dark:text-white">
               Postagens <span className="text-neutral-400 font-normal">({sortedPosts.length})</span>
             </div>
-            <div className="mt-1 text-xs text-neutral-400">{activeClient?.name || 'Todas as empresas'} - {activeStatus}</div>
+            <div className="mt-1 text-xs text-neutral-400">{activeClient?.name || activeScope} - {activeStatus}</div>
           </div>
           <label className="flex items-center gap-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
             <ArrowUpDown size={14} />

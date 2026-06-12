@@ -93,11 +93,13 @@ export class ClientsController {
 
   async list(req: AuthRequest, res: Response) {
     try {
-      const { limit = 50, offset = 0 } = req.query
+      const { limit = 50, offset = 0, includeInactive } = req.query
+      const includeInactiveValue = includeInactive === 'true' || includeInactive === '1'
       const result = await this.clientRepository.findAll(
         req.tenantId,
         parseInt(limit as string, 10),
-        parseInt(offset as string, 10)
+        parseInt(offset as string, 10),
+        includeInactiveValue,
       )
 
       res.json({
@@ -159,7 +161,18 @@ export class ClientsController {
     try {
       const { id } = req.params
       await this.clientRepository.delete(id, req.tenantId)
-      res.json({ message: 'Client deleted successfully' })
+      res.json({ message: 'Client disabled successfully' })
+    } catch (error: any) {
+      res.status(500).json({ error: error.message })
+    }
+  }
+
+  async activate(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params
+      const client = await this.clientRepository.activate(id, req.tenantId)
+      if (!client) return res.status(404).json({ error: 'Client not found' })
+      res.json({ data: client })
     } catch (error: any) {
       res.status(500).json({ error: error.message })
     }

@@ -67,7 +67,7 @@ export class ClientRepository {
           c.updated_at
         FROM clients c
         LEFT JOIN client_portal_tokens t ON t.client_id = c.id
-        WHERE c.id = $1 AND c.is_active = true`
+        WHERE c.id = $1`
       if (companyId) {
         params.push(companyId)
         sql += ` AND c.company_id = $${params.length}`
@@ -126,7 +126,7 @@ export class ClientRepository {
     }
   }
 
-  async findAll(companyId?: string, limit = 50, offset = 0) {
+  async findAll(companyId?: string, limit = 50, offset = 0, includeInactive = false) {
     try {
       let sql = `
         SELECT
@@ -138,16 +138,20 @@ export class ClientRepository {
           c.color,
           c.deadline_days,
           c.company_id,
+          c.is_active,
           COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
           c.created_at
         FROM clients c
         LEFT JOIN client_portal_tokens t ON t.client_id = c.id
-        WHERE c.is_active = true`
+        WHERE 1 = 1`
       const params: any[] = []
 
       if (companyId) {
         sql += ` AND c.company_id = $${params.length + 1}`
         params.push(companyId)
+      }
+      if (!includeInactive) {
+        sql += ` AND c.is_active = true`
       }
 
       sql += ` GROUP BY c.id ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
@@ -157,11 +161,14 @@ export class ClientRepository {
       const result = await query(sql, params)
 
       // Get count
-      let countSql = 'SELECT COUNT(*) as count FROM clients WHERE is_active = true'
+      let countSql = 'SELECT COUNT(*) as count FROM clients WHERE 1 = 1'
       const countParams: any[] = []
       if (companyId) {
         countSql += ` AND company_id = $1`
         countParams.push(companyId)
+      }
+      if (!includeInactive) {
+        countSql += ` AND is_active = true`
       }
 
       const countResult = await query(countSql, countParams)
@@ -238,9 +245,97 @@ export class ClientRepository {
         conditions.push(`company_id = $${params.length}`)
       }
       await query(`UPDATE clients SET is_active = false, updated_at = NOW() WHERE ${conditions.join(' AND ')}`, params)
+
+      const postConditions = ['client_id = $1', 'deleted_at IS NULL']
+      const postParams = [id]
+      if (companyId) {
+        postParams.push(companyId)
+        postConditions.push(`company_id = $${postParams.length}`)
+      }
+      await query(
+        `UPDATE posts
+         SET files_delete_after = COALESCE(files_delete_after, NOW() + INTERVAL '1 day'),
+             archived_by_client_deactivation = CASE WHEN status = 'archived' THEN archived_by_client_deactivation ELSE true END,
+             updated_at = NOW()
+         WHERE ${postConditions.join(' AND ')}`,
+        postParams,
+      )
+      await query(
+        `UPDATE client_portal_tokens
+         SET revoked_at = NOW()
+         WHERE client_id = $1
+           AND revoked_at IS NULL`,
+        [id],
+      ).catch(() => {})
     } catch (error) {
       logger.error('Failed to delete client', { error })
       throw new Error('Failed to delete client')
+    }
+  }
+
+  async activate(id: string, companyId?: string) {
+    try {
+      const params: any[] = [id]
+      const conditions = ['id = $1']
+      if (companyId) {
+        params.push(companyId)
+        conditions.push(`company_id = $${params.length}`)
+      }
+
+      const result = await query(
+        `UPDATE clients
+         SET is_active = true,
+             updated_at = NOW()
+         WHERE ${conditions.join(' AND ')}
+         RETURNING id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, last_access_at, created_at, updated_at`,
+        params,
+      )
+
+      if (result.rows[0]) {
+        const postConditions = ['client_id = $1', 'deleted_at IS NULL']
+        const postParams = [id]
+        if (companyId) {
+          postParams.push(companyId)
+          postConditions.push(`company_id = $${postParams.length}`)
+        }
+
+        await query(
+          `UPDATE posts
+           SET status = CASE
+                 WHEN status <> 'archived' THEN status
+                 WHEN EXISTS (
+                   SELECT 1 FROM files f
+                   WHERE f.post_id = posts.id
+                     AND (f.status = 'rejected' OR f.rejection_reason IS NOT NULL)
+                 ) THEN 'rejected'
+                 WHEN EXISTS (
+                   SELECT 1 FROM files f
+                   WHERE f.post_id = posts.id
+                     AND f.status = 'pending'
+                 ) THEN 'pending_approval'
+                 WHEN EXISTS (
+                   SELECT 1 FROM files f
+                   WHERE f.post_id = posts.id
+                 ) AND NOT EXISTS (
+                   SELECT 1 FROM files f
+                   WHERE f.post_id = posts.id
+                     AND COALESCE(f.status, 'pending') <> 'approved'
+                 ) THEN 'approved'
+                 ELSE 'draft'
+               END,
+               files_delete_after = NULL,
+               archived_by_client_deactivation = false,
+               updated_at = NOW()
+           WHERE ${postConditions.join(' AND ')}
+             AND archived_by_client_deactivation = true`,
+          postParams,
+        )
+      }
+
+      return result.rows[0] || null
+    } catch (error) {
+      logger.error('Failed to activate client', { error })
+      throw new Error('Failed to activate client')
     }
   }
 }

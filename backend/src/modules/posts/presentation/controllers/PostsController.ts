@@ -35,15 +35,16 @@ export class PostsController {
   }
 
   async list(req: AuthRequest, res: Response) {
-    const { limit, offset, status, clientId } = req.query
+    const { limit, offset, status, clientId, includeArchived } = req.query
 
     const statusValue = status && Object.values(PostStatus).includes(status as PostStatus)
       ? (status as PostStatus)
       : undefined
+    const includeArchivedValue = includeArchived === 'true' || includeArchived === '1'
 
     const result = await this.listPostsService.execute(
       req.tenantId,
-      { status: statusValue, clientId: clientId as string | undefined },
+      { status: statusValue, clientId: clientId as string | undefined, includeArchived: includeArchivedValue },
       {
         limit: parseInt(limit as string) || 20,
         offset: parseInt(offset as string) || 0,
@@ -175,6 +176,23 @@ export class PostsController {
       type: 'post_status_changed',
       title: 'Status da postagem alterado',
       metadata: { status },
+    }).catch(() => {})
+    res.json({ success: true })
+  }
+
+  async markExecuted(req: AuthRequest, res: Response) {
+    const retention = ['never', 'immediate', '1d', '7d'].includes(req.body?.retention)
+      ? req.body.retention
+      : 'never'
+    const executed = await this.postRepository.markExecuted(req.params.id, retention, req.tenantId)
+    if (!executed) return res.status(400).json({ error: 'Post must be approved before execution or was not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_executed',
+      title: 'Postagem marcada como executada',
+      metadata: { retention },
     }).catch(() => {})
     res.json({ success: true })
   }

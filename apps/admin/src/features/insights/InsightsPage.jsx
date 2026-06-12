@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { BarChart2, Download, MessageSquare } from 'lucide-react'
 import { fetchMonthlyFeedbacks } from '../../services/insights.service'
 import { fetchPosts, computePostStatus } from '../../services/posts.service'
@@ -342,6 +342,11 @@ function buildPeriodOptions(posts, period, selectedValue) {
 }
 
 function getStatus(post) {
+  if (post?.status === 'executed') return 'approved'
+  if (post?.status === 'archived') {
+    const fileStatus = computePostStatus(post.files || [])
+    return fileStatus === 'draft' ? 'archived' : fileStatus
+  }
   const status = computePostStatus(post)
   if (status !== 'draft' || !post?.files?.length) return status
   return computePostStatus(post.files)
@@ -642,6 +647,7 @@ export default function InsightsPage() {
   const [posts, setPosts]     = useState([])
   const [feedbacks, setFeedbacks] = useState([])
   const [historicalFeedbacks, setHistoricalFeedbacks] = useState([])
+  const [metricsScope, setMetricsScope] = useState(savedFilters.metricsScope || 'all')
   const [metricsClientFilter, setMetricsClientFilter] = useState(savedFilters.metricsClientFilter || '')
   const [fbFilter, setFbFilter]   = useState(savedFilters.fbFilter || '')
   const [fbClientFilter, setFbClientFilter] = useState(savedFilters.fbClientFilter || '')
@@ -651,7 +657,7 @@ export default function InsightsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([fetchClients(), fetchPosts(), fetchMonthlyFeedbacks()])
+    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ includeArchived: true, limit: 500 }), fetchMonthlyFeedbacks()])
       .then(([c, p, hf]) => { setClients(c); setPosts(p); setHistoricalFeedbacks(hf) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -673,23 +679,39 @@ export default function InsightsPage() {
       tab,
       period,
       periodValue,
+      metricsScope,
       metricsClientFilter,
       fbFilter,
       fbClientFilter,
       fbMonth,
     }))
-  }, [tab, period, periodValue, metricsClientFilter, fbFilter, fbClientFilter, fbMonth])
+  }, [tab, period, periodValue, metricsScope, metricsClientFilter, fbFilter, fbClientFilter, fbMonth])
 
   const periodOptions = buildPeriodOptions(posts, period, periodValue)
   const periodRange = getPeriodRange(period, periodValue)
+  const activeClientIds = useMemo(
+    () => new Set(clients.filter(client => client.is_active !== false && client.isActive !== false).map(client => client.id)),
+    [clients],
+  )
+  const metricsClients = metricsScope === 'active'
+    ? clients.filter(client => activeClientIds.has(client.id))
+    : clients
+
+  useEffect(() => {
+    if (metricsScope === 'active' && metricsClientFilter && !activeClientIds.has(metricsClientFilter)) {
+      setMetricsClientFilter('')
+    }
+  }, [activeClientIds, metricsClientFilter, metricsScope])
+
   const metricsPosts = posts.filter(post => {
     const date = getPostDate(post)
+    if (metricsScope === 'active' && !activeClientIds.has(getPostClientId(post))) return false
     return (!metricsClientFilter || getPostClientId(post) === metricsClientFilter) &&
       date &&
       date >= periodRange.start &&
       date <= periodRange.end
   })
-  const activeMetricsClient = clients.find(c => c.id === metricsClientFilter)
+  const activeMetricsClient = metricsClients.find(c => c.id === metricsClientFilter)
 
   const total     = metricsPosts.length
   const approved  = metricsPosts.filter(p => getStatus(p) === 'approved').length
@@ -743,7 +765,7 @@ export default function InsightsPage() {
     : [8,12,15,10,18,22,16,14,20,11,9,13]
   const actData = getActivityData(metricsPosts, period, periodRange)
 
-  const clientApproval = clients.map(c => {
+  const clientApproval = metricsClients.map(c => {
     const cp = posts.filter(p => {
       const date = getPostDate(p)
       return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
@@ -754,7 +776,7 @@ export default function InsightsPage() {
     const r  = firstTotal ? Math.round(firstApproved / firstTotal * 100) : 0
     return { label: c.name, value: r }
   })
-  const clientRejection = clients.map(c => {
+  const clientRejection = metricsClients.map(c => {
     const cp = posts.filter(p => {
       const date = getPostDate(p)
       return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
@@ -784,7 +806,8 @@ export default function InsightsPage() {
   const selectedPeriodLabel = formatPeriodOption(period, periodValue)
 
   function handleExportMetrics() {
-    const clientLabel = activeMetricsClient?.name || 'Todos os clientes'
+    const scopeLabel = metricsScope === 'active' ? 'Somente clientes ativos' : 'Todos os clientes'
+    const clientLabel = activeMetricsClient?.name || scopeLabel
     const feedbackRows = rejectionFeedbackItems.map(item => [
       item.client?.name || '',
       item.post.title || '',
@@ -813,6 +836,7 @@ export default function InsightsPage() {
           rows: [
             ['Periodo', periodLabel],
             ['Recorte', selectedPeriodLabel],
+            ['Escopo', scopeLabel],
             ['Cliente', clientLabel],
             ['Total de posts', total],
             ['Aprovados', approved],
@@ -900,9 +924,13 @@ export default function InsightsPage() {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </Select>
+            <Select value={metricsScope} onChange={e => setMetricsScope(e.target.value)} className="w-56">
+              <option value="all">Geral</option>
+              <option value="active">Somente clientes ativos</option>
+            </Select>
             <Select value={metricsClientFilter} onChange={e => setMetricsClientFilter(e.target.value)} className="w-56">
               <option value="">Todos os clientes</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {metricsClients.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_active === false ? ' (desativado)' : ''}</option>)}
             </Select>
             <button
               type="button"
@@ -920,7 +948,7 @@ export default function InsightsPage() {
           ) : (
             <>
               <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                Visao: {activeMetricsClient?.name || 'Todos os clientes'}
+                Visao: {activeMetricsClient?.name || (metricsScope === 'active' ? 'Somente clientes ativos' : 'Geral')}
               </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-6">
                 <MetricCard label="Total de Posts"     value={total}              color="text-neutral-900 dark:text-white" sub="no período" />
@@ -1008,13 +1036,13 @@ export default function InsightsPage() {
                   <h3 className="font-bold text-sm">Feedbacks de reprovação (por arquivo)</h3>
                   <Select value={metricsClientFilter || fbClientFilter} onChange={e => setFbClientFilter(e.target.value)} disabled={Boolean(metricsClientFilter)} className="w-52">
                     <option value="">Todos os clientes</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_active === false ? ' (arquivado)' : ''}</option>)}
                   </Select>
                 </div>
                 <PaginatedFeedbacksCard posts={metricsPosts} clients={clients} clientFilter={metricsClientFilter || fbClientFilter} historicalFeedbacks={historicalFeedbacks} />
               </Card>
 
-              <AIInsightsPanel posts={metricsPosts} clients={activeMetricsClient ? [activeMetricsClient] : clients} period={period} />
+              <AIInsightsPanel posts={metricsPosts} clients={activeMetricsClient ? [activeMetricsClient] : metricsClients} period={period} />
             </>
           )}
         </>
@@ -1025,7 +1053,7 @@ export default function InsightsPage() {
           <div className="flex gap-3 mb-6 flex-wrap">
             <Select value={fbFilter} onChange={e => setFbFilter(e.target.value)} className="w-56">
               <option value="">Todos os clientes</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_active === false ? ' (arquivado)' : ''}</option>)}
             </Select>
             <Select value={fbMonth} onChange={e => setFbMonth(e.target.value)} className="w-48">
               <option value="">Todos os meses</option>

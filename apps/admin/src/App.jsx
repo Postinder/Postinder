@@ -16,6 +16,7 @@ import InsightsPage from './features/insights/InsightsPage'
 import UsersPage from './features/users/UsersPage'
 import EmailPage from './features/settings/EmailPage'
 import IntegrationsPage from './features/settings/IntegrationsPage'
+import ResetDataPage from './features/settings/ResetDataPage'
 import ClientPortalPage from './features/portal/ClientPortalPage'
 import { ROLE_PERMISSIONS } from './utils/constants'
 
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="users" element={<RequirePermission permission="users"><UsersPage /></RequirePermission>} />
         <Route path="email" element={<RequirePermission permission="email"><EmailPage /></RequirePermission>} />
         <Route path="integrations" element={<RequirePermission permission="integrations"><IntegrationsPage /></RequirePermission>} />
+        <Route path="reset" element={<RequirePermission permission="users"><ResetDataPage /></RequirePermission>} />
       </Route>
       <Route path="/aprovar" element={<RequireClient><ClientPortalPage mode="auth" /></RequireClient>} />
       <Route path="/aprovar/resumo" element={<Navigate to="/aprovar" replace />} />

@@ -6,6 +6,7 @@ export enum PostStatus {
   APPROVED = 'approved',
   REJECTED = 'rejected',
   ARCHIVED = 'archived',
+  EXECUTED = 'executed',
   SCHEDULED = 'scheduled',
   PUBLISHED = 'published',
 }

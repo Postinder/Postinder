@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PlusSquare, CheckCircle,
-  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu
+  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, RotateCcw
 } from 'lucide-react'
 import { useAuthStore }  from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -107,6 +107,7 @@ export default function AdminLayout() {
         {(isGestor || canAccess('integrations')) && <NavItem to="/admin/integrations" icon={Plug} label="Integrações" />}
 
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-4 pb-1">Conta</div>
+        {isAdmin && <NavItem to="/admin/reset" icon={RotateCcw} label="Reset de testes" />}
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium text-red-300/80 hover:text-red-300 hover:bg-white/5 transition-all"

@@ -25,6 +25,10 @@ export function createClientsRoutes(): Router {
     controller.notify(req, res).catch(err => res.status(500).json({ error: err.message }))
   )
 
+  router.patch('/:id/activate', (req: Request, res: Response) =>
+    controller.activate(req as any, res).catch(err => res.status(500).json({ error: err.message }))
+  )
+
   router.post('/:id/portal-link', (req: Request, res: Response) =>
     portalController.createClientLink(req as any, res).catch(err => res.status(500).json({ error: err.message }))
   )

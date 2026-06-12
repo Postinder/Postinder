@@ -14,6 +14,7 @@ import { createActivitiesRoutes } from './modules/activities/presentation/routes
 import { createNotificationsRoutes } from './modules/notifications/presentation/routes/notifications.routes'
 import { createPortalRoutes } from './modules/portal/presentation/routes/portal.routes'
 import { createClientPortalRoutes } from './modules/portal/presentation/routes/clientPortal.routes'
+import { createMaintenanceRoutes } from './modules/maintenance/presentation/routes/maintenance.routes'
 import { pool } from './shared/database/pool'
 import { env } from './config/environment'
 import { checkRemoteStorage } from './shared/upload/storage'
@@ -83,6 +84,7 @@ export function createApp(): Express {
   app.use('/api/v1/files', authMiddleware, readOnlyAdminMiddleware, createFilesRoutes())
   app.use('/api/v1/feedback', authMiddleware, readOnlyAdminMiddleware, createFeedbackRoutes())
   app.use('/api/v1/activities', authMiddleware, readOnlyAdminMiddleware, createActivitiesRoutes())
+  app.use('/api/v1/maintenance', authMiddleware, readOnlyAdminMiddleware, createMaintenanceRoutes())
 
   app.use(errorHandler)
 
@@ -104,6 +106,9 @@ export function createApp(): Express {
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS email_link TEXT;
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP;
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP;
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS files_delete_after TIMESTAMP;
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS archived_by_client_deactivation BOOLEAN DEFAULT false;
     CREATE TABLE IF NOT EXISTS activity_events (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       company_id UUID,

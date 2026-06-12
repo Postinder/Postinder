@@ -3,6 +3,7 @@ import { Post } from '../../domain/Post.entity'
 import { IPostRepository, FindPostsFilter, PaginationParams } from '../../domain/repositories/IPostRepository'
 import { PostMapper } from '../mappers/PostMapper'
 import { logger } from '../../../../shared/utils/Logger'
+import { removeStoredFile } from '../../../../shared/upload/storage'
 
 export class PostRepository implements IPostRepository {
   private buildPostScope(id: string, companyId?: string, alias = '') {
@@ -16,6 +17,36 @@ export class PostRepository implements IPostRepository {
     }
 
     return { params, conditions }
+  }
+
+  private async deletePostFiles(postId: string) {
+    const files = await query(`SELECT id, url FROM files WHERE post_id = $1`, [postId])
+    await Promise.all(files.rows.map(row => removeStoredFile(row.url).catch(() => {})))
+    await query(`DELETE FROM files WHERE post_id = $1`, [postId])
+  }
+
+  async cleanupDueFiles(companyId?: string) {
+    const params: any[] = []
+    const conditions = [
+      'p.files_delete_after IS NOT NULL',
+      'p.files_delete_after <= NOW()',
+    ]
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`p.company_id = $${params.length}`)
+    }
+
+    const result = await query(
+      `SELECT DISTINCT p.id
+       FROM posts p
+       JOIN files f ON f.post_id = p.id
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    )
+
+    for (const row of result.rows) {
+      await this.deletePostFiles(row.id)
+    }
   }
 
   async save(post: Post): Promise<Post> {
@@ -105,6 +136,8 @@ export class PostRepository implements IPostRepository {
 
   async findMany(filter: FindPostsFilter, pagination: PaginationParams) {
     try {
+      await this.cleanupDueFiles(filter.companyId).catch(() => {})
+
       const params: any[] = []
       const conditions: string[] = ['p.deleted_at IS NULL']
 
@@ -119,7 +152,7 @@ export class PostRepository implements IPostRepository {
       if (filter.status) {
         conditions.push(`p.status = $${params.length + 1}`)
         params.push(filter.status)
-      } else {
+      } else if (!filter.includeArchived) {
         conditions.push(`p.status <> 'archived'`)
       }
 
@@ -233,7 +266,10 @@ export class PostRepository implements IPostRepository {
   async softDelete(id: string, companyId?: string): Promise<boolean> {
     const { params, conditions } = this.buildPostScope(id, companyId)
     const result = await query(
-      `UPDATE posts SET status = 'archived', updated_at = NOW()
+      `UPDATE posts
+       SET status = 'archived',
+           archived_by_client_deactivation = false,
+           updated_at = NOW()
        WHERE ${conditions.join(' AND ')}
        RETURNING id`,
       params,
@@ -401,7 +437,7 @@ export class PostRepository implements IPostRepository {
   }
 
   async updateStatus(id: string, status: string, companyId?: string): Promise<boolean> {
-    const allowed = ['draft', 'ready', 'sent', 'approved', 'rejected', 'archived', 'pending_approval']
+    const allowed = ['draft', 'ready', 'sent', 'approved', 'rejected', 'archived', 'pending_approval', 'executed']
     if (!allowed.includes(status)) return false
 
     const { params, conditions } = this.buildPostScope(id, companyId)
@@ -526,6 +562,33 @@ export class PostRepository implements IPostRepository {
       ).catch(() => {})
     }
 
+    return true
+  }
+
+  async markExecuted(id: string, retention: 'never' | 'immediate' | '1d' | '7d' = 'never', companyId?: string) {
+    const { params, conditions } = this.buildPostScope(id, companyId)
+    const deleteAfterSql = retention === 'immediate'
+      ? 'NOW()'
+      : retention === '1d'
+        ? "NOW() + INTERVAL '1 day'"
+        : retention === '7d'
+          ? "NOW() + INTERVAL '7 days'"
+          : 'NULL'
+
+    const result = await query(
+      `UPDATE posts
+       SET status = 'executed',
+           executed_at = NOW(),
+           files_delete_after = ${deleteAfterSql},
+           updated_at = NOW()
+       WHERE ${conditions.join(' AND ')}
+         AND status = 'approved'
+       RETURNING id`,
+      params,
+    )
+
+    if (!result.rows[0]) return false
+    if (retention === 'immediate') await this.deletePostFiles(id)
     return true
   }
 

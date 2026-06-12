@@ -31,6 +31,15 @@ function formatDate(value) {
   }).format(date)
 }
 
+function getHistoricalStatus(post) {
+  if (post?.status === 'executed') return 'approved'
+  if (post?.status === 'archived') {
+    const fileStatus = computePostStatus(post.files || [])
+    return fileStatus === 'draft' ? 'archived' : fileStatus
+  }
+  return computePostStatus(post)
+}
+
 function MetricCard({ icon, label, value, sub, color = 'text-neutral-900 dark:text-white' }) {
   return (
     <Card className="p-5">
@@ -85,7 +94,7 @@ export default function ClientDetailsPage() {
   const [portalDays, setPortalDays] = useState(15)
 
   useEffect(() => {
-    Promise.all([fetchClients(), fetchPosts(), fetchMonthlyFeedbacks({ clientId: id })])
+    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ includeArchived: true, limit: 500 }), fetchMonthlyFeedbacks({ clientId: id })])
       .then(([loadedClients, loadedPosts, loadedFeedbacks]) => {
         setClients(loadedClients)
         setPosts(loadedPosts)
@@ -96,6 +105,7 @@ export default function ClientDetailsPage() {
   }, [])
 
   const client = clients.find(item => item.id === id)
+  const inactive = client?.is_active === false || client?.isActive === false
   const clientPosts = useMemo(
     () => posts.filter(post => getPostClientId(post) === id),
     [posts, id]
@@ -103,9 +113,9 @@ export default function ClientDetailsPage() {
 
   const stats = useMemo(() => {
     const total = clientPosts.length
-    const approved = clientPosts.filter(post => computePostStatus(post) === 'approved').length
-    const pending = clientPosts.filter(post => computePostStatus(post) === 'pending_approval').length
-    const currentlyRejected = clientPosts.filter(post => computePostStatus(post) === 'rejected').length
+    const approved = clientPosts.filter(post => getHistoricalStatus(post) === 'approved').length
+    const pending = clientPosts.filter(post => getHistoricalStatus(post) === 'pending_approval').length
+    const currentlyRejected = clientPosts.filter(post => getHistoricalStatus(post) === 'rejected').length
     const postIds = new Set(clientPosts.map(post => post.id))
     const rejectedPostIds = new Set()
 
@@ -121,12 +131,12 @@ export default function ClientDetailsPage() {
     })
 
     const initiallyRejected = rejectedPostIds.size
-    const initiallyApproved = clientPosts.filter(post => computePostStatus(post) === 'approved' && !rejectedPostIds.has(post.id)).length
+    const initiallyApproved = clientPosts.filter(post => getHistoricalStatus(post) === 'approved' && !rejectedPostIds.has(post.id)).length
     const initialDecisionTotal = initiallyApproved + initiallyRejected
     const approvalRate = initialDecisionTotal ? Math.round((initiallyApproved / initialDecisionTotal) * 100) : 0
     const rejectionRate = initialDecisionTotal ? Math.round((initiallyRejected / initialDecisionTotal) * 100) : 0
-    const concludedWithRevision = clientPosts.filter(post => computePostStatus(post) === 'approved' && rejectedPostIds.has(post.id)).length
-    const concludedWithoutRevision = clientPosts.filter(post => computePostStatus(post) === 'approved' && !rejectedPostIds.has(post.id)).length
+    const concludedWithRevision = clientPosts.filter(post => getHistoricalStatus(post) === 'approved' && rejectedPostIds.has(post.id)).length
+    const concludedWithoutRevision = clientPosts.filter(post => getHistoricalStatus(post) === 'approved' && !rejectedPostIds.has(post.id)).length
 
     return { total, approved, pending, currentlyRejected, initiallyRejected, initiallyApproved, approvalRate, rejectionRate, concludedWithRevision, concludedWithoutRevision }
   }, [clientPosts, feedbacks])
@@ -152,6 +162,7 @@ export default function ClientDetailsPage() {
   const lastAccess = client?.last_access_at || client?.lastAccessAt
 
   async function handleGeneratePortalLink() {
+    if (inactive) return
     setPortalBusy(true)
     try {
       const result = await generateClientPortalLink(id, portalDays)
@@ -218,7 +229,10 @@ export default function ClientDetailsPage() {
           <div className="flex items-center gap-4">
             <Avatar name={client.name} color={client.color} size="lg" />
             <div>
-              <h1 className="text-2xl font-extrabold text-neutral-950 dark:text-white">{client.name}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-extrabold text-neutral-950 dark:text-white">{client.name}</h1>
+                {inactive ? <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold uppercase text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">Desativado</span> : null}
+              </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 {client.email && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><Mail size={13} />{client.email}</span>}
                 {client.whatsapp && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><MessageCircle size={13} />{client.whatsapp}</span>}
@@ -230,6 +244,7 @@ export default function ClientDetailsPage() {
             <select
               value={portalDays}
               onChange={event => setPortalDays(Number(event.target.value))}
+              disabled={inactive}
               className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold text-neutral-600 outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
             >
               <option value={7}>7 dias</option>
@@ -238,7 +253,7 @@ export default function ClientDetailsPage() {
             {portalLink?.portalUrl ? (
               <Button variant="secondary" onClick={handleCopyPortalLink} icon={<Copy size={16} />}>Copiar link do portal</Button>
             ) : null}
-            <Button variant="secondary" loading={portalBusy} onClick={handleGeneratePortalLink} icon={portalLink ? <RefreshCw size={16} /> : <Link2 size={16} />}>
+            <Button variant="secondary" loading={portalBusy} disabled={inactive} onClick={handleGeneratePortalLink} icon={portalLink ? <RefreshCw size={16} /> : <Link2 size={16} />}>
               {portalLink ? 'Regerar link' : 'Gerar link do portal'}
             </Button>
             <Button variant="secondary" onClick={() => navigate(`/admin/dashboard?client=${client.id}`)}>Ver posts</Button>

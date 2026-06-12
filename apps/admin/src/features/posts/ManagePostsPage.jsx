@@ -36,6 +36,7 @@ import {
   uploadPostFiles,
   reorderPostFiles,
   removePostFile,
+  markPostExecuted,
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
@@ -47,10 +48,17 @@ const STATUS_OPTIONS = [
   { value: 'sent', label: 'Enviado' },
   { value: 'pending_approval', label: 'Aguardando' },
   { value: 'rejected', label: 'Recusado' },
-  { value: 'archived', label: 'Arquivado' },
+  { value: 'archived', label: 'Arquivado interno' },
 ]
 
 const SENDABLE_STATUSES = ['draft', 'ready', 'rejected']
+
+const EXECUTION_RETENTION_OPTIONS = [
+  { value: 'never', label: 'Manter arquivos', description: 'Os anexos continuam disponiveis para consulta.' },
+  { value: 'immediate', label: 'Excluir agora', description: 'Remove os arquivos assim que marcar como executado.' },
+  { value: '1d', label: 'Excluir em 1 dia', description: 'Mantem os anexos por 24 horas apos a execucao.' },
+  { value: '7d', label: 'Excluir em 1 semana', description: 'Mantem os anexos por 7 dias apos a execucao.' },
+]
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
@@ -311,6 +319,58 @@ function BatchSendModal({ posts, clientsById, open, onClose, onConfirm, loading 
   )
 }
 
+function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
+  const [retention, setRetention] = useState('never')
+
+  useEffect(() => {
+    if (open) setRetention('never')
+  }, [open])
+
+  if (!post) return null
+
+  return (
+    <Modal open={open} onClose={onClose} title="Marcar como executado" subtitle="Confirme que a postagem ja foi executada pela equipe.">
+      <div className="space-y-4">
+        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="font-extrabold text-neutral-950 dark:text-white">{post.title || 'Post sem titulo'}</div>
+          <div className="mt-1 text-xs text-neutral-500">{client?.name || 'Cliente'} - {(post.files || []).length} arquivo(s)</div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Limpeza dos arquivos</div>
+          <div className="space-y-2">
+            {EXECUTION_RETENTION_OPTIONS.map(option => (
+              <label key={option.value} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${retention === option.value ? 'border-mag-500 bg-mag-50 dark:bg-mag-500/10' : 'border-neutral-200 dark:border-neutral-800'}`}>
+                <input
+                  type="radio"
+                  name="execution-retention"
+                  value={option.value}
+                  checked={retention === option.value}
+                  onChange={event => setRetention(event.target.value)}
+                  className="mt-1 accent-mag-600"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-neutral-900 dark:text-white">{option.label}</span>
+                  <span className="mt-0.5 block text-xs text-neutral-500">{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          Depois de executado, o projeto sai da lista de concluidos e entra em executados. O cliente nao podera alterar a aprovacao.
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="secondary" className="flex-1 justify-center" onClick={onClose}>Cancelar</Button>
+          <Button className="flex-1 justify-center" onClick={() => onConfirm(retention)} loading={loading} icon={<CheckCircle size={16} />}>Confirmar execucao</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export default function ManagePostsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -322,17 +382,19 @@ export default function ManagePostsPage() {
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all')
   const [channelFilter, setChannelFilter] = useState('all')
   const [sortBy, setSortBy] = useState('updated')
-  const [view, setView] = useState(searchParams.get('view') === 'completed' ? 'completed' : 'active')
+  const [view, setView] = useState(['completed', 'executed'].includes(searchParams.get('view')) ? searchParams.get('view') : 'active')
   const [selected, setSelected] = useState([])
   const [editPost, setEditPost] = useState(null)
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchLoading, setBatchLoading] = useState(false)
+  const [executePost, setExecutePost] = useState(null)
+  const [executeLoading, setExecuteLoading] = useState(false)
 
   const clientsById = useMemo(() => new Map(clients.map(client => [client.id, client])), [clients])
 
   function load() {
     setLoading(true)
-    Promise.all([fetchPosts({ limit: 200 }), fetchClients()])
+    Promise.all([fetchPosts({ limit: 500, includeArchived: true }), fetchClients()])
       .then(([loadedPosts, loadedClients]) => {
         setPosts(loadedPosts)
         setClients(loadedClients)
@@ -344,7 +406,7 @@ export default function ManagePostsPage() {
   useEffect(() => { load() }, [])
 
   useEffect(() => {
-    if (view === 'completed' && statusFilter !== 'all') setStatusFilter('all')
+    if (view !== 'active' && statusFilter !== 'all') setStatusFilter('all')
     setSelected([])
   }, [view, statusFilter])
 
@@ -352,14 +414,17 @@ export default function ManagePostsPage() {
     return posts
       .filter(post => {
         const status = computePostStatus(post)
+        const client = clientsById.get(getPostClientId(post))
+        if (!client) return false
         if (view === 'completed') {
           if (status !== 'approved') return false
+        } else if (view === 'executed') {
+          if (status !== 'executed') return false
         } else {
-          if (status === 'approved') return false
+          if (['approved', 'executed'].includes(status)) return false
           if (status !== 'archived' && statusFilter === 'archived') return false
           if (status === 'archived' && statusFilter !== 'archived') return false
         }
-        const client = clientsById.get(getPostClientId(post)) || {}
         const haystack = `${post.title || ''} ${post.description || ''} ${client.name || ''}`.toLowerCase()
         if (search && !haystack.includes(search.toLowerCase())) return false
         if (clientFilter && getPostClientId(post) !== clientFilter) return false
@@ -375,10 +440,12 @@ export default function ManagePostsPage() {
   }, [posts, clientsById, search, clientFilter, statusFilter, channelFilter, sortBy, view])
 
   const activeCount = posts.filter(post => {
+    if (!clientsById.has(getPostClientId(post))) return false
     const status = computePostStatus(post)
-    return status !== 'approved' && status !== 'archived'
+    return !['approved', 'executed', 'archived'].includes(status)
   }).length
-  const completedCount = posts.filter(post => computePostStatus(post) === 'approved').length
+  const completedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'approved').length
+  const executedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'executed').length
 
   const selectedPosts = filtered.filter(post => selected.includes(post.id))
   const sendableSelected = selectedPosts.filter(post => SENDABLE_STATUSES.includes(computePostStatus(post)))
@@ -421,6 +488,21 @@ export default function ManagePostsPage() {
     }
   }
 
+  async function handleMarkExecuted(retention) {
+    if (!executePost) return
+    setExecuteLoading(true)
+    try {
+      await markPostExecuted(executePost.id, retention)
+      toast.success('Postagem marcada como executada.')
+      setExecutePost(null)
+      load()
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setExecuteLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -435,6 +517,7 @@ export default function ManagePostsPage() {
           {[
             { key: 'active', label: 'Projetos em andamento', count: activeCount },
             { key: 'completed', label: 'Concluidos', count: completedCount },
+            { key: 'executed', label: 'Executados', count: executedCount },
           ].map(item => (
             <button
               key={item.key}
@@ -484,7 +567,7 @@ export default function ManagePostsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm text-neutral-500">
             <Filter size={16} />
-            {filtered.length} postagem(ns) {view === 'completed' ? 'concluida(s)' : 'em andamento'} encontrada(s)
+            {filtered.length} postagem(ns) {view === 'executed' ? 'executada(s)' : view === 'completed' ? 'concluida(s)' : 'em andamento'} encontrada(s)
             {view === 'active' && selected.length ? <span className="font-bold text-mag-600">- {selected.length} selecionada(s)</span> : null}
           </div>
           {view === 'active' ? (
@@ -505,6 +588,7 @@ export default function ManagePostsPage() {
             const client = clientsById.get(getPostClientId(post)) || {}
             const status = computePostStatus(post)
             const canSend = SENDABLE_STATUSES.includes(status)
+            const canExecute = status === 'approved'
             const canArchive = !['archived'].includes(status)
             return (
               <Card key={post.id} className="p-4">
@@ -535,12 +619,13 @@ export default function ManagePostsPage() {
                   </div>
                   <div className="flex flex-wrap justify-end gap-1.5">
                     <button title="Previa" onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:hover:bg-neutral-800"><Eye size={16} /></button>
-                    <button title="Editar" onClick={() => setEditPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><Edit3 size={16} /></button>
+                    {status !== 'executed' && <button title="Editar" onClick={() => setEditPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><Edit3 size={16} /></button>}
                     <button title="Duplicar" onClick={() => runAction(() => duplicatePost(post.id), 'Postagem duplicada.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 dark:hover:bg-neutral-800"><Copy size={16} /></button>
                     {status === 'draft' && <button title="Marcar pronto" onClick={() => runAction(() => updatePostStatus(post.id, 'ready'), 'Postagem marcada como pronta.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-green-600 dark:hover:bg-neutral-800"><CheckCircle size={16} /></button>}
                     {status === 'ready' && <button title="Voltar para rascunho" onClick={() => runAction(() => updatePostStatus(post.id, 'draft'), 'Postagem voltou para rascunho.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-amber-600 dark:hover:bg-neutral-800"><RotateCcw size={16} /></button>}
                     {canSend && <button title="Enviar para aprovacao" onClick={() => handleSend(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:hover:bg-neutral-800"><Send size={16} /></button>}
-                    {canArchive && <button title="Arquivar" onClick={() => {
+                    {canExecute && <button title="Marcar como executado" onClick={() => setExecutePost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><CheckCircle size={16} /></button>}
+                    {canArchive && status !== 'executed' && <button title="Arquivar" onClick={() => {
                       const needsConfirm = ['sent', 'pending_approval', 'approved'].includes(status)
                       if (!needsConfirm || confirm('Esta postagem ja foi enviada/aprovada. Arquivar mesmo assim?')) {
                         runAction(() => softDeletePost(post.id), 'Postagem arquivada.')
@@ -554,7 +639,7 @@ export default function ManagePostsPage() {
           {!filtered.length && (
             <Card className="p-10 text-center">
               <div className="text-sm font-bold text-neutral-700 dark:text-neutral-200">Nenhuma postagem encontrada</div>
-              <p className="mt-1 text-sm text-neutral-500">{view === 'completed' ? 'Nenhum projeto concluido com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
+              <p className="mt-1 text-sm text-neutral-500">{view === 'executed' ? 'Nenhum projeto executado com estes filtros.' : view === 'completed' ? 'Nenhum projeto concluido com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
               <Button className="mt-4" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')}>Nova Postagem</Button>
             </Card>
           )}
@@ -569,6 +654,14 @@ export default function ManagePostsPage() {
         onClose={() => setBatchOpen(false)}
         onConfirm={handleBatchSend}
         loading={batchLoading}
+      />
+      <ExecutePostModal
+        post={executePost}
+        client={executePost ? clientsById.get(getPostClientId(executePost)) : null}
+        open={!!executePost}
+        onClose={() => setExecutePost(null)}
+        onConfirm={handleMarkExecuted}
+        loading={executeLoading}
       />
     </div>
   )
