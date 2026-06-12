@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   CalendarDays,
@@ -235,7 +235,11 @@ function PostCard({ post, onApprove, onReject, busy }) {
 
 function SwipeReviewCard({ post, file, fileIndex, totalFiles, onApprove, onReject, busy }) {
   const [dragX, setDragX] = useState(0)
-  const [startX, setStartX] = useState(null)
+  const [dragging, setDragging] = useState(false)
+  const cardRef = useRef(null)
+  const pointerIdRef = useRef(null)
+  const startXRef = useRef(0)
+  const dragXRef = useRef(0)
   const mediaUrl = resolveMediaUrl(file?.storage_url || file?.url)
   const fileType = String(file?.file_type || '').toUpperCase()
   const fileName = file?.name || 'Arquivo'
@@ -243,33 +247,55 @@ function SwipeReviewCard({ post, file, fileIndex, totalFiles, onApprove, onRejec
   const correction = isCorrectionPost(post)
 
   function handlePointerDown(event) {
-    if (busy) return
-    setStartX(event.clientX)
+    if (busy || (event.pointerType === 'mouse' && event.button !== 0)) return
+    pointerIdRef.current = event.pointerId
+    startXRef.current = event.clientX
+    dragXRef.current = 0
+    setDragX(0)
+    setDragging(true)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
   }
 
   function handlePointerMove(event) {
-    if (startX === null || busy) return
-    setDragX(Math.max(-120, Math.min(120, event.clientX - startX)))
+    if (pointerIdRef.current !== event.pointerId || busy) return
+    const nextDragX = Math.max(-140, Math.min(140, event.clientX - startXRef.current))
+    dragXRef.current = nextDragX
+    setDragX(nextDragX)
+    if (Math.abs(nextDragX) > 6) event.preventDefault()
   }
 
-  function handlePointerUp() {
-    if (startX === null || busy) return
-    const finalX = dragX
-    setStartX(null)
+  function finishPointer(event) {
+    if (pointerIdRef.current !== event.pointerId || busy) return
+    const finalX = dragXRef.current
+    pointerIdRef.current = null
+    dragXRef.current = 0
+    setDragging(false)
     setDragX(0)
-    if (finalX > 80) onApprove()
-    if (finalX < -80) onReject()
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (finalX >= 90) onApprove()
+    if (finalX <= -90) onReject()
+  }
+
+  function cancelPointer(event) {
+    if (pointerIdRef.current !== event.pointerId) return
+    pointerIdRef.current = null
+    dragXRef.current = 0
+    setDragging(false)
+    setDragX(0)
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
   }
 
   return (
     <div className="mx-auto max-w-xl">
       <div
-        className="relative select-none overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900"
+        ref={cardRef}
+        className={`relative select-none overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl touch-pan-y dark:border-neutral-800 dark:bg-neutral-900 ${dragging ? 'cursor-grabbing' : 'cursor-grab transition-transform duration-200'}`}
         style={{ transform: `translateX(${dragX}px) rotate(${dragX * 0.04}deg)` }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerUp={finishPointer}
+        onPointerCancel={cancelPointer}
+        onDragStart={event => event.preventDefault()}
       >
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-between px-6">
           <span className={`rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white transition-opacity ${dragX < -35 ? 'opacity-100' : 'opacity-0'}`}>
@@ -282,7 +308,12 @@ function SwipeReviewCard({ post, file, fileIndex, totalFiles, onApprove, onRejec
 
         <div className="relative bg-neutral-100 dark:bg-neutral-950">
           {isImage && mediaUrl ? (
-            <img src={mediaUrl} alt={fileName} className="h-[min(420px,55vh)] w-full object-contain" />
+            <img
+              src={mediaUrl}
+              alt={fileName}
+              draggable={false}
+              className="pointer-events-none h-[min(420px,55vh)] w-full object-contain"
+            />
           ) : mediaUrl ? (
             <div className="flex h-[min(420px,55vh)] flex-col items-center justify-center gap-4 text-neutral-500">
               <FileText size={52} />
