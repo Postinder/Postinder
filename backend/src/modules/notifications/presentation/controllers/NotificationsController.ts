@@ -17,12 +17,16 @@ export class NotificationsController {
     const userId = this.getUserId(req)
     if (!userId) return res.status(401).json({ error: 'Authenticated user required' })
 
-    const notifications = await this.notificationRepository.list({
-      companyId: req.tenantId,
-      userId,
-    })
-
-    res.json({ data: notifications })
+    try {
+      const notifications = await this.notificationRepository.list({
+        companyId: req.tenantId,
+        userId,
+      })
+      res.json({ data: notifications })
+    } catch (err: any) {
+      console.error('[NotificationsController.list]', err)
+      res.status(500).json({ error: 'Erro ao buscar notificações', detail: err?.message })
+    }
   }
 
   async markAsRead(req: AuthRequest, res: Response) {
@@ -35,24 +39,32 @@ export class NotificationsController {
         ? [req.body.notificationId]
         : []
 
-    const reads = await this.notificationRepository.markAsRead({
-      companyId: req.tenantId,
-      userId,
-      notificationIds,
-    })
-
-    res.json({ data: reads })
+    try {
+      const reads = await this.notificationRepository.markAsRead({
+        companyId: req.tenantId,
+        userId,
+        notificationIds,
+      })
+      res.json({ data: reads })
+    } catch (err: any) {
+      console.error('[NotificationsController.markAsRead]', err)
+      res.status(500).json({ error: 'Erro ao marcar notificações como lidas', detail: err?.message })
+    }
   }
 
   async markAllAsRead(req: AuthRequest, res: Response) {
     const userId = this.getUserId(req)
     if (!userId) return res.status(401).json({ error: 'Authenticated user required' })
 
-    const reads = await this.notificationRepository.markAllAsRead({
-      companyId: req.tenantId,
-      userId,
-    })
-
-    res.json({ data: reads })
+    try {
+      const reads = await this.notificationRepository.markAllAsRead({
+        companyId: req.tenantId,
+        userId,
+      })
+      res.json({ data: reads })
+    } catch (err: any) {
+      console.error('[NotificationsController.markAllAsRead]', err)
+      res.status(500).json({ error: 'Erro ao marcar todas como lidas', detail: err?.message })
+    }
   }
 }
