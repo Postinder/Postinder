@@ -33,7 +33,7 @@ export class CreatePostService {
       scheduledDate: dto.scheduledDate || dto.scheduled_date || null,
       funnelTag: dto.funnelTag || dto.funnel_tag || null,
       emailLink: dto.emailLink || dto.email_link || null,
-      status: dto.emailLink || dto.email_link ? PostStatus.PENDING_APPROVAL : undefined,
+      status: dto.status === 'ready' ? PostStatus.READY : PostStatus.DRAFT,
     })
 
     const saved = await this.postRepository.save(post)

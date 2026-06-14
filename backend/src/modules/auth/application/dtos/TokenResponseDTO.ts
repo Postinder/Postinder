@@ -6,6 +6,7 @@ export interface TokenResponseDTO {
     email: string
     name: string
     role?: string
+    permissions?: string[]
     type: 'admin' | 'client'
   }
 }

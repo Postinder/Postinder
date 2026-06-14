@@ -8,7 +8,7 @@ import { fetchUsers } from '../../services/users.service'
 
 const STATUS_LABELS = {
   draft: 'Rascunho',
-  pending_approval: 'Aguardando aprovacao',
+  pending_approval: 'Aguardando aprovação',
   approved: 'Aprovado',
   rejected: 'Recusado',
 }
@@ -173,7 +173,7 @@ export default function GlobalSearch() {
           return {
             id: `post-${post.id}`,
             type: 'post',
-            title: post.title || 'Postagem sem titulo',
+            title: post.title || 'Postagem sem título',
             description: `${client?.name || 'Cliente'} · ${STATUS_LABELS[status] || status}`,
             target: clientId ? `/admin/feed?client=${clientId}&post=${post.id}` : `/admin/feed?post=${post.id}`,
             icon: FileText,
@@ -190,8 +190,8 @@ export default function GlobalSearch() {
         .map(user => ({
           id: `user-${user.id}`,
           type: 'user',
-          title: user.name || 'Usuario sem nome',
-          description: [user.email, user.role].filter(Boolean).join(' · ') || 'Usuario do sistema',
+          title: user.name || 'Usuário sem nome',
+          description: [user.email, user.role].filter(Boolean).join(' · ') || 'Usuário do sistema',
           target: '/admin/users',
           icon: UserCog,
           iconClass: 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300',
@@ -243,7 +243,7 @@ export default function GlobalSearch() {
           <div className="border-b border-neutral-100 px-4 py-3 dark:border-neutral-800">
             <div className="text-sm font-bold text-neutral-900 dark:text-white">Busca global</div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400">
-              Busque por clientes, postagens e usuarios.
+              Busque por clientes, postagens e usuários.
             </div>
           </div>
 
@@ -272,7 +272,7 @@ export default function GlobalSearch() {
                 onSelect={selectResult}
               />
               <ResultSection
-                title={`Usuarios (${results.users.length})`}
+                title={`Usuários (${results.users.length})`}
                 items={results.users}
                 emptyLabel="Nenhum usuario encontrado."
                 onSelect={selectResult}

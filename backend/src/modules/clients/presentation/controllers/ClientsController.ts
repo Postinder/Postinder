@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { ClientRepository } from '../../infrastructure/repositories/ClientRepository'
 import bcryptjs from 'bcryptjs'
 import { env } from '../../../../config/environment'
+import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 
 interface AuthRequest extends Request {
   user?: any
@@ -9,7 +10,10 @@ interface AuthRequest extends Request {
 }
 
 export class ClientsController {
-  constructor(private clientRepository: ClientRepository) {}
+  constructor(
+    private clientRepository: ClientRepository,
+    private activityRepository = new ActivityRepository(),
+  ) {}
 
   private onlyDigits(value = '') {
     return value.replace(/\D/g, '')
@@ -72,20 +76,33 @@ export class ClientsController {
         company_id: req.tenantId,
       })
 
+      await this.activityRepository.createForClient(client.id, {
+        companyId: req.tenantId,
+        actorId: req.user?.userId || req.user?.clientId,
+        actorRole: req.user?.role,
+        type: 'client_created',
+        title: 'Cliente criado',
+      }).catch(() => {})
+
       res.status(201).json({ data: client })
     } catch (error: any) {
       const status = error.message === 'Email already exists' ? 400 : 500
-      res.status(status).json({ error: error.message })
+      const message = error.message === 'Email already exists'
+        ? 'Este e-mail ja esta em uso por um usuario ou cliente.'
+        : error.message
+      res.status(status).json({ error: message })
     }
   }
 
   async list(req: AuthRequest, res: Response) {
     try {
-      const { limit = 50, offset = 0 } = req.query
+      const { limit = 50, offset = 0, includeInactive } = req.query
+      const includeInactiveValue = includeInactive === 'true' || includeInactive === '1'
       const result = await this.clientRepository.findAll(
         req.tenantId,
         parseInt(limit as string, 10),
-        parseInt(offset as string, 10)
+        parseInt(offset as string, 10),
+        includeInactiveValue,
       )
 
       res.json({
@@ -105,6 +122,14 @@ export class ClientsController {
       if (!client) {
         return res.status(404).json({ error: 'Client not found' })
       }
+
+      await this.activityRepository.createForClient(id, {
+        companyId: req.tenantId,
+        actorId: req.user?.userId || req.user?.clientId,
+        actorRole: req.user?.role,
+        type: 'client_updated',
+        title: 'Cliente atualizado',
+      }).catch(() => {})
 
       res.json({ data: client })
     } catch (error: any) {
@@ -139,7 +164,31 @@ export class ClientsController {
     try {
       const { id } = req.params
       await this.clientRepository.delete(id, req.tenantId)
-      res.json({ message: 'Client deleted successfully' })
+      res.json({ message: 'Client disabled successfully' })
+    } catch (error: any) {
+      res.status(500).json({ error: error.message })
+    }
+  }
+
+  async deletePermanently(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params
+      const deleted = await this.clientRepository.deletePermanently(id, req.tenantId)
+      if (!deleted) {
+        return res.status(404).json({ error: 'Client not found' })
+      }
+      res.json({ message: 'Client permanently deleted successfully' })
+    } catch (error: any) {
+      res.status(500).json({ error: error.message })
+    }
+  }
+
+  async activate(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params
+      const client = await this.clientRepository.activate(id, req.tenantId)
+      if (!client) return res.status(404).json({ error: 'Client not found' })
+      res.json({ data: client })
     } catch (error: any) {
       res.status(500).json({ error: error.message })
     }
@@ -161,6 +210,14 @@ export class ClientsController {
       const approvalUrl = this.buildApprovalUrl()
       const message = `Olá ${target.name}! Você tem conteúdos aguardando aprovação. Acesse: ${approvalUrl}`
       const delivery = await this.sendWhatsApp(phone, message)
+      await this.activityRepository.createForClient(id, {
+        companyId: req.tenantId,
+        actorId: req.user?.userId || req.user?.clientId,
+        actorRole: req.user?.role,
+        type: 'approval_notification_sent',
+        title: 'Notificação enviada',
+        metadata: { provider: delivery.provider, phone },
+      }).catch(() => {})
 
       res.json({
         ...delivery,

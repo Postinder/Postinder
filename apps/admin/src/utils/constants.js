@@ -65,6 +65,7 @@ export const PERMISSION_SCREENS = [
   { id: 'dashboard',     label: 'Dashboard',          icon: '⊞' },
   { id: 'clients',       label: 'Clientes',           icon: '👥' },
   { id: 'posts/new',     label: 'Nova Postagem',      icon: '↑' },
+  { id: 'posts',         label: 'Postagens',           icon: '▦' },
   { id: 'approvals',     label: 'Aprovações',         icon: '◎' },
   { id: 'feed',          label: 'Prévia do Feed',     icon: '⊟' },
   { id: 'insights',      label: 'Insights & Feedbacks', icon: '📊' },
@@ -75,7 +76,7 @@ export const PERMISSION_SCREENS = [
 export const ROLE_PERMISSIONS = {
   admin:  PERMISSION_SCREENS.map(s => s.id).concat(['users']),
   manager: PERMISSION_SCREENS.map(s => s.id),
-  editor: ['dashboard', 'posts/new', 'approvals', 'feed'],
+  editor: ['dashboard', 'posts', 'posts/new', 'approvals', 'feed'],
   viewer: ['dashboard', 'feed', 'insights'],
   gestor: PERMISSION_SCREENS.map(s => s.id),
   equipe: ['dashboard', 'approvals'],

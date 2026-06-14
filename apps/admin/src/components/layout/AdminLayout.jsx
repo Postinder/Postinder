@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PlusSquare, CheckCircle,
-  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu
+  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, RotateCcw
 } from 'lucide-react'
 import { useAuthStore }  from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -10,6 +10,7 @@ import ThemeToggle from '../ui/ThemeToggle'
 import NotificationBell from '../notifications/NotificationBell'
 import GlobalSearch from '../search/GlobalSearch'
 import { logout } from '../../services/auth.service'
+import { ROLE_PERMISSIONS } from '../../utils/constants'
 import toast from 'react-hot-toast'
 
 const Logo20Cinco = () => (
@@ -52,8 +53,15 @@ export default function AdminLayout() {
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const isAdmin  = user?.role === 'admin'
-  const isGestor = user?.role === 'gestor' || isAdmin
+  const role = String(user?.role || '').trim().toLowerCase()
+  const isAdmin  = role === 'admin'
+  const isGestor = role === 'gestor' || isAdmin
+  const permissions = isAdmin
+    ? ROLE_PERMISSIONS.admin
+    : role === 'viewer'
+      ? ROLE_PERMISSIONS.viewer
+    : (Array.isArray(user?.permissions) && user.permissions.length ? user.permissions : ROLE_PERMISSIONS[role] || [])
+  const canAccess = permission => isAdmin || permissions.includes(permission)
 
   async function handleLogout() {
     try { await logout() } catch {}
@@ -85,19 +93,21 @@ export default function AdminLayout() {
       {/* Nav */}
       <nav className="flex-1 py-2 overflow-y-auto">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-3 pb-1">Principal</div>
-        <NavItem to="/admin/dashboard"  icon={LayoutDashboard} label="Dashboard" />
-        <NavItem to="/admin/clients"    icon={Users}           label="Clientes" />
-        <NavItem to="/admin/posts/new"  icon={PlusSquare}      label="Nova Postagem" />
-        <NavItem to="/admin/approvals"  icon={CheckCircle}     label="Aprovações" />
-        <NavItem to="/admin/feed"       icon={Grid}            label="Prévia do Feed" />
-        <NavItem to="/admin/insights"   icon={BarChart2}       label="Insights & Feedbacks" />
+        {canAccess('dashboard') && <NavItem to="/admin/dashboard"  icon={LayoutDashboard} label="Dashboard" />}
+        {canAccess('clients') && <NavItem to="/admin/clients"    icon={Users}           label="Clientes" />}
+        {canAccess('posts') && <NavItem to="/admin/posts" icon={Grid} label="Postagens" />}
+        {canAccess('posts/new') && <NavItem to="/admin/posts/new"  icon={PlusSquare}      label="Nova Postagem" />}
+        {canAccess('approvals') && <NavItem to="/admin/approvals"  icon={CheckCircle}     label="Aprovações" />}
+        {canAccess('feed') && <NavItem to="/admin/feed"       icon={Grid}            label="Prévia do Feed" />}
+        {canAccess('insights') && <NavItem to="/admin/insights"   icon={BarChart2}       label="Insights & Feedbacks" />}
 
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-4 pb-1">Sistema</div>
         {isAdmin && <NavItem to="/admin/users" icon={UserCog} label="Usuários" />}
-        <NavItem to="/admin/email" icon={Mail} label="E-mail" />
-        <NavItem to="/admin/integrations" icon={Plug} label="Integrações" />
+        {canAccess('email') && <NavItem to="/admin/email" icon={Mail} label="E-mail" />}
+        {(isGestor || canAccess('integrations')) && <NavItem to="/admin/integrations" icon={Plug} label="Integrações" />}
 
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-4 pb-1">Conta</div>
+        {isAdmin && <NavItem to="/admin/reset" icon={RotateCcw} label="Reset de testes" />}
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium text-red-300/80 hover:text-red-300 hover:bg-white/5 transition-all"

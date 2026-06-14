@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:setup": "npm run db:migrate",
     "build": "tsc",
     "start": "node dist/server.js"
   },

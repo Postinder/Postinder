@@ -8,6 +8,7 @@ import { PostStatus } from '../../domain/PostStatus'
 import { PostRepository } from '../../infrastructure/repositories/PostRepository'
 import { getFileCategory } from '../../../../shared/upload/multer'
 import { storeUploadedFile } from '../../../../shared/upload/storage'
+import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 
 interface AuthRequest extends Request {
   user?: any
@@ -20,6 +21,7 @@ export class PostsController {
     private listPostsService: ListPostsService,
     private getPostService: GetPostService,
     private postRepository: PostRepository,
+    private activityRepository = new ActivityRepository(),
   ) {}
 
   async create(req: AuthRequest, res: Response) {
@@ -33,15 +35,16 @@ export class PostsController {
   }
 
   async list(req: AuthRequest, res: Response) {
-    const { limit, offset, status, clientId } = req.query
+    const { limit, offset, status, clientId, includeArchived } = req.query
 
     const statusValue = status && Object.values(PostStatus).includes(status as PostStatus)
       ? (status as PostStatus)
       : undefined
+    const includeArchivedValue = includeArchived === 'true' || includeArchived === '1'
 
     const result = await this.listPostsService.execute(
       req.tenantId,
-      { status: statusValue, clientId: clientId as string | undefined },
+      { status: statusValue, clientId: clientId as string | undefined, includeArchived: includeArchivedValue },
       {
         limit: parseInt(limit as string) || 20,
         offset: parseInt(offset as string) || 0,
@@ -77,16 +80,41 @@ export class PostsController {
       return res.status(400).json({ error: 'No files uploaded' })
     }
 
-    const files = await Promise.all(uploadedFiles.map(async file => ({
+    const sortOrders = Array.isArray(req.body?.sortOrders)
+      ? req.body.sortOrders
+      : typeof req.body?.sortOrders === 'string'
+        ? req.body.sortOrders.split(',')
+        : []
+
+    const files = await Promise.all(uploadedFiles.map(async (file, index) => ({
       url: await storeUploadedFile(file),
       originalName: file.originalname,
       fileType: getFileCategory(file.mimetype),
+      sortOrder: Number(sortOrders[index]) || undefined,
     })))
 
     const savedFiles = await this.postRepository.addFiles(req.params.id, files, req.tenantId)
     if (!savedFiles) return res.status(404).json({ error: 'Post not found' })
 
     res.status(201).json({ data: savedFiles })
+  }
+
+  async reorderFiles(req: AuthRequest, res: Response) {
+    const files = Array.isArray(req.body?.files) ? req.body.files : []
+    if (!files.length) return res.status(400).json({ error: 'files is required' })
+
+    const normalized = files.map((file: any, index: number) => ({
+      id: String(file.id || ''),
+      sort_order: Number(file.sort_order ?? file.sortOrder ?? index + 1),
+    }))
+
+    if (normalized.some((file: { id: string; sort_order: number }) => !file.id || !Number.isFinite(file.sort_order))) {
+      return res.status(400).json({ error: 'Invalid file order payload' })
+    }
+
+    const reordered = await this.postRepository.reorderFiles(req.params.id, normalized, req.tenantId)
+    if (!reordered) return res.status(404).json({ error: 'Post or file not found' })
+    res.json({ success: true })
   }
 
   async replaceFile(req: AuthRequest, res: Response) {
@@ -110,10 +138,93 @@ export class PostsController {
     res.status(200).json({ data: savedFile })
   }
 
+  async removeFile(req: AuthRequest, res: Response) {
+    const removed = await this.postRepository.removeFile(req.params.id, req.params.fileId, req.tenantId)
+    if (!removed) return res.status(404).json({ error: 'Post or file not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_file_removed',
+      title: 'Arquivo removido da postagem',
+      metadata: { fileId: req.params.fileId },
+    }).catch(() => {})
+    res.json({ success: true })
+  }
+
   async submitForApproval(req: AuthRequest, res: Response) {
     const submitted = await this.postRepository.submitForApproval(req.params.id, req.tenantId)
     if (!submitted) return res.status(404).json({ error: 'Post not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_sent_for_approval',
+      title: 'Post enviado para aprovacao',
+    }).catch(() => {})
     res.json({ success: true })
+  }
+
+  async updateStatus(req: AuthRequest, res: Response) {
+    const { status } = req.body
+    const updated = await this.postRepository.updateStatus(req.params.id, status, req.tenantId)
+    if (!updated) return res.status(400).json({ error: 'Invalid status or post not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_status_changed',
+      title: 'Status da postagem alterado',
+      metadata: { status },
+    }).catch(() => {})
+    res.json({ success: true })
+  }
+
+  async markExecuted(req: AuthRequest, res: Response) {
+    const retention = ['never', 'immediate', '1d', '7d'].includes(req.body?.retention)
+      ? req.body.retention
+      : 'never'
+    const executed = await this.postRepository.markExecuted(req.params.id, retention, req.tenantId)
+    if (!executed) return res.status(400).json({ error: 'Post must be approved before execution or was not found' })
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_executed',
+      title: 'Postagem marcada como executada',
+      metadata: { retention },
+    }).catch(() => {})
+    res.json({ success: true })
+  }
+
+  async duplicate(req: AuthRequest, res: Response) {
+    const post = await this.postRepository.duplicate(req.params.id, req.tenantId)
+    if (!post) return res.status(404).json({ error: 'Post not found' })
+    await this.activityRepository.createForPost(post.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_duplicated',
+      title: 'Postagem duplicada',
+    }).catch(() => {})
+    res.status(201).json({ data: post })
+  }
+
+  async submitBatchForApproval(req: AuthRequest, res: Response) {
+    const ids = Array.isArray(req.body?.postIds) ? req.body.postIds : []
+    if (!ids.length) return res.status(400).json({ error: 'postIds is required' })
+
+    const sent = await this.postRepository.submitManyForApproval(ids, req.tenantId)
+    await Promise.all(sent.map(post => this.activityRepository.createForPost(post.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_sent_for_approval',
+      title: 'Post enviado para aprovacao',
+      metadata: { batch: true },
+    }).catch(() => {})))
+
+    res.json({ success: true, sent })
   }
 
   async resubmit(req: AuthRequest, res: Response) {

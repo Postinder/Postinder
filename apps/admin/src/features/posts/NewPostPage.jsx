@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusSquare, UploadCloud, X } from 'lucide-react'
+import { PlusSquare, UploadCloud } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { createPost } from '../../services/posts.service'
-import { fetchClients, notifyClient } from '../../services/clients.service'
+import { fetchClients } from '../../services/clients.service'
 import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input, { Textarea, Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
+import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
 import toast from 'react-hot-toast'
 
 function Section({ number, title, description, children }) {
@@ -42,7 +43,7 @@ export default function NewPostPage() {
   const [emailLink, setEmailLink] = useState('')
   const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
   const [loading, setLoading] = useState(false)
-  const [successModal, setSuccessModal] = useState({ open: false, clientId: '' })
+  const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft' })
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {})
@@ -91,27 +92,32 @@ export default function NewPostPage() {
   }
 
   function handleFiles(event) {
-    setFiles(current => [...current, ...Array.from(event.target.files)])
+    const nextFiles = Array.from(event.target.files).map(file => ({
+      localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
+      file,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    }))
+    setFiles(current => [...current, ...nextFiles])
   }
 
   function handleDrop(event) {
     event.preventDefault()
-    setFiles(current => [...current, ...Array.from(event.dataTransfer.files)])
+    const nextFiles = Array.from(event.dataTransfer.files).map(file => ({
+      localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
+      file,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    }))
+    setFiles(current => [...current, ...nextFiles])
   }
 
-  async function sendApprovalNotification(clientId) {
-    try {
-      await notifyClient(clientId)
-      toast.success('Mensagem via WhatsApp foi enviada.')
-    } catch (error) {
-      toast.error(error.response?.data?.error || error.message || 'Nao foi possivel enviar o WhatsApp.')
-    }
-  }
-
-  async function handleSave() {
+  async function handleSave(status = 'draft', keepCreating = false) {
     const channels = Object.keys(selChannels)
     if (!form.clientId || !form.title || !channels.length) {
-      toast.error('Preencha cliente, titulo e ao menos um canal.')
+      toast.error('Preencha cliente, título e ao menos um canal.')
       return
     }
     if (isEmail && !emailLink) {
@@ -132,6 +138,7 @@ export default function NewPostPage() {
 
       await createPost({
         title: form.title,
+        status,
         channels,
         formats,
         caption: form.caption,
@@ -140,11 +147,14 @@ export default function NewPostPage() {
         emailLink: isEmail ? emailLink : null,
         clientId: form.clientId,
         createdById: user?.id,
-      }, isEmail ? [] : files)
+      }, isEmail ? [] : files.map((item, index) => ({ ...item, sortOrder: index + 1 })))
 
-      toast.success('Postagem criada e enviada para aprovacao!')
-      await sendApprovalNotification(form.clientId)
-      setSuccessModal({ open: true, clientId: form.clientId })
+      toast.success(status === 'ready' ? 'Postagem salva como pronta para envio.' : 'Rascunho salvo.')
+      if (keepCreating) {
+        resetForm()
+      } else {
+        setSuccessModal({ open: true, clientId: form.clientId, status })
+      }
     } catch (error) {
       toast.error(error.message)
     } finally {
@@ -166,7 +176,7 @@ export default function NewPostPage() {
       <PageHeader
         icon={PlusSquare}
         title="Nova Postagem"
-        subtitle="Comece pelo cliente. Depois preencha o conteudo, escolha os canais e anexe os arquivos para aprovacao."
+        subtitle="Cadastre conteudos internamente como rascunho ou pronto para envio. O cliente so recebe depois pela area Postagens."
       />
 
       <Section number="1" title="Cliente e planejamento" description="Defina para quem esta postagem sera enviada.">
@@ -181,10 +191,10 @@ export default function NewPostPage() {
         </div>
       </Section>
 
-      <Section number="2" title="Conteudo" description="Nomeie a postagem e adicione o texto que sera revisado.">
+      <Section number="2" title="Conteúdo" description="Nomeie a postagem e adicione o texto que será revisado.">
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Titulo *" value={form.title} onChange={event => set('title', event.target.value)} placeholder="Ex: Post Instagram Marco #12" />
+            <Input label="Título *" value={form.title} onChange={event => set('title', event.target.value)} placeholder="Ex: Post Instagram Março #12" />
             <div>
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Tag de Funil
@@ -206,11 +216,11 @@ export default function NewPostPage() {
               </div>
             </div>
           </div>
-          <Textarea label="Legenda / Texto" value={form.caption} onChange={event => set('caption', event.target.value)} placeholder="Cole aqui o texto da publicacao..." />
+          <Textarea label="Legenda / Texto" value={form.caption} onChange={event => set('caption', event.target.value)} placeholder="Cole aqui o texto da publicação..." />
         </div>
       </Section>
 
-      <Section number="3" title="Canais e formatos" description="Escolha onde o conteudo sera publicado.">
+      <Section number="3" title="Canais e formatos" description="Escolha onde o conteúdo será publicado.">
         <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
           Canais *
         </label>
@@ -295,41 +305,12 @@ export default function NewPostPage() {
           />
 
           {files.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {files.map((file, index) => {
-                const isImage = file.type.startsWith('image/')
-                const isVideo = file.type.startsWith('video/')
-                const extension = file.name.split('.').pop().toUpperCase()
-                const icon = isVideo ? 'Video' : file.type === 'application/pdf' ? 'PDF' :
-                  file.type.startsWith('audio/') ? 'Audio' :
-                    file.type.includes('word') ? 'DOC' :
-                      file.type.includes('excel') || file.type.includes('sheet') ? 'XLS' :
-                        file.type.includes('powerpoint') || file.type.includes('presentation') ? 'PPT' : extension
-
-                return (
-                  <div key={`${file.name}-${index}`} className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800">
-                    {isImage ? (
-                      <img src={URL.createObjectURL(file)} alt="" className="h-full w-full object-cover" />
-                    ) : isVideo ? (
-                      <video src={URL.createObjectURL(file)} className="h-full w-full object-cover" muted />
-                    ) : (
-                      <div className="flex flex-col items-center gap-1 p-2 text-center">
-                        <span className="text-xs font-extrabold text-neutral-500">{icon}</span>
-                        <span className="line-clamp-2 text-[10px] leading-tight text-neutral-400">{file.name}</span>
-                      </div>
-                    )}
-                    <button
-                      onClick={event => {
-                        event.stopPropagation()
-                        setFiles(current => current.filter((_, fileIndex) => fileIndex !== index))
-                      }}
-                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                )
-              })}
+            <div className="mt-4">
+              <SortableAttachments
+                items={files}
+                onMove={(from, to) => setFiles(current => moveAttachment(current, from, to))}
+                onRemove={index => setFiles(current => current.filter((_, fileIndex) => fileIndex !== index))}
+              />
             </div>
           )}
         </Section>
@@ -338,21 +319,29 @@ export default function NewPostPage() {
       <div className="sticky bottom-0 z-10 -mx-4 border-t border-neutral-200 bg-neutral-100/95 px-4 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 md:-mx-6 md:px-6">
         <div className="flex flex-wrap justify-end gap-3">
           <Button variant="ghost" onClick={resetForm}>Limpar</Button>
-          <Button onClick={handleSave} loading={loading} size="lg" className="px-6">
-            Salvar e Enviar para Aprovacao
+          <Button variant="secondary" onClick={() => handleSave('draft', true)} loading={loading}>
+            Salvar e continuar criando
+          </Button>
+          <Button variant="secondary" onClick={() => handleSave('ready')} loading={loading}>
+            Salvar como pronto
+          </Button>
+          <Button onClick={() => handleSave('draft')} loading={loading} size="lg" className="px-6">
+            Salvar como rascunho
           </Button>
         </div>
       </div>
 
       <Modal open={successModal.open} onClose={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/dashboard') }}
-        title="Postagem criada!" subtitle="A postagem foi enviada para aprovacao do cliente.">
+        title="Postagem salva!" subtitle="Ela ficou na area interna de gerenciamento. Envie ao cliente quando estiver pronta.">
         <div className="py-4 text-center">
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">O cliente ja pode revisar os arquivos na area de aprovacao.</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            Status atual: {successModal.status === 'ready' ? 'pronto para envio' : 'rascunho interno'}.
+          </p>
         </div>
         <div className="mt-2 flex gap-3">
           <Button variant="secondary" className="flex-1 justify-center"
-            onClick={() => { setSuccessModal({ open: false, clientId: '' }); navigate(`/admin/dashboard?client=${successModal.clientId}`) }}>
-            Ver posts do cliente
+            onClick={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/posts') }}>
+            Gerenciar postagens
           </Button>
           <Button className="flex-1 justify-center"
             onClick={() => { setSuccessModal({ open: false, clientId: '' }); resetForm() }}>
