@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CheckCircle, RotateCcw, AlertTriangle, UploadCloud, FileCheck2, Eye, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CheckCircle, RotateCcw, AlertTriangle, UploadCloud, FileCheck2, Eye, ExternalLink, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react'
 import { fetchPosts, computePostStatus, resubmitPost, replacePostFile } from '../../services/posts.service'
-import { fetchClients, notifyClient } from '../../services/clients.service'
+import { fetchClients, notifyClient, generateClientPortalLink } from '../../services/clients.service'
+import { buildApprovalLink } from '../../utils/constants'
 import { StatusBadge } from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -106,6 +107,8 @@ export default function ApprovalsPage() {
   const [justificativa, setJustificativa] = useState('')
   const [replacementFiles, setReplacementFiles] = useState({})
   const [resubmitting, setResubmitting] = useState(false)
+  const [notifyModal, setNotifyModal] = useState({ open: false, client: null })
+  const [notifyMsg, setNotifyMsg] = useState('')
 
   useEffect(() => {
     Promise.all([fetchPosts({ limit: 200 }), fetchClients()])
@@ -181,6 +184,16 @@ export default function ApprovalsPage() {
       closeResubmitModal()
       toast.success('Arquivos corrigidos e reenviados para aprovação!')
       await sendApprovalNotification(getClientId(post))
+
+      const client = clients.find(c => c.id === getClientId(post)) || {}
+      let portalLink = ''
+      try {
+        const res = await generateClientPortalLink(getClientId(post), 15)
+        portalLink = res?.url || res?.link || buildApprovalLink(res?.slug || '')
+      } catch { /* link opcional */ }
+      const defaultMsg = `Olá ${client.name || 'cliente'}! ✅ Corrigimos os arquivos conforme seu feedback. Acesse o link abaixo para nova aprovação:\n\n${portalLink}`
+      setNotifyMsg(defaultMsg)
+      setNotifyModal({ open: true, client })
     } catch (e) {
       toast.error(e.response?.data?.error || e.message)
     } finally {
@@ -526,6 +539,49 @@ export default function ApprovalsPage() {
             </div>
           </>
         )}
+      </Modal>
+
+      {/* WhatsApp notify modal */}
+      <Modal
+        open={notifyModal.open}
+        onClose={() => setNotifyModal({ open: false, client: null })}
+        title="Avisar o cliente"
+        subtitle="Informe o cliente que os arquivos corrigidos estão prontos para nova aprovação."
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-xs text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+            ✓ Arquivos reenviados com sucesso! Agora avise o cliente.
+          </div>
+          <div>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Mensagem</label>
+            <textarea
+              value={notifyMsg}
+              onChange={e => setNotifyMsg(e.target.value)}
+              className="h-28 w-full resize-none rounded-xl border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-mag-500 dark:border-neutral-700 dark:bg-neutral-800"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                const whatsapp = notifyModal.client?.whatsapp || ''
+                let phone = whatsapp.replace(/\D/g, '')
+                if (!phone || phone.length < 10) {
+                  toast.error('WhatsApp não cadastrado para este cliente. Cadastre na tela de Clientes.')
+                  return
+                }
+                if (phone.length <= 11) phone = '55' + phone
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(notifyMsg)}`, '_blank')
+                setNotifyModal({ open: false, client: null })
+              }}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-bold text-white transition-colors hover:bg-[#20ba5a]"
+            >
+              <MessageCircle size={16} /> Enviar pelo WhatsApp
+            </button>
+            <Button variant="secondary" onClick={() => setNotifyModal({ open: false, client: null })} className="flex-1 justify-center">
+              Pular
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   )
