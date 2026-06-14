@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusSquare, UploadCloud } from 'lucide-react'
+import { PlusSquare, UploadCloud, MessageCircle } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { createPost } from '../../services/posts.service'
-import { fetchClients } from '../../services/clients.service'
-import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
+import { fetchClients, generateClientPortalLink } from '../../services/clients.service'
+import { CHANNELS, FUNNEL_TAGS, buildApprovalLink } from '../../utils/constants'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input, { Textarea, Select } from '../../components/ui/Input'
@@ -43,7 +43,8 @@ export default function NewPostPage() {
   const [emailLink, setEmailLink] = useState('')
   const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
   const [loading, setLoading] = useState(false)
-  const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft' })
+  const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft', client: null, portalLink: '' })
+  const [waMsg, setWaMsg] = useState('')
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {})
@@ -153,7 +154,18 @@ export default function NewPostPage() {
       if (keepCreating) {
         resetForm()
       } else {
-        setSuccessModal({ open: true, clientId: form.clientId, status })
+        const client = clients.find(c => c.id === form.clientId) || null
+        let portalLink = ''
+        if (status === 'ready' && form.clientId) {
+          try {
+            const res = await generateClientPortalLink(form.clientId, 15)
+            portalLink = res?.url || res?.link || buildApprovalLink(res?.slug || '')
+          } catch { /* link opcional */ }
+        }
+        if (status === 'ready' && client) {
+          setWaMsg(`Olá ${client.name}! 🎉 Uma nova postagem está pronta para sua aprovação. Acesse o link abaixo:\n\n${portalLink}`)
+        }
+        setSuccessModal({ open: true, clientId: form.clientId, status, client, portalLink })
       }
     } catch (error) {
       toast.error(error.message)
@@ -331,13 +343,45 @@ export default function NewPostPage() {
         </div>
       </div>
 
-      <Modal open={successModal.open} onClose={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/dashboard') }}
-        title="Postagem salva!" subtitle="Ela ficou na area interna de gerenciamento. Envie ao cliente quando estiver pronta.">
-        <div className="py-4 text-center">
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+      <Modal
+        open={successModal.open}
+        onClose={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/dashboard') }}
+        title="Postagem salva!"
+        subtitle="Ela ficou na área interna de gerenciamento. Envie ao cliente quando estiver pronta."
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
             Status atual: {successModal.status === 'ready' ? 'pronto para envio' : 'rascunho interno'}.
           </p>
+
+          {successModal.status === 'ready' && successModal.client && (
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Avisar {successModal.client.name} pelo WhatsApp
+              </label>
+              <textarea
+                value={waMsg}
+                onChange={e => setWaMsg(e.target.value)}
+                className="h-24 w-full resize-none rounded-xl border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-mag-500 dark:border-neutral-700 dark:bg-neutral-800"
+              />
+              <button
+                onClick={() => {
+                  const phone = (successModal.client.whatsapp || '').replace(/\D/g, '')
+                  if (!phone || phone.length < 10) {
+                    toast.error('WhatsApp não cadastrado para este cliente.')
+                    return
+                  }
+                  const fullPhone = phone.length <= 11 ? '55' + phone : phone
+                  window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(waMsg)}`, '_blank')
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-bold text-white transition-colors hover:bg-[#20ba5a]"
+              >
+                <MessageCircle size={16} /> Enviar pelo WhatsApp
+              </button>
+            </div>
+          )}
         </div>
+
         <div className="mt-2 flex gap-3">
           <Button variant="secondary" className="flex-1 justify-center"
             onClick={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/posts') }}>
