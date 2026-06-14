@@ -7,7 +7,7 @@ export default function Card({ children, className, hover = false, ...props }) {
       className={clsx(
         'rounded-lg border bg-white dark:bg-neutral-900',
         'border-neutral-200 dark:border-neutral-800',
-        hover && 'transition-colors hover:border-neutral-300 dark:hover:border-neutral-700 cursor-pointer',
+        hover && 'cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:border-mag-300 hover:shadow-lg hover:shadow-neutral-900/5 dark:hover:border-mag-500/60 dark:hover:shadow-black/20',
         className
       )}
     >

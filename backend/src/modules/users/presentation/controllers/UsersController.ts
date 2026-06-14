@@ -31,7 +31,8 @@ export class UsersController {
 
   async create(req: AuthRequest, res: Response) {
     if (!this.ensureAdmin(req, res)) return
-    const { name, email, password, role = 'viewer', permissions = [] } = req.body
+    const { name, email, password, permissions = [] } = req.body
+    const role = String(req.body.role || 'viewer').trim().toLowerCase()
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' })
@@ -40,27 +41,37 @@ export class UsersController {
       return res.status(400).json({ error: 'Invalid role' })
     }
 
-    const user = await this.usersRepository.create({
-      name,
-      email,
-      password,
-      role,
-      permissions,
-      companyId: req.tenantId,
-    })
+    try {
+      const user = await this.usersRepository.create({
+        name,
+        email,
+        password,
+        role,
+        permissions,
+        companyId: req.tenantId,
+      })
 
-    res.status(201).json(user)
+      res.status(201).json(user)
+    } catch (error: any) {
+      const status = error.message === 'Email already exists' ? 400 : 500
+      const message = error.message === 'Email already exists'
+        ? 'Este e-mail ja esta em uso por um usuario ou cliente.'
+        : error.message
+      res.status(status).json({ error: message })
+    }
   }
 
   async update(req: AuthRequest, res: Response) {
     if (!this.ensureAdmin(req, res)) return
-    const { role } = req.body
+    const role = req.body.role !== undefined
+      ? String(req.body.role).trim().toLowerCase()
+      : undefined
 
     if (role !== undefined && !allowedRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role' })
     }
 
-    const user = await this.usersRepository.update(req.params.id, req.body, req.tenantId)
+    const user = await this.usersRepository.update(req.params.id, { ...req.body, role }, req.tenantId)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
     res.json(user)
@@ -68,8 +79,19 @@ export class UsersController {
 
   async delete(req: AuthRequest, res: Response) {
     if (!this.ensureAdmin(req, res)) return
-    const deleted = await this.usersRepository.delete(req.params.id, req.tenantId)
-    if (!deleted) return res.status(404).json({ error: 'User not found' })
+    if (req.user?.userId === req.params.id) {
+      return res.status(400).json({ error: 'Voce nao pode excluir o proprio usuario.' })
+    }
+
+    try {
+      const deleted = await this.usersRepository.delete(req.params.id, req.tenantId)
+      if (!deleted) return res.status(404).json({ error: 'User not found' })
+    } catch (error: any) {
+      if (error.message === 'Primary admin cannot be deleted') {
+        return res.status(400).json({ error: 'O usuario admin principal nao pode ser excluido.' })
+      }
+      throw error
+    }
 
     res.json({ success: true })
   }

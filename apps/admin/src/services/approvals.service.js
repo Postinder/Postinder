@@ -20,12 +20,3 @@ export async function submitClientFeedback(clientId, rating, text, month) {
   return data
 }
 
-export async function approveAllFiles(postId) {
-  const { data } = await apiClient.post(`/posts/${postId}/approve`)
-  return data
-}
-
-export async function rejectAllFiles(postId) {
-  const { data } = await apiClient.post(`/posts/${postId}/reject`)
-  return data
-}

@@ -5,7 +5,7 @@ export class ApprovalsRepository {
     const params: any[] = [clientId]
     const conditions = [
       'p.client_id = $1',
-      "p.status = 'pending_approval'",
+      "p.status IN ('sent', 'pending_approval')",
       "f.status = 'pending'",
       'p.deleted_at IS NULL',
     ]
@@ -23,11 +23,12 @@ export class ApprovalsRepository {
          f.url         AS storage_url,
          f.file_type,
          f.original_name,
+         f.sort_order,
          f.created_at  AS file_created_at
        FROM files f
        JOIN posts p ON f.post_id = p.id
        WHERE ${conditions.join(' AND ')}
-       ORDER BY p.created_at DESC, f.created_at ASC`,
+       ORDER BY p.created_at DESC, COALESCE(f.sort_order, 999999), f.created_at ASC, f.id ASC`,
       params,
     )
 
@@ -45,6 +46,7 @@ export class ApprovalsRepository {
         name: row.original_name || row.storage_url?.split('/').pop() || 'arquivo',
         storage_url: row.storage_url,
         file_type: row.file_type,
+        sort_order: row.sort_order,
       })
     }
 
@@ -91,7 +93,12 @@ export class ApprovalsRepository {
     const postId = fileRes.rows[0].post_id
     const pending = await query(`SELECT id FROM files WHERE post_id = $1 AND status = 'pending'`, [postId])
     if (pending.rows.length === 0) {
-      await query(`UPDATE posts SET status = 'approved', updated_at = NOW() WHERE id = $1`, [postId])
+      const rejected = await query(`SELECT id FROM files WHERE post_id = $1 AND status = 'rejected' LIMIT 1`, [postId])
+      if (rejected.rows.length > 0) {
+        await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [postId])
+      } else {
+        await query(`UPDATE posts SET status = 'approved', approved_at = NOW(), updated_at = NOW() WHERE id = $1`, [postId])
+      }
     }
     return true
   }
@@ -154,13 +161,45 @@ export class ApprovalsRepository {
       `SELECT
          f.id,
          f.client_id,
+         f.post_id,
          f.rating,
          f.text,
          f.month,
          f.created_at,
+         p.title AS post_title,
+         COALESCE(tag_history.tags, ARRAY[]::text[]) AS tags,
+         COALESCE(file_history.files, '[]'::jsonb) AS rejected_files,
          json_build_object('id', c.id, 'name', c.name, 'email', c.email, 'color', c.color) AS client
        FROM feedback f
        JOIN clients c ON c.id = f.client_id
+       LEFT JOIN posts p ON p.id = f.post_id
+       LEFT JOIN LATERAL (
+         SELECT ARRAY(
+           SELECT DISTINCT jsonb_array_elements_text(ae.metadata->'tags')
+           FROM activity_events ae
+           WHERE ae.post_id = f.post_id
+             AND ae.type IN ('feedback_sent', 'feedback_updated')
+             AND jsonb_typeof(ae.metadata->'tags') = 'array'
+         ) AS tags
+       ) tag_history ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(
+           jsonb_agg(DISTINCT jsonb_build_object(
+             'fileId', ae.metadata->>'fileId',
+             'fileName', ae.metadata->>'fileName',
+             'tags', COALESCE(ae.metadata->'tags', '[]'::jsonb)
+           )),
+           '[]'::jsonb
+         ) AS files
+         FROM activity_events ae
+         WHERE ae.post_id = f.post_id
+           AND ae.type IN ('feedback_sent', 'feedback_updated')
+           AND (
+             ae.metadata ? 'fileId'
+             OR ae.metadata ? 'fileName'
+             OR jsonb_typeof(ae.metadata->'tags') = 'array'
+           )
+       ) file_history ON true
        ${where}
        ORDER BY f.created_at DESC`,
       params,
@@ -169,33 +208,4 @@ export class ApprovalsRepository {
     return result.rows
   }
 
-  async approveAllFiles(postId: string, companyId?: string) {
-    const params: any[] = [postId]
-    const conditions = ['id = $1', 'deleted_at IS NULL']
-    if (companyId) {
-      params.push(companyId)
-      conditions.push(`company_id = $${params.length}`)
-    }
-    const post = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
-    if (!post.rows[0]) return false
-
-    await query(`UPDATE files SET status = 'approved', updated_at = NOW() WHERE post_id = $1`, [postId])
-    await query(`UPDATE posts SET status = 'approved', updated_at = NOW(), approved_at = NOW() WHERE id = $1`, [postId])
-    return true
-  }
-
-  async rejectAllFiles(postId: string, companyId?: string) {
-    const params: any[] = [postId]
-    const conditions = ['id = $1', 'deleted_at IS NULL']
-    if (companyId) {
-      params.push(companyId)
-      conditions.push(`company_id = $${params.length}`)
-    }
-    const post = await query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')}`, params)
-    if (!post.rows[0]) return false
-
-    await query(`UPDATE files SET status = 'rejected', updated_at = NOW() WHERE post_id = $1 AND status <> 'approved'`, [postId])
-    await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [postId])
-    return true
-  }
 }

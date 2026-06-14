@@ -3,6 +3,7 @@ import { Post } from '../../domain/Post.entity'
 import { IPostRepository, FindPostsFilter, PaginationParams } from '../../domain/repositories/IPostRepository'
 import { PostMapper } from '../mappers/PostMapper'
 import { logger } from '../../../../shared/utils/Logger'
+import { removeStoredFile } from '../../../../shared/upload/storage'
 
 export class PostRepository implements IPostRepository {
   private buildPostScope(id: string, companyId?: string, alias = '') {
@@ -16,6 +17,36 @@ export class PostRepository implements IPostRepository {
     }
 
     return { params, conditions }
+  }
+
+  private async deletePostFiles(postId: string) {
+    const files = await query(`SELECT id, url FROM files WHERE post_id = $1`, [postId])
+    await Promise.all(files.rows.map(row => removeStoredFile(row.url).catch(() => {})))
+    await query(`DELETE FROM files WHERE post_id = $1`, [postId])
+  }
+
+  async cleanupDueFiles(companyId?: string) {
+    const params: any[] = []
+    const conditions = [
+      'p.files_delete_after IS NOT NULL',
+      'p.files_delete_after <= NOW()',
+    ]
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`p.company_id = $${params.length}`)
+    }
+
+    const result = await query(
+      `SELECT DISTINCT p.id
+       FROM posts p
+       JOIN files f ON f.post_id = p.id
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    )
+
+    for (const row of result.rows) {
+      await this.deletePostFiles(row.id)
+    }
   }
 
   async save(post: Post): Promise<Post> {
@@ -81,9 +112,12 @@ export class PostRepository implements IPostRepository {
                  'storage_url', f.url,
                  'file_type', f.file_type,
                  'status', f.status,
+                 'sort_order', f.sort_order,
                  'rejection_reason', f.rejection_reason,
-                 'rejection_tags', f.rejection_tags
-               ) ORDER BY f.created_at
+                 'rejection_tags', f.rejection_tags,
+                 'created_at', f.created_at,
+                 'updated_at', f.updated_at
+               ) ORDER BY COALESCE(f.sort_order, 999999), f.created_at, f.id
              ) FILTER (WHERE f.id IS NOT NULL),
              '[]'
            ) AS files
@@ -102,6 +136,8 @@ export class PostRepository implements IPostRepository {
 
   async findMany(filter: FindPostsFilter, pagination: PaginationParams) {
     try {
+      await this.cleanupDueFiles(filter.companyId).catch(() => {})
+
       const params: any[] = []
       const conditions: string[] = ['p.deleted_at IS NULL']
 
@@ -116,6 +152,8 @@ export class PostRepository implements IPostRepository {
       if (filter.status) {
         conditions.push(`p.status = $${params.length + 1}`)
         params.push(filter.status)
+      } else if (!filter.includeArchived) {
+        conditions.push(`p.status <> 'archived'`)
       }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -139,9 +177,12 @@ export class PostRepository implements IPostRepository {
                  'storage_url', f.url,
                  'file_type', f.file_type,
                  'status', f.status,
+                 'sort_order', f.sort_order,
                  'rejection_reason', f.rejection_reason,
-                 'rejection_tags', f.rejection_tags
-               ) ORDER BY f.created_at
+                 'rejection_tags', f.rejection_tags,
+                 'created_at', f.created_at,
+                 'updated_at', f.updated_at
+               ) ORDER BY COALESCE(f.sort_order, 999999), f.created_at, f.id
              ) FILTER (WHERE f.id IS NOT NULL),
              '[]'
            ) AS files
@@ -175,6 +216,10 @@ export class PostRepository implements IPostRepository {
     if (data.title !== undefined) {
       params.push(data.title)
       fields.push(`title = $${params.length}`)
+    }
+    if (data.clientId !== undefined || data.client_id !== undefined) {
+      params.push(data.clientId ?? data.client_id)
+      fields.push(`client_id = $${params.length}`)
     }
     if (data.description !== undefined || data.caption !== undefined) {
       params.push(data.description ?? data.caption)
@@ -221,7 +266,10 @@ export class PostRepository implements IPostRepository {
   async softDelete(id: string, companyId?: string): Promise<boolean> {
     const { params, conditions } = this.buildPostScope(id, companyId)
     const result = await query(
-      `UPDATE posts SET deleted_at = NOW(), updated_at = NOW()
+      `UPDATE posts
+       SET status = 'archived',
+           archived_by_client_deactivation = false,
+           updated_at = NOW()
        WHERE ${conditions.join(' AND ')}
        RETURNING id`,
       params,
@@ -235,22 +283,28 @@ export class PostRepository implements IPostRepository {
     return Boolean(result.rows[0])
   }
 
-  async addFiles(postId: string, files: Array<{ url: string; originalName: string; fileType: string }>, companyId?: string) {
+  async addFiles(postId: string, files: Array<{ url: string; originalName: string; fileType: string; sortOrder?: number }>, companyId?: string) {
     const postExists = await this.exists(postId, companyId)
     if (!postExists) return null
 
+    const maxOrderResult = await query(
+      `SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM files WHERE post_id = $1`,
+      [postId],
+    )
+    const maxOrder = Number(maxOrderResult.rows[0]?.max_order || 0)
+
     const savedFiles = []
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       const result = await query(
-        `INSERT INTO files (post_id, url, original_name, file_type, status)
-         VALUES ($1, $2, $3, $4, 'pending')
+        `INSERT INTO files (post_id, url, original_name, file_type, status, sort_order)
+         VALUES ($1, $2, $3, $4, 'pending', $5)
          RETURNING *`,
-        [postId, file.url, file.originalName, file.fileType],
+        [postId, file.url, file.originalName, file.fileType, file.sortOrder || maxOrder + index + 1],
       )
       savedFiles.push(result.rows[0])
     }
 
-    await query(`UPDATE posts SET status = 'pending_approval', updated_at = NOW() WHERE id = $1`, [postId])
+    await query(`UPDATE posts SET updated_at = NOW() WHERE id = $1`, [postId])
     return savedFiles
   }
 
@@ -289,12 +343,183 @@ export class PostRepository implements IPostRepository {
   async submitForApproval(id: string, companyId?: string): Promise<boolean> {
     const { params, conditions } = this.buildPostScope(id, companyId)
     const result = await query(
-      `UPDATE posts SET status = 'pending_approval', submitted_at = NOW(), updated_at = NOW()
+      `UPDATE posts
+       SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
+           submitted_at = NOW(),
+           updated_at = NOW()
        WHERE ${conditions.join(' AND ')}
+         AND status IN ('draft', 'ready', 'rejected')
        RETURNING id`,
       params,
     )
+    if (result.rows[0]) {
+      await query(
+        `UPDATE files
+         SET status = 'pending',
+             rejection_reason = NULL,
+             rejection_tags = NULL,
+             updated_at = NOW()
+         WHERE post_id = $1
+           AND status = 'rejected'`,
+        [id],
+      )
+    }
     return Boolean(result.rows[0])
+  }
+
+  async reorderFiles(postId: string, files: Array<{ id: string; sort_order: number }>, companyId?: string) {
+    const postExists = await this.exists(postId, companyId)
+    if (!postExists) return false
+    if (!files.length) return true
+
+    const fileIds = files.map(file => file.id)
+    const existing = await query(
+      `SELECT id FROM files WHERE post_id = $1 AND id = ANY($2::uuid[])`,
+      [postId, fileIds],
+    )
+    if (existing.rows.length !== fileIds.length) return false
+
+    const valuesSql = files.map((_, index) => `($${index * 2 + 2}::uuid, $${index * 2 + 3}::integer)`).join(', ')
+    const params: any[] = [postId]
+    files.forEach(file => {
+      params.push(file.id, file.sort_order)
+    })
+
+    await query(
+      `UPDATE files f
+       SET sort_order = ordered.sort_order,
+           updated_at = NOW()
+       FROM (VALUES ${valuesSql}) AS ordered(id, sort_order)
+       WHERE f.post_id = $1
+         AND f.id = ordered.id`,
+      params,
+    )
+
+    return true
+  }
+
+  async removeFile(postId: string, fileId: string, companyId?: string) {
+    const params: any[] = [postId, fileId]
+    const postConditions = ['p.id = $1', 'p.deleted_at IS NULL']
+    if (companyId) {
+      params.push(companyId)
+      postConditions.push(`p.company_id = $${params.length}`)
+    }
+
+    const result = await query(
+      `DELETE FROM files f
+       USING posts p
+       WHERE f.post_id = p.id
+         AND ${postConditions.join(' AND ')}
+         AND f.id = $2
+       RETURNING f.id`,
+      params,
+    )
+
+    if (!result.rows[0]) return false
+
+    await query(
+      `WITH ordered AS (
+         SELECT id, ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 999999), created_at, id) AS next_order
+         FROM files
+         WHERE post_id = $1
+       )
+       UPDATE files f
+       SET sort_order = ordered.next_order,
+           updated_at = NOW()
+       FROM ordered
+       WHERE f.id = ordered.id`,
+      [postId],
+    )
+
+    await query(`UPDATE posts SET updated_at = NOW() WHERE id = $1`, [postId])
+    return true
+  }
+
+  async updateStatus(id: string, status: string, companyId?: string): Promise<boolean> {
+    const allowed = ['draft', 'ready', 'sent', 'approved', 'rejected', 'archived', 'pending_approval', 'executed']
+    if (!allowed.includes(status)) return false
+
+    const { params, conditions } = this.buildPostScope(id, companyId)
+    const statusParam = params.length + 1
+    const result = await query(
+      `UPDATE posts
+       SET status = $${statusParam}::text,
+           submitted_at = CASE WHEN $${statusParam}::text IN ('sent', 'pending_approval') THEN COALESCE(submitted_at, NOW()) ELSE submitted_at END,
+           updated_at = NOW()
+       WHERE ${conditions.join(' AND ')}
+       RETURNING id`,
+      [...params, status],
+    )
+    return Boolean(result.rows[0])
+  }
+
+  async submitManyForApproval(ids: string[], companyId?: string) {
+    if (!ids.length) return []
+    const params: any[] = [ids]
+    const conditions = [
+      'id = ANY($1::uuid[])',
+      'deleted_at IS NULL',
+      "status IN ('draft', 'ready', 'rejected')",
+    ]
+    if (companyId) {
+      params.push(companyId)
+      conditions.push(`company_id = $${params.length}`)
+    }
+
+    const result = await query(
+      `UPDATE posts
+       SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
+           submitted_at = NOW(),
+           updated_at = NOW()
+       WHERE ${conditions.join(' AND ')}
+       RETURNING id, client_id, title, channels, scheduled_date`,
+      params,
+    )
+    const sentIds = result.rows.map(row => row.id)
+    if (sentIds.length) {
+      await query(
+        `UPDATE files
+         SET status = 'pending',
+             rejection_reason = NULL,
+             rejection_tags = NULL,
+             updated_at = NOW()
+         WHERE post_id = ANY($1::uuid[])
+           AND status = 'rejected'`,
+        [sentIds],
+      )
+    }
+    return result.rows
+  }
+
+  async duplicate(id: string, companyId?: string) {
+    const { params, conditions } = this.buildPostScope(id, companyId, 'p')
+    const post = await query(
+      `INSERT INTO posts (
+         client_id, company_id, title, description, status, channels, formats,
+         scheduled_date, funnel_tag, email_link, created_at, updated_at
+       )
+       SELECT
+         p.client_id, p.company_id, CONCAT(COALESCE(p.title, 'Post sem titulo'), ' (copia)'),
+         p.description, 'draft', p.channels, p.formats, p.scheduled_date, p.funnel_tag,
+         p.email_link, NOW(), NOW()
+       FROM posts p
+       WHERE ${conditions.join(' AND ')}
+       RETURNING *`,
+      params,
+    )
+
+    if (!post.rows[0]) return null
+
+    await query(
+      `INSERT INTO files (post_id, url, original_name, file_type, status, sort_order, rejection_reason, rejection_tags, created_at, updated_at)
+       SELECT $1, url, original_name, file_type, 'pending', sort_order, NULL, NULL, NOW(), NOW()
+       FROM files
+       WHERE post_id = $2`,
+      [post.rows[0].id, id],
+    )
+
+    return post.rows[0]
   }
 
   async resubmit(id: string, data: { title?: string; caption?: string; description?: string; justificativa?: string }, companyId?: string) {
@@ -337,6 +562,33 @@ export class PostRepository implements IPostRepository {
       ).catch(() => {})
     }
 
+    return true
+  }
+
+  async markExecuted(id: string, retention: 'never' | 'immediate' | '1d' | '7d' = 'never', companyId?: string) {
+    const { params, conditions } = this.buildPostScope(id, companyId)
+    const deleteAfterSql = retention === 'immediate'
+      ? 'NOW()'
+      : retention === '1d'
+        ? "NOW() + INTERVAL '1 day'"
+        : retention === '7d'
+          ? "NOW() + INTERVAL '7 days'"
+          : 'NULL'
+
+    const result = await query(
+      `UPDATE posts
+       SET status = 'executed',
+           executed_at = NOW(),
+           files_delete_after = ${deleteAfterSql},
+           updated_at = NOW()
+       WHERE ${conditions.join(' AND ')}
+         AND status = 'approved'
+       RETURNING id`,
+      params,
+    )
+
+    if (!result.rows[0]) return false
+    if (retention === 'immediate') await this.deletePostFiles(id)
     return true
   }
 

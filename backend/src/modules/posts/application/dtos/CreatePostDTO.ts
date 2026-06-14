@@ -13,6 +13,7 @@ export const createPostSchema = z.object({
   funnel_tag: z.string().nullable().optional(),
   emailLink: z.string().nullable().optional(),
   email_link: z.string().nullable().optional(),
+  status: z.enum(['draft', 'ready']).optional(),
 })
 
 export type CreatePostDTO = z.infer<typeof createPostSchema>

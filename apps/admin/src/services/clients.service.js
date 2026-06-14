@@ -1,13 +1,23 @@
-﻿import { apiClient } from '../lib/axios'
+import { apiClient } from '../lib/axios'
 
-export async function fetchClients() {
-  const { data } = await apiClient.get('/clients')
+function getApiError(error) {
+  return new Error(error.response?.data?.error || error.message || 'Erro ao processar solicitacao.')
+}
+
+export async function fetchClients(options = {}) {
+  const params = {}
+  if (options.includeInactive) params.includeInactive = true
+  const { data } = await apiClient.get('/clients', { params })
   return data.data || data || []
 }
 
 export async function createClient(clientData) {
-  const { data } = await apiClient.post('/clients', clientData)
-  return data.data || data
+  try {
+    const { data } = await apiClient.post('/clients', clientData)
+    return data.data || data
+  } catch (error) {
+    throw getApiError(error)
+  }
 }
 
 export async function updateClient(clientId, updates) {
@@ -16,11 +26,33 @@ export async function updateClient(clientId, updates) {
 }
 
 export async function softDeleteClient(clientId) {
-  await apiClient.delete(`/clients/${clientId}`)
+  try {
+    await apiClient.delete(`/clients/${clientId}`)
+  } catch (error) {
+    throw getApiError(error)
+  }
+}
+
+export async function deleteClientPermanently(clientId) {
+  try {
+    await apiClient.delete(`/clients/${clientId}/permanent`)
+  } catch (error) {
+    throw getApiError(error)
+  }
+}
+
+export async function activateClient(clientId) {
+  const { data } = await apiClient.patch(`/clients/${clientId}/activate`)
+  return data.data || data
 }
 
 export async function notifyClient(clientId) {
   const { data } = await apiClient.post(`/clients/${clientId}/notify`)
+  return data
+}
+
+export async function generateClientPortalLink(clientId, days = 15) {
+  const { data } = await apiClient.post(`/clients/${clientId}/portal-link`, { days })
   return data
 }
 

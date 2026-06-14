@@ -3,7 +3,7 @@ import { PostStatus } from '../../domain/PostStatus'
 
 export class PostMapper {
   static toDomain(raw: any): Post {
-    return new Post({
+    const post = new Post({
       id: raw.id,
       companyId: raw.company_id,
       clientId: raw.client_id,
@@ -18,6 +18,11 @@ export class PostMapper {
       createdAt: new Date(raw.created_at),
       updatedAt: new Date(raw.updated_at),
     })
+    ;(post as any).submittedAt = raw.submitted_at || null
+    ;(post as any).approvedAt = raw.approved_at || null
+    ;(post as any).executedAt = raw.executed_at || null
+    ;(post as any).filesDeleteAfter = raw.files_delete_after || null
+    return post
   }
 
   static toDomainWithFiles(raw: any): Post & { files: any[] } {
@@ -64,6 +69,14 @@ export class PostMapper {
       files: post.files || [],
       createdAt: post.createdAt.toISOString(),
       updatedAt: post.updatedAt.toISOString(),
+      submittedAt: (post as any).submittedAt,
+      submitted_at: (post as any).submittedAt,
+      approvedAt: (post as any).approvedAt,
+      approved_at: (post as any).approvedAt,
+      executedAt: (post as any).executedAt,
+      executed_at: (post as any).executedAt,
+      filesDeleteAfter: (post as any).filesDeleteAfter,
+      files_delete_after: (post as any).filesDeleteAfter,
     }
   }
 }
