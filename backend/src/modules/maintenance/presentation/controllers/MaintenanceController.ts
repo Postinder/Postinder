@@ -1,6 +1,8 @@
 import { Request, Response } from 'express'
 import { pool } from '../../../../shared/database/pool'
+import { acquireEmailLock, normalizeEmail } from '../../../../shared/database/emailUniqueness'
 import { removeStoredFile } from '../../../../shared/upload/storage'
+import { logger } from '../../../../shared/utils/Logger'
 
 interface AuthRequest extends Request {
   user?: any
@@ -26,12 +28,20 @@ export class MaintenanceController {
       return res.status(400).json({ error: 'Type RESETAR to confirm reset' })
     }
 
-    const filesResult = await pool.query('SELECT url FROM files')
-    await Promise.all(filesResult.rows.map(row => removeStoredFile(row.url).catch(() => {})))
+    const filesResult = await pool.query('SELECT bucket, storage_path FROM files')
+    const removals = await Promise.all(filesResult.rows.map(row => removeStoredFile({
+      bucket: row.bucket,
+      storagePath: row.storage_path,
+    })))
+    removals.filter(result => !result.removed).forEach(result => {
+      logger.error('Failed to remove reset storage object', result)
+    })
 
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await acquireEmailLock(client, normalizeEmail('admin@postinder.local'))
+      await acquireEmailLock(client, normalizeEmail('cliente@example.com'))
       await client.query('TRUNCATE TABLE notification_reads, activity_events, client_portal_tokens, feedback, files, posts, clients, users RESTART IDENTITY CASCADE')
       await client.query(`
         INSERT INTO users (name, email, password_hash, role, permissions, is_active)

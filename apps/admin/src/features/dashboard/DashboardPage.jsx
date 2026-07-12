@@ -17,6 +17,7 @@ import Input, { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
+import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTIONS = [
@@ -47,10 +48,6 @@ function getPostClientId(post) {
 
 function isClientActive(client) {
   return client?.is_active !== false && client?.isActive !== false
-}
-
-function isPostArchived(post) {
-  return post?.archived === true || post?.is_archived === true || post?.isArchived === true || post?.status === 'archived'
 }
 
 function getPostDate(post) {
@@ -402,6 +399,8 @@ export default function DashboardPage() {
   const [activityLimit, setActivityLimit] = useState(5)
   const [activityPage, setActivityPage] = useState(1)
   const [editPost, setEditPost] = useState(null)
+  const [postToDelete, setPostToDelete] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const clientFilter = searchParams.get('client') || ''
   const isReadOnly = String(user?.role || '').trim().toLowerCase() === 'viewer'
@@ -412,7 +411,7 @@ export default function DashboardPage() {
   }
 
   const load = useCallback(() => {
-    Promise.all([fetchPosts({ includeArchived: true }), fetchClients({ includeInactive: true }), fetchActivities({ limit: 50 })])
+    Promise.all([fetchPosts(), fetchClients({ includeInactive: true }), fetchActivities({ limit: 50 })])
       .then(([p, c, a]) => { setPosts(p); setClients(c); setActivities(a) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -420,11 +419,19 @@ export default function DashboardPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function handleDelete(id) {
-    if (!confirm('Excluir esta postagem?')) return
-    await softDeletePost(id)
-    setPosts(p => p.filter(x => x.id !== id))
-    toast.success('Postagem excluida.')
+  async function handleDelete() {
+    if (!postToDelete) return
+    setDeleteLoading(true)
+    try {
+      await softDeletePost(postToDelete.id)
+      setPosts(posts => posts.filter(post => post.id !== postToDelete.id))
+      setPostToDelete(null)
+      toast.success('Postagem excluida.')
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setDeleteLoading(false)
+    }
   }
 
   async function sendApprovalNotification(clientId) {
@@ -441,8 +448,8 @@ export default function DashboardPage() {
     ? clients.filter(client => activeClientIds.has(client.id))
     : clients
   const scopedPosts = dashboardScope === 'active'
-    ? posts.filter(post => activeClientIds.has(getPostClientId(post)) && !isPostArchived(post))
-    : posts.filter(post => !isPostArchived(post) || !activeClientIds.has(getPostClientId(post)))
+    ? posts.filter(post => activeClientIds.has(getPostClientId(post)))
+    : posts
   const scopedActivities = dashboardScope === 'active'
     ? activities.filter(item => {
       const clientId = item.clientId || item.client_id
@@ -786,6 +793,7 @@ export default function DashboardPage() {
                 const client = getPostClient(post)
                 const files = post.files || []
                 const isRej = st === 'rejected'
+                const canDelete = canDeletePost(st, user?.role)
                 const firstFile = files[0]
                 const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
                 return (
@@ -821,10 +829,10 @@ export default function DashboardPage() {
                         <>
                           {isRej ? (
                             <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-3 py-2 text-xs font-bold text-teal-600 dark:bg-teal-900/30 dark:text-teal-400"><RotateCcw size={13} /> Corrigir</button>
-                          ) : (
+                          ) : st !== 'executed' ? (
                             <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-bold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"><Edit3 size={13} /> Editar</button>
-                          )}
-                          <button onClick={() => handleDelete(post.id)} className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-950/30"><Trash2 size={13} /> Arquivar</button>
+                          ) : null}
+                          {canDelete ? <button onClick={() => setPostToDelete(post)} className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-950/30"><Trash2 size={13} /> Excluir</button> : null}
                         </>
                       )}
                     </div>
@@ -858,6 +866,7 @@ export default function DashboardPage() {
                   const client = getPostClient(post)
                   const files = post.files || []
                   const isRej = st === 'rejected'
+                  const canDelete = canDeletePost(st, user?.role)
                   const firstFile = files[0]
                   const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
 
@@ -920,16 +929,16 @@ export default function DashboardPage() {
                                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 text-xs font-semibold">
                                   <RotateCcw size={11} /> Corrigir
                                 </button>
-                              ) : (
+                              ) : st !== 'executed' ? (
                                 <button onClick={() => setEditPost(post)}
                                   className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500" title="Editar">
                                   <Edit3 size={14} />
                                 </button>
-                              )}
-                              <button onClick={() => handleDelete(post.id)}
+                              ) : null}
+                              {canDelete ? <button onClick={() => setPostToDelete(post)}
                                 className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-neutral-400 hover:text-red-500" title="Excluir">
                                 <Trash2 size={14} />
-                              </button>
+                              </button> : null}
                             </>
                           )}
                         </div>
@@ -951,6 +960,14 @@ export default function DashboardPage() {
         }
         load()
       }} />
+      <DeletePostModal
+        post={postToDelete}
+        status={postToDelete ? computePostStatus(postToDelete) : ''}
+        open={!!postToDelete}
+        onClose={() => setPostToDelete(null)}
+        onConfirm={handleDelete}
+        loading={deleteLoading}
+      />
     </div>
   )
 }

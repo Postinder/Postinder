@@ -5,7 +5,6 @@ export class NotificationRepository {
     const params: any[] = [filters.userId]
     const conditions = [
       'p.deleted_at IS NULL',
-      "p.status <> 'archived'",
       "p.status IN ('sent', 'pending_approval', 'rejected')",
     ]
 

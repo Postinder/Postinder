@@ -190,7 +190,10 @@ export class ClientsController {
       if (!client) return res.status(404).json({ error: 'Client not found' })
       res.json({ data: client })
     } catch (error: any) {
-      res.status(500).json({ error: error.message })
+      const conflict = error.message === 'Email already exists'
+      res.status(conflict ? 400 : 500).json({
+        error: conflict ? 'Este e-mail ja esta em uso por um usuario ou cliente.' : error.message,
+      })
     }
   }
 

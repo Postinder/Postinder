@@ -4,6 +4,15 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed-demo": "tsx scripts/seedDemo.ts",
+    "db:bootstrap-admin": "tsx scripts/bootstrapAdmin.ts",
+    "db:validate-email-uniqueness": "tsx scripts/validateEmailUniqueness.ts",
+    "db:validate-storage-metadata": "tsx scripts/validateStorageMetadata.ts",
+    "db:validate-storage-duplication": "tsx scripts/validateStorageDuplication.ts",
+    "db:audit-shared-storage-files": "tsx scripts/auditSharedStorageFiles.ts",
+    "storage:cleanup-retention": "tsx scripts/cleanupStorageRetention.ts",
+    "db:validate-storage-retention": "tsx scripts/validateStorageRetention.ts",
+    "db:cleanup-legacy-archived": "tsx scripts/cleanupLegacyArchivedPosts.ts",
     "db:setup": "npm run db:migrate",
     "build": "tsc",
     "start": "node dist/server.js"

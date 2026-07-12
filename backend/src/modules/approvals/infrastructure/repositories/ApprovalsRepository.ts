@@ -62,7 +62,7 @@ export class ApprovalsRepository {
   }
 
   private buildScopeConditions(params: any[], scope?: { clientId?: string; companyId?: string }) {
-    const conditions = ['p.deleted_at IS NULL']
+    const conditions = ['p.deleted_at IS NULL', "p.status <> 'executed'"]
     if (scope?.clientId) {
       params.push(scope.clientId)
       conditions.push(`p.client_id = $${params.length}`)

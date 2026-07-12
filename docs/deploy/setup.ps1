@@ -12,8 +12,14 @@ npm install
 npm install --prefix backend
 npm install --prefix apps/admin
 
-Write-Host "`n3. Aplicando schema do banco..." -ForegroundColor Cyan
-Get-Content "database\001_initial_schema.sql" | docker exec -i postinder-db psql -U postinder_user -d postinder_db
+Write-Host "`n3. Aplicando migrations estruturais..." -ForegroundColor Cyan
+Push-Location backend
+npm.cmd run db:migrate
+
+Write-Host "`n4. Criando dados de demonstracao..." -ForegroundColor Cyan
+$env:APP_MODE = "demo"
+npm.cmd run db:seed-demo
+Pop-Location
 
 Write-Host "`nSetup concluido." -ForegroundColor Green
 Write-Host "Rode: npm run dev" -ForegroundColor Yellow

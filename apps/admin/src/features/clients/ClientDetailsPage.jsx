@@ -33,10 +33,6 @@ function formatDate(value) {
 
 function getHistoricalStatus(post) {
   if (post?.status === 'executed') return 'approved'
-  if (post?.status === 'archived') {
-    const fileStatus = computePostStatus(post.files || [])
-    return fileStatus === 'draft' ? 'archived' : fileStatus
-  }
   return computePostStatus(post)
 }
 
@@ -94,7 +90,7 @@ export default function ClientDetailsPage() {
   const [portalDays, setPortalDays] = useState(15)
 
   useEffect(() => {
-    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ includeArchived: true, limit: 500 }), fetchMonthlyFeedbacks({ clientId: id })])
+    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ limit: 500 }), fetchMonthlyFeedbacks({ clientId: id })])
       .then(([loadedClients, loadedPosts, loadedFeedbacks]) => {
         setClients(loadedClients)
         setPosts(loadedPosts)

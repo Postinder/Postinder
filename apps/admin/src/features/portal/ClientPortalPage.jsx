@@ -431,6 +431,12 @@ function ProjectReviewPanel({ projects, selectedProjectId, onSelectProject, onAp
               className={`w-full rounded-lg border p-4 text-left transition ${active ? 'border-mag-500 bg-mag-50 dark:bg-mag-500/10' : 'border-neutral-200 bg-white hover:border-mag-300 dark:border-neutral-800 dark:bg-neutral-900'}`}
             >
               <div className="line-clamp-1 font-extrabold text-neutral-950 dark:text-white">{project.title || 'Projeto sem titulo'}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
+                <span className="font-bold text-neutral-600 dark:text-neutral-300">Canais:</span>
+                {(project.channels || []).length ? (project.channels || []).map(channel => (
+                  <span key={channel} className="rounded-full bg-neutral-100 px-2 py-1 font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{channel}</span>
+                )) : <span>nao definidos</span>}
+              </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 {correction ? <span className="rounded-full bg-teal-100 px-2 py-1 font-bold text-teal-700 dark:bg-teal-950 dark:text-teal-300">Correção</span> : null}
                 <span className="rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-300">{pendingCount} pendente(s)</span>
@@ -448,6 +454,7 @@ function ProjectReviewPanel({ projects, selectedProjectId, onSelectProject, onAp
           <div className="min-w-0">
             <div className="text-xs font-black uppercase tracking-wider text-neutral-400">Projeto selecionado</div>
             <h2 className="mt-1 truncate text-xl font-black text-neutral-950 dark:text-white">{selectedProject?.title || 'Projeto'}</h2>
+            <p className="mt-1 text-xs font-semibold text-neutral-500">Canais: {(selectedProject?.channels || []).join(', ') || 'nao definidos'}</p>
             {isCorrectionPost(selectedProject) ? (
               <p className="mt-1 text-xs font-semibold text-teal-600 dark:text-teal-300">Correção enviada pela 20Cinco para nova análise.</p>
             ) : null}

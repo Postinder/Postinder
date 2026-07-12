@@ -1,4 +1,5 @@
 import { query } from '../../../../shared/database/pool'
+import { normalizeEmail } from '../../../../shared/database/emailUniqueness'
 
 export interface User {
   id: string
@@ -32,7 +33,7 @@ export class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
     const result = await query(
       'SELECT id, email, name, role, permissions, password_hash, is_active, created_at, updated_at, company_id FROM users WHERE LOWER(email) = $1 AND is_active = true',
-      [String(email || '').trim().toLowerCase()]
+      [normalizeEmail(email)]
     )
     return result.rows[0] || null
   }
@@ -40,7 +41,7 @@ export class UserRepository {
   async findClientByEmail(email: string): Promise<Client | null> {
     const result = await query(
       'SELECT id, email, name, password_hash, whatsapp, segment, color, is_active, last_access_at, created_at, updated_at, company_id FROM clients WHERE LOWER(email) = $1 AND is_active = true',
-      [String(email || '').trim().toLowerCase()]
+      [normalizeEmail(email)]
     )
     return result.rows[0] || null
   }

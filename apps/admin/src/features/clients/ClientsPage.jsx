@@ -237,7 +237,7 @@ export default function ClientsPage() {
   const [editClient, setEditClient] = useState(null)
 
   useEffect(() => {
-    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ includeArchived: true, limit: 500 })])
+    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ limit: 500 })])
       .then(([c,p]) => { setClients(c); setPosts(p) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))

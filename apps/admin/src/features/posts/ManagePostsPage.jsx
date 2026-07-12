@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Archive,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
@@ -44,6 +43,8 @@ import {
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
+import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
+import { useAuthStore } from '../../store/authStore'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -52,16 +53,16 @@ const STATUS_OPTIONS = [
   { value: 'sent', label: 'Enviado' },
   { value: 'pending_approval', label: 'Aguardando' },
   { value: 'rejected', label: 'Recusado' },
-  { value: 'archived', label: 'Arquivado interno' },
 ]
 
 const SENDABLE_STATUSES = ['draft', 'ready', 'rejected']
 
 const EXECUTION_RETENTION_OPTIONS = [
   { value: 'never', label: 'Manter arquivos', description: 'Os anexos continuam disponiveis para consulta.' },
-  { value: 'immediate', label: 'Excluir agora', description: 'Remove os arquivos assim que marcar como executado.' },
+  { value: 'immediate', label: 'Excluir imediatamente', description: 'Deixa os anexos elegiveis para o proximo comando de limpeza.' },
   { value: '1d', label: 'Excluir em 1 dia', description: 'Mantem os anexos por 24 horas apos a execucao.' },
   { value: '7d', label: 'Excluir em 1 semana', description: 'Mantem os anexos por 7 dias apos a execucao.' },
+  { value: '30d', label: 'Excluir em 30 dias', description: 'Mantem os anexos por 30 dias apos a execucao.' },
 ]
 
 function getPostClientId(post) {
@@ -484,7 +485,7 @@ function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
         </div>
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          Depois de executado, o projeto sai da lista de concluidos e entra em executados. O cliente nao podera alterar a aprovacao.
+          Depois de postado na rede, o projeto sai da lista de aprovados pelo cliente. O cliente nao podera alterar a aprovacao.
         </div>
 
         <div className="flex gap-3">
@@ -499,6 +500,7 @@ function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
 export default function ManagePostsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { user } = useAuthStore()
   const [posts, setPosts] = useState([])
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
@@ -514,12 +516,14 @@ export default function ManagePostsPage() {
   const [batchLoading, setBatchLoading] = useState(false)
   const [executePost, setExecutePost] = useState(null)
   const [executeLoading, setExecuteLoading] = useState(false)
+  const [postToDelete, setPostToDelete] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const clientsById = useMemo(() => new Map(clients.map(client => [client.id, client])), [clients])
 
   function load() {
     setLoading(true)
-    Promise.all([fetchPosts({ limit: 500, includeArchived: true }), fetchClients()])
+    Promise.all([fetchPosts({ limit: 500 }), fetchClients()])
       .then(([loadedPosts, loadedClients]) => {
         setPosts(loadedPosts)
         setClients(loadedClients)
@@ -547,8 +551,6 @@ export default function ManagePostsPage() {
           if (status !== 'executed') return false
         } else {
           if (['approved', 'executed'].includes(status)) return false
-          if (status !== 'archived' && statusFilter === 'archived') return false
-          if (status === 'archived' && statusFilter !== 'archived') return false
         }
         const haystack = `${post.title || ''} ${post.description || ''} ${client.name || ''}`.toLowerCase()
         if (search && !haystack.includes(search.toLowerCase())) return false
@@ -567,7 +569,7 @@ export default function ManagePostsPage() {
   const activeCount = posts.filter(post => {
     if (!clientsById.has(getPostClientId(post))) return false
     const status = computePostStatus(post)
-    return !['approved', 'executed', 'archived'].includes(status)
+    return !['approved', 'executed'].includes(status)
   }).length
   const completedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'approved').length
   const executedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'executed').length
@@ -628,6 +630,21 @@ export default function ManagePostsPage() {
     }
   }
 
+  async function handleDeletePost() {
+    if (!postToDelete) return
+    setDeleteLoading(true)
+    try {
+      await softDeletePost(postToDelete.id)
+      toast.success('Postagem excluida.')
+      setPostToDelete(null)
+      load()
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -641,8 +658,8 @@ export default function ManagePostsPage() {
         <div className="mb-4 flex flex-wrap gap-2">
           {[
             { key: 'active', label: 'Projetos em andamento', count: activeCount },
-            { key: 'completed', label: 'Concluidos', count: completedCount },
-            { key: 'executed', label: 'Executados', count: executedCount },
+            { key: 'completed', label: 'Aprovado pelo cliente', count: completedCount },
+            { key: 'executed', label: 'Postado na rede', count: executedCount },
           ].map(item => (
             <button
               key={item.key}
@@ -692,7 +709,7 @@ export default function ManagePostsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm text-neutral-500">
             <Filter size={16} />
-            {filtered.length} postagem(ns) {view === 'executed' ? 'executada(s)' : view === 'completed' ? 'concluida(s)' : 'em andamento'} encontrada(s)
+            {filtered.length} postagem(ns) {view === 'executed' ? 'postada(s) na rede' : view === 'completed' ? 'aprovada(s) pelo cliente' : 'em andamento'} encontrada(s)
             {view === 'active' && selected.length ? <span className="font-bold text-mag-600">- {selected.length} selecionada(s)</span> : null}
           </div>
           {view === 'active' ? (
@@ -714,7 +731,7 @@ export default function ManagePostsPage() {
             const status = computePostStatus(post)
             const canSend = SENDABLE_STATUSES.includes(status)
             const canExecute = status === 'approved'
-            const canArchive = !['archived'].includes(status)
+            const canDelete = canDeletePost(status, user?.role)
             return (
               <Card key={post.id} className="p-4">
                 <div className="grid gap-4 lg:grid-cols-[32px_1.1fr_1.6fr_1fr_auto] lg:items-center">
@@ -750,12 +767,7 @@ export default function ManagePostsPage() {
                     {status === 'ready' && <button title="Voltar para rascunho" onClick={() => runAction(() => updatePostStatus(post.id, 'draft'), 'Postagem voltou para rascunho.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-amber-600 dark:hover:bg-neutral-800"><RotateCcw size={16} /></button>}
                     {canSend && <button title="Enviar para aprovacao" onClick={() => handleSend(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:hover:bg-neutral-800"><Send size={16} /></button>}
                     {canExecute && <button title="Marcar como executado" onClick={() => setExecutePost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><CheckCircle size={16} /></button>}
-                    {canArchive && status !== 'executed' && <button title="Arquivar" onClick={() => {
-                      const needsConfirm = ['sent', 'pending_approval', 'approved'].includes(status)
-                      if (!needsConfirm || confirm('Esta postagem ja foi enviada/aprovada. Arquivar mesmo assim?')) {
-                        runAction(() => softDeletePost(post.id), 'Postagem arquivada.')
-                      }
-                    }} className="rounded-lg p-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30">{status === 'draft' ? <Trash2 size={16} /> : <Archive size={16} />}</button>}
+                    {canDelete && <button title="Excluir postagem" onClick={() => setPostToDelete(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"><Trash2 size={16} /></button>}
                   </div>
                 </div>
               </Card>
@@ -764,7 +776,7 @@ export default function ManagePostsPage() {
           {!filtered.length && (
             <Card className="p-10 text-center">
               <div className="text-sm font-bold text-neutral-700 dark:text-neutral-200">Nenhuma postagem encontrada</div>
-              <p className="mt-1 text-sm text-neutral-500">{view === 'executed' ? 'Nenhum projeto executado com estes filtros.' : view === 'completed' ? 'Nenhum projeto concluido com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
+              <p className="mt-1 text-sm text-neutral-500">{view === 'executed' ? 'Nenhuma postagem postada na rede com estes filtros.' : view === 'completed' ? 'Nenhuma postagem aprovada pelo cliente com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
               <Button className="mt-4" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')}>Nova Postagem</Button>
             </Card>
           )}
@@ -787,6 +799,14 @@ export default function ManagePostsPage() {
         onClose={() => setExecutePost(null)}
         onConfirm={handleMarkExecuted}
         loading={executeLoading}
+      />
+      <DeletePostModal
+        post={postToDelete}
+        status={postToDelete ? computePostStatus(postToDelete) : ''}
+        open={!!postToDelete}
+        onClose={() => setPostToDelete(null)}
+        onConfirm={handleDeletePost}
+        loading={deleteLoading}
       />
     </div>
   )

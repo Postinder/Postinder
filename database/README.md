@@ -1,37 +1,39 @@
-# Database
+# Banco de dados
 
-Este diretório mantém o schema PostgreSQL do Postinder.
+## Fonte de verdade
 
-## Caminho recomendado
+As migrations versionadas em `database/migrations` sao a unica fonte de verdade para a estrutura do banco. Elas sao aplicadas em ordem por `backend/scripts/migrate.ts` e registradas em `schema_migrations`.
 
-Use as migrations versionadas em `database/migrations`.
+O schema SQL inicial legado foi removido. Novas instalacoes, demonstracoes e producao devem usar somente o migrador.
 
-No backend:
-
-```bash
-cd backend
-npm run db:migrate
-```
-
-O comando cria a tabela `schema_migrations`, aplica apenas arquivos ainda não executados e registra cada migration aplicada.
-
-## Arquivos
-
-- `migrations/001_core_schema.sql`: tabelas, índices e extensões.
-- `migrations/002_development_seed.sql`: usuário admin e cliente inicial para teste.
-- `001_initial_schema.sql`: schema legado consolidado, mantido por compatibilidade.
-
-## Antes de publicar
-
-Configure `DATABASE_URL` apontando para o PostgreSQL online e rode:
+## Instalacao e atualizacao
 
 ```bash
 cd backend
 npm run db:migrate
 ```
 
-Depois valide a conexão com:
+O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations pendentes impedem a inicializacao da API.
 
-```text
-GET /health/db
+`002_development_seed.sql` e uma migration historica preservada para compatibilidade de bancos antigos, mas nao e executada pela cadeia estrutural.
+
+## Dados demo
+
+```powershell
+$env:APP_MODE = 'demo'
+cd backend
+npm run db:seed-demo
 ```
+
+A seed e explicita e idempotente. `APP_MODE` ainda nao controla todos os comportamentos da aplicacao; ele protege a seed demo nesta fase.
+
+## Primeiro administrador
+
+Defina `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD`, depois execute:
+
+```bash
+cd backend
+npm run db:bootstrap-admin
+```
+
+O comando nao cria administrador quando ja ha um admin ativo. Consulte [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) para o procedimento publicado.

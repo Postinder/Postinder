@@ -1,5 +1,6 @@
 import bcryptjs from 'bcryptjs'
-import { query } from '../../../../shared/database/pool'
+import { pool, query } from '../../../../shared/database/pool'
+import { assertActiveEmailAvailable, isEmailConflict, normalizeEmail } from '../../../../shared/database/emailUniqueness'
 
 export interface CreateUserDTO {
   name: string
@@ -18,16 +19,6 @@ export interface UpdateUserDTO {
 }
 
 export class UsersRepository {
-  private normalizeEmail(email: string) {
-    return String(email || '').trim().toLowerCase()
-  }
-
-  private duplicateScopeConditions(params: any[], companyId?: string) {
-    if (!companyId) return ''
-    params.push(companyId)
-    return ` AND (company_id = $${params.length} OR company_id IS NULL)`
-  }
-
   private scope(companyId?: string) {
     const params: any[] = []
     const conditions = ['is_active = true']
@@ -54,27 +45,30 @@ export class UsersRepository {
   }
 
   async create(dto: CreateUserDTO) {
-    const email = this.normalizeEmail(dto.email)
-    const duplicate = await this.emailExistsInUsersOrClients(email, dto.companyId)
-    if (duplicate) {
-      throw new Error('Email already exists')
-    }
-
+    const email = normalizeEmail(dto.email)
     const passwordHash = await bcryptjs.hash(dto.password, 10)
+    const client = await pool.connect()
+    let transactionStarted = false
     try {
-      const result = await query(
+      await client.query('BEGIN')
+      transactionStarted = true
+      await assertActiveEmailAvailable(client, email)
+      const result = await client.query(
         `INSERT INTO users (name, email, password_hash, role, permissions, company_id, is_active)
          VALUES ($1, $2, $3, $4, $5, $6, true)
          RETURNING id, name, email, role, permissions, company_id, is_active, created_at, updated_at`,
         [dto.name, email, passwordHash, dto.role, dto.permissions, dto.companyId || null],
       )
-
+      await client.query('COMMIT')
       return result.rows[0]
     } catch (error: any) {
-      if (error.code === '23505') {
+      if (transactionStarted) await client.query('ROLLBACK')
+      if (isEmailConflict(error)) {
         throw new Error('Email already exists')
       }
       throw error
+    } finally {
+      client.release()
     }
   }
 
@@ -128,7 +122,7 @@ export class UsersRepository {
       `SELECT email FROM users WHERE ${conditions.join(' AND ')} AND is_active = true LIMIT 1`,
       params,
     )
-    if (String(current.rows[0]?.email || '').trim().toLowerCase() === 'admin@postinder.local') {
+    if (normalizeEmail(current.rows[0]?.email || '') === 'admin@postinder.local') {
       throw new Error('Primary admin cannot be deleted')
     }
 
@@ -142,24 +136,4 @@ export class UsersRepository {
     return Boolean(result.rows[0])
   }
 
-  async emailExistsInUsersOrClients(email: string, companyId?: string) {
-    const normalizedEmail = this.normalizeEmail(email)
-    const userParams: any[] = [normalizedEmail]
-    const clientParams: any[] = [normalizedEmail]
-    const userScope = this.duplicateScopeConditions(userParams, companyId)
-    const clientScope = this.duplicateScopeConditions(clientParams, companyId)
-
-    const userResult = await query(
-      `SELECT 1 FROM users WHERE LOWER(email) = $1 AND is_active = true${userScope} LIMIT 1`,
-      userParams,
-    )
-    if (userResult.rows[0]) return true
-
-    const clientResult = await query(
-      `SELECT 1 FROM clients WHERE LOWER(email) = $1 AND is_active = true${clientScope} LIMIT 1`,
-      clientParams,
-    )
-
-    return Boolean(clientResult.rows[0])
-  }
 }
