@@ -34,5 +34,7 @@ Base local: `http://localhost:3001/api/v1`.
 - Aprovacao e reprovacao pertencem ao portal do Cliente.
 - `PATCH /posts/:id/status` aceita apenas `draft <-> ready`.
 - Postagens `executed` sao imutaveis; duplicacao cria uma nova postagem.
+- Upload aceita no maximo 200 MB por arquivo. Excesso retorna `413/FILE_TOO_LARGE` e tipo nao suportado retorna `415/UNSUPPORTED_FILE_TYPE`.
+- Em producao, cada arquivo ainda e recebido em memoria antes do envio ao Supabase; upload direto ou retomavel esta no roadmap.
 
-Consulte [../PROJECT_STATE.md](../PROJECT_STATE.md) e [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) para a documentacao consolidada.
+Consulte [../PROJECT_STATE.md](../PROJECT_STATE.md), [../docs/STORAGE_ARCHITECTURE.md](../docs/STORAGE_ARCHITECTURE.md) e [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) para a documentacao consolidada.

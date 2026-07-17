@@ -21,6 +21,8 @@ Este documento contem somente trabalho futuro e validacoes ainda pendentes.
 
 - Agendar `npm run storage:cleanup-retention` externamente, com alerta e procedimento operacional.
 - Adicionar retries controlados e outbox/fila para falhas de Storage e compensacoes incompletas.
+- Implementar upload direto ou retomavel para o Storage, com URL assinada, progresso, repeticao segura e finalizacao auditavel, evitando que videos grandes atravessem integralmente a memoria da API.
+- Avaliar transcodificacao ou normalizacao opcional de video para MP4 H.264/AAC e geracao de capa, sem substituir o acesso ao arquivo original.
 - Avaliar bucket privado e signed URLs, com plano de migracao das URLs existentes.
 - Executar auditoria de objetos compartilhados e arquivos legados sem identidade no ambiente publicado.
 - Adicionar rate limiting para tokens e auditoria completa de permissoes e isolamento por `company_id`.
@@ -49,6 +51,7 @@ Este documento contem somente trabalho futuro e validacoes ainda pendentes.
 - Definir o destino de `EmailPage`, `IntegrationsPage` e das rotas `/api/v1/approvals`, `/api/v1/files` e `/api/v1/feedback`.
 - Revisar filtros, escopos e metricas entre `approved` e `executed`.
 - Ampliar testes automatizados, regressao responsiva, acessibilidade de teclado e smoke test apos deploy.
+- Cobrir upload e reproducao de video nos navegadores suportados, incluindo MP4 compativel, codec nao reproduzivel, arquivo acima de 200 MB, progresso, nova tentativa e controles de video sem acionamento do swipe.
 - Corrigir textos remanescentes com acentuacao/mojibake e avaliar code splitting do bundle Vite.
 
 ## P3 - Integracoes

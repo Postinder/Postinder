@@ -27,6 +27,10 @@
 
 - Cada arquivo e revisado individualmente; swipe e a interacao principal, com botoes como alternativa acessivel.
 - O gesto horizontal nao deve bloquear rolagem vertical nem acionar arraste nativo da imagem.
+- Controles interativos de video nao participam do gesto de swipe. Reproduzir, pausar, alterar volume ou navegar no video nao pode aprovar nem reprovar o arquivo.
+- Imagens e videos devem ser visualizados no proprio fluxo de revisao. Para video, o padrao e player nativo sem reproducao automatica, com `playsInline`, `preload="metadata"` e acesso ao arquivo original como alternativa.
+- A legenda permanece alinhada a esquerda. Textos extensos usam expansao explicita, quebras preservadas e hifenizacao automatica com idioma `pt-BR`; justificacao nao e usada em colunas estreitas por prejudicar a regularidade dos espacos.
+- O primeiro viewport deve priorizar a decisao: contexto da postagem, midia, identificacao do arquivo, instrucao, legenda e acoes devem caber juntos sempre que a altura disponivel permitir, sem comprimir controles essenciais.
 - O Cliente pode desfazer somente a ultima decisao quando o fluxo permitir. Pode editar feedback e reconsiderar uma recusa antes de uma nova correcao.
 - Uma nova versao enviada pela agencia deve ser identificada como `Correcao`.
 - A ordem dos anexos e dado de negocio, persistida por `sort_order` e mantida em todas as telas.
@@ -55,6 +59,9 @@
 ## Arquivos e Retencao
 
 - A identidade oficial de arquivo e `bucket + storage_path`; URL publica nao e identidade de dominio.
+- O limite atual e 200 MB por arquivo. A selecao deve validar tamanho e tipos aceitos antes da rede, e lotes devem ser enviados sequencialmente com progresso individual para reduzir o pico de memoria.
+- Falhas de upload posteriores a criacao nao devem ocultar a postagem: o registro permanece editavel e a interface orienta nova tentativa.
+- MP4 com H.264/AAC e a recomendacao de compatibilidade para revisao no navegador. Outros conteineres podem ser armazenados, mas dependem dos codecs suportados pelo navegador e devem oferecer acesso ao original quando nao houver reproducao.
 - Duplicacao de postagem cria objetos fisicos independentes.
 - Retencao preserva metadados, decisao, metricas e historico depois da remocao fisica do objeto.
 - As politicas disponiveis por postagem sao `immediate`, `1d`, `7d`, `30d` e `never`. `immediate` torna o arquivo elegivel ao comando de limpeza, sem apagar durante a marcacao de execucao.
@@ -65,3 +72,4 @@
 - O Cliente devera possuir uma unica identidade global, sem contas duplicadas por agencia. Um unico login devera permitir alternar entre os contextos das Empresas/agencias vinculadas por seletor, abas ou solucao equivalente.
 - Cada contexto futuro exibira somente os Projetos/Campanhas, postagens, aprovacoes e historicos correspondentes a respectiva Empresa/agencia.
 - Bucket privado, signed URLs, versionamento formal de arquivos e entidade propria de Projeto/Campanha sao evolucoes futuras, nao regras da versao atual.
+- Upload direto ou retomavel para o Storage e evolucao futura para evitar que videos grandes atravessem integralmente a memoria do backend.

@@ -9,6 +9,7 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { Select } from '../../components/ui/Input'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
+import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
 import toast from 'react-hot-toast'
 
 const STATUS_DOT = {
@@ -107,6 +108,7 @@ function PostDetailsModal({ post, client, open, onClose }) {
   const activeFileRemoved = isStorageDeleted(activeFile)
   const activeFileUrl = activeFileRemoved ? null : resolveMediaUrl(activeFile?.url || activeFile?.storage_url)
   const activeFileIsImage = (activeFile?.file_type || '').toUpperCase() === 'IMAGE' || /\.(jpe?g|png|gif|webp|svg)$/i.test(activeFile?.name || '')
+  const activeFileIsVideo = getMediaKind(activeFile) === 'video'
   const retentionPolicy = post.filesRetentionPolicy || post.files_retention_policy
 
   function moveFile(delta) {
@@ -202,6 +204,13 @@ function PostDetailsModal({ post, client, open, onClose }) {
                       <div>Arquivo removido automaticamente conforme politica de retencao.</div>
                       <div className="mt-2 text-xs font-medium">Removido em {formatDate(activeFile.storage_deleted_at || activeFile.storageDeletedAt)}{retentionPolicy ? ` · ${RETENTION_LABELS[retentionPolicy] || retentionPolicy}` : ''}</div>
                     </div>
+                  ) : activeFileIsVideo && activeFileUrl ? (
+                    <MediaPreview
+                      file={activeFile}
+                      src={activeFileUrl}
+                      className="h-[58vh] w-full"
+                      mediaClassName="h-full w-full object-contain"
+                    />
                   ) : activeFileIsImage && activeFileUrl ? (
                     <img
                       src={activeFileUrl}
@@ -276,10 +285,13 @@ function PostDetailsModal({ post, client, open, onClose }) {
                 const storageDeleted = isStorageDeleted(file)
                 const url = storageDeleted ? null : resolveMediaUrl(file.url || file.storage_url)
                 const isImage = (file.file_type || '').toUpperCase() === 'IMAGE' || /\.(jpe?g|png|gif|webp|svg)$/i.test(file.name || '')
+                const isVideo = getMediaKind(file) === 'video'
                 const content = <>
                   <div className="relative h-36 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
                     {storageDeleted ? (
                       <div className="flex h-full items-center justify-center px-4 text-center text-xs font-bold text-neutral-400">Arquivo removido conforme retencao</div>
+                    ) : isVideo && url ? (
+                      <MediaPreview file={file} src={url} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
                     ) : isImage && url ? (
                       <img src={url} alt="" className="h-full w-full object-contain" />
                     ) : (

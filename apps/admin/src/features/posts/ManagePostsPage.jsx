@@ -26,7 +26,7 @@ import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import Skeleton from '../../components/ui/Skeleton'
 import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
-import { resolveMediaUrl } from '../../utils/mediaUrl'
+import { prepareUploadFiles } from '../../utils/uploadValidation'
 import {
   computePostStatus,
   duplicatePost,
@@ -43,6 +43,7 @@ import {
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
+import MediaPreview, { getMediaName } from '../../components/media/MediaPreview'
 import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
 import { useAuthStore } from '../../store/authStore'
 
@@ -96,22 +97,7 @@ function getPostChannels(post) {
 }
 
 function getAttachmentName(file) {
-  return file?.name || file?.original_name || file?.originalName || file?.file?.name || 'Arquivo'
-}
-
-function getAttachmentType(file) {
-  return file?.file_type || file?.fileType || file?.type || file?.file?.type || ''
-}
-
-function isImageAttachment(file) {
-  const type = String(getAttachmentType(file)).toLowerCase()
-  const name = getAttachmentName(file)
-  return type.startsWith('image/') || type === 'image' || /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(name)
-}
-
-function getAttachmentPreviewUrl(file) {
-  if (file?.file instanceof File) return URL.createObjectURL(file.file)
-  return resolveMediaUrl(file?.storage_url || file?.url)
+  return getMediaName(file)
 }
 
 function CompactFeedPreview({ channels, files }) {
@@ -120,8 +106,6 @@ function CompactFeedPreview({ channels, files }) {
   const totalFiles = files.length
   const safeIndex = totalFiles ? Math.min(activeIndex, totalFiles - 1) : 0
   const activeFile = files[safeIndex]
-  const previewUrl = getAttachmentPreviewUrl(activeFile)
-  const image = activeFile && isImageAttachment(activeFile)
 
   useEffect(() => {
     if (activeIndex > Math.max(totalFiles - 1, 0)) setActiveIndex(Math.max(totalFiles - 1, 0))
@@ -152,13 +136,8 @@ function CompactFeedPreview({ channels, files }) {
       <div className="p-4">
         <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950">
           <div className="relative flex aspect-[4/3] max-h-[420px] min-h-[260px] items-center justify-center">
-            {image && previewUrl ? (
-              <img src={previewUrl} alt={getAttachmentName(activeFile)} className="h-full w-full object-contain" />
-            ) : activeFile ? (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
-                <FilePlus size={34} />
-                <span className="max-w-[80%] truncate text-sm font-bold">{getAttachmentName(activeFile)}</span>
-              </div>
+            {activeFile ? (
+              <MediaPreview file={activeFile} className="h-full w-full" mediaClassName="h-full w-full object-contain" />
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
                 <ImageIcon size={34} />
@@ -219,6 +198,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
   const [removedExistingFiles, setRemovedExistingFiles] = useState([])
   const [files, setFiles] = useState([])
   const [saving, setSaving] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(null)
 
   useEffect(() => {
     if (!post) return
@@ -230,6 +210,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
     ))
     setRemovedExistingFiles([])
     setFiles([])
+    setUploadProgress(null)
     setForm({
       clientId: getPostClientId(post) || '',
       title: post.title || '',
@@ -270,7 +251,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
         await uploadPostFiles(post.id, files.map((item, index) => ({
           ...item,
           sortOrder: existingFiles.length + index + 1,
-        })))
+        })), { onUploadProgress: setUploadProgress })
       }
       toast.success('Postagem atualizada.')
       onSaved()
@@ -279,6 +260,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
       toast.error(error.message)
     } finally {
       setSaving(false)
+      setUploadProgress(null)
     }
   }
 
@@ -375,13 +357,13 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
             type="file"
             multiple
             className="hidden"
-            onChange={event => setFiles(Array.from(event.target.files || []).map(file => ({
-              localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
-              file,
-              name: file.name,
-              type: file.type,
-              size: file.size,
-            })))}
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+            onChange={event => {
+              const { accepted, errors } = prepareUploadFiles(event.target.files)
+              setFiles(current => [...current, ...accepted])
+              errors.forEach(error => toast.error(error))
+              event.target.value = ''
+            }}
           />
         </label>
 
@@ -393,6 +375,18 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
             onMove={(from, to) => setFiles(current => moveAttachment(current, from, to))}
             onRemove={index => setFiles(current => current.filter((_, fileIndex) => fileIndex !== index))}
           />
+        ) : null}
+
+        {uploadProgress ? (
+          <div className="rounded-lg border border-mag-200 bg-mag-50 p-3 text-xs font-bold text-mag-700 dark:border-mag-900 dark:bg-mag-950/30 dark:text-mag-300">
+            <div className="flex justify-between gap-3">
+              <span className="truncate">Enviando {uploadProgress.fileIndex + 1} de {uploadProgress.totalFiles}: {uploadProgress.fileName}</span>
+              <span>{uploadProgress.percent}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-mag-100 dark:bg-mag-900">
+              <div className="h-full bg-mag-600 transition-[width]" style={{ width: `${uploadProgress.percent}%` }} />
+            </div>
+          </div>
         ) : null}
 
         <div className="flex gap-3 pt-2">

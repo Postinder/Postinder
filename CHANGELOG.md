@@ -29,6 +29,10 @@ Este changelog registra os principais marcos funcionais e arquiteturais do proje
 
 - Foi criado portal de revisao por token e suporte equivalente a Cliente autenticado.
 - Portal ganhou swipe, botoes alternativos, feedbacks, tags, desfazer limitado, recusados, calendario, historico e identificacao de correcao.
+- O quadro principal de revisao foi compactado: cabecalho, faixa de contexto, midia, legenda e acoes passaram a ocupar melhor o primeiro viewport, com acoes fixas no mobile e junto da legenda no desktop.
+- Legendas extensas ganharam `Ver mais`/`Ver menos`, quebra segura, preservacao de linhas e hifenizacao automatica em portugues, mantendo alinhamento a esquerda.
+- Imagens e videos passaram a usar uma previa centralizada. Videos ganharam player nativo nas telas administrativas e no portal, controles independentes do swipe, carregamento por metadados e alternativa para codecs nao reproduziveis.
+- Textos do fluxo de exclusao receberam correcoes de portugues e acentuacao.
 - Rascunhos e itens prontos deixaram de ficar visiveis ao Cliente e de gerar notificacoes indevidas.
 - A central administrativa foi organizada em Em andamento, Aprovado pelo cliente e Postado na rede.
 - A edicao ganhou previa compacta navegavel do feed, e as telas receberam ajustes responsivos.
@@ -37,6 +41,9 @@ Este changelog registra os principais marcos funcionais e arquiteturais do proje
 
 - `files` passou a persistir `bucket`, `storage_path`, MIME e tamanho.
 - Uploads passaram a compensar objetos enviados quando a gravacao no banco falha.
+- Selecao de anexos passou a validar formato e limite de 200 MB no frontend; lotes passaram a ser enviados um arquivo por vez, com progresso individual.
+- O backend passou a responder `413` para arquivo acima do limite e `415` para tipo nao suportado. Falha depois da criacao preserva a postagem editavel e orienta nova tentativa.
+- O portal passou a receber MIME e tamanho junto dos metadados de arquivo.
 - Remocoes deixaram de reconstruir caminho a partir de URL publica.
 
 ## Storage B - Copia independente

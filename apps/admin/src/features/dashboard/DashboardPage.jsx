@@ -17,7 +17,9 @@ import Input, { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
+import { validateUploadFile } from '../../utils/uploadValidation'
 import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
+import MediaPreview from '../../components/media/MediaPreview'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTIONS = [
@@ -325,10 +327,7 @@ function EditPostModal({ post, open, onClose, onSave }) {
                   <div key={file.id} className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
                     <div className="mb-3 flex items-start gap-3">
                       <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
-                        {(file.file_type || '').toUpperCase() === 'IMAGE' && previewUrl
-                          ? <img src={previewUrl} alt="" className="h-full w-full object-cover" onError={event => { event.currentTarget.style.display = 'none' }} />
-                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-400">{FILE_LABELS[file.file_type] || 'Arquivo'}</div>
-                        }
+                        <MediaPreview file={file} src={previewUrl} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-1 text-sm font-bold text-neutral-900 dark:text-white">{file.name}</div>
@@ -346,10 +345,14 @@ function EditPostModal({ post, open, onClose, onSave }) {
                       <span className="shrink-0 text-xs font-semibold text-mag-500">Escolher</span>
                       <input
                         type="file"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
                         className="hidden"
                         onChange={event => {
                           const nextFile = event.target.files?.[0]
-                          if (nextFile) setReplacementFiles(current => ({ ...current, [file.id]: nextFile }))
+                          const validationError = nextFile ? validateUploadFile(nextFile) : null
+                          if (validationError) toast.error(validationError)
+                          else if (nextFile) setReplacementFiles(current => ({ ...current, [file.id]: nextFile }))
+                          event.target.value = ''
                         }}
                       />
                     </label>
@@ -810,10 +813,9 @@ export default function DashboardPage() {
                     </div>
                     <div className="mt-3 flex gap-3">
                       <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-800">
-                        {firstFile?.file_type === 'IMAGE' && resolveMediaUrl(firstFile?.storage_url)
-                          ? <img src={resolveMediaUrl(firstFile.storage_url)} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
-                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem midia'}</div>
-                        }
+                        {firstFile
+                          ? <MediaPreview file={firstFile} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
+                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-500 dark:text-neutral-300">Sem midia</div>}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-2 text-sm font-extrabold text-neutral-950 dark:text-white">{post.title || '(sem titulo)'}</div>
@@ -884,10 +886,9 @@ export default function DashboardPage() {
                       <td className="px-4 py-3 align-middle">
                         <div className="flex items-center gap-3">
                           <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-800">
-                            {firstFile?.file_type === 'IMAGE' && resolveMediaUrl(firstFile?.storage_url)
-                              ? <img src={resolveMediaUrl(firstFile.storage_url)} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
-                              : <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem mídia'}</div>
-                            }
+                            {firstFile
+                              ? <MediaPreview file={firstFile} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
+                              : <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-neutral-500 dark:text-neutral-300">Sem mídia</div>}
                           </div>
                           <div className="min-w-0">
                             <div className="line-clamp-1 font-semibold text-neutral-900 dark:text-white">{post.title || '(sem título)'}</div>

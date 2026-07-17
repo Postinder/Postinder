@@ -11,6 +11,7 @@ import Input, { Textarea, Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
+import { prepareUploadFiles } from '../../utils/uploadValidation'
 import toast from 'react-hot-toast'
 
 function Section({ number, title, description, children }) {
@@ -43,6 +44,7 @@ export default function NewPostPage() {
   const [emailLink, setEmailLink] = useState('')
   const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
   const [loading, setLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(null)
   const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft' })
 
   useEffect(() => {
@@ -91,27 +93,20 @@ export default function NewPostPage() {
     }))
   }
 
+  function addFiles(fileList) {
+    const { accepted, errors } = prepareUploadFiles(fileList)
+    if (accepted.length) setFiles(current => [...current, ...accepted])
+    errors.forEach(error => toast.error(error))
+  }
+
   function handleFiles(event) {
-    const nextFiles = Array.from(event.target.files).map(file => ({
-      localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
-      file,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-    }))
-    setFiles(current => [...current, ...nextFiles])
+    addFiles(event.target.files)
+    event.target.value = ''
   }
 
   function handleDrop(event) {
     event.preventDefault()
-    const nextFiles = Array.from(event.dataTransfer.files).map(file => ({
-      localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
-      file,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-    }))
-    setFiles(current => [...current, ...nextFiles])
+    addFiles(event.dataTransfer.files)
   }
 
   async function handleSave(status = 'draft', keepCreating = false) {
@@ -130,6 +125,7 @@ export default function NewPostPage() {
     }
 
     setLoading(true)
+    setUploadProgress(null)
     try {
       const formats = {}
       channels.forEach(channel => {
@@ -147,7 +143,9 @@ export default function NewPostPage() {
         emailLink: isEmail ? emailLink : null,
         clientId: form.clientId,
         createdById: user?.id,
-      }, isEmail ? [] : files.map((item, index) => ({ ...item, sortOrder: index + 1 })))
+      }, isEmail ? [] : files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
+        onUploadProgress: setUploadProgress,
+      })
 
       toast.success(status === 'ready' ? 'Postagem salva como pronta para envio.' : 'Rascunho salvo.')
       if (keepCreating) {
@@ -159,6 +157,7 @@ export default function NewPostPage() {
       toast.error(error.message)
     } finally {
       setLoading(false)
+      setUploadProgress(null)
     }
   }
 
@@ -169,6 +168,7 @@ export default function NewPostPage() {
     setSelFormats({})
     setFunnelTag('')
     setEmailLink('')
+    setUploadProgress(null)
   }
 
   return (
@@ -313,6 +313,20 @@ export default function NewPostPage() {
               />
             </div>
           )}
+
+          {uploadProgress ? (
+            <div className="mt-4 rounded-lg border border-mag-200 bg-mag-50 p-3 dark:border-mag-900 dark:bg-mag-950/30">
+              <div className="flex items-center justify-between gap-3 text-xs font-bold text-mag-700 dark:text-mag-300">
+                <span className="min-w-0 truncate">
+                  Enviando {uploadProgress.fileIndex + 1} de {uploadProgress.totalFiles}: {uploadProgress.fileName}
+                </span>
+                <span>{uploadProgress.percent}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-mag-100 dark:bg-mag-900">
+                <div className="h-full rounded-full bg-mag-600 transition-[width]" style={{ width: `${uploadProgress.percent}%` }} />
+              </div>
+            </div>
+          ) : null}
         </Section>
       )}
 

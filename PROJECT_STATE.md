@@ -39,7 +39,10 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 ## Postagens, anexos e metricas
 
 - A agencia cria, edita, ordena anexos, duplica e envia postagens individualmente ou em lote.
-- O portal oferece swipe e botoes, feedback por arquivo, tags, edicao de feedback e desfazer apenas da ultima decisao no fluxo permitido.
+- O portal oferece swipe e botoes, feedback por arquivo, tags, edicao de feedback e desfazer apenas da ultima decisao no fluxo permitido. Em dispositivos moveis, as acoes permanecem fixas na parte inferior; em telas maiores, ficam junto da legenda.
+- Imagens e videos usam uma previa reutilizavel nas telas administrativas e no portal. Videos possuem player nativo com controles, `playsInline`, carregamento por metadados e alternativa para abrir o arquivo original quando o navegador nao reproduz o codec.
+- Os controles do video sao isolados do gesto horizontal de decisao. Legendas permanecem alinhadas a esquerda, preservam quebras, usam hifenizacao automatica em portugues e podem ser expandidas por `Ver mais` sem sobrepor as acoes.
+- O primeiro quadro de revisao foi compactado para priorizar, na abertura, faixa de contexto, midia, nome, estado, instrucao de swipe, legenda e acoes. A altura da midia responde ao viewport e usa limite menor em telas grandes para manter a borda inferior visivel.
 - A ordem dos anexos e persistida por `files.sort_order` e usada em criacao, edicao, portal e previews.
 - A edicao administrativa possui previa compacta navegavel do feed.
 - Metricas preservam a primeira decisao, inclusive quando uma correcao posterior e aprovada. Dashboard, feed e insights tratam Clientes ativos como escopo padrao e oferecem visao geral quando aplicavel.
@@ -63,6 +66,8 @@ Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migratio
 
 - A identidade de cada objeto e `bucket + storage_path`; a URL publica e apenas uma forma de acesso mantida por compatibilidade.
 - `files` persiste bucket, caminho, MIME e tamanho. Uploads compensam objetos enviados quando o banco falha.
+- O frontend valida tipo e limite de 200 MB antes do envio, apresenta progresso por arquivo e envia anexos sequencialmente. O backend devolve `413` para excesso de tamanho e `415` para tipo nao suportado.
+- Se a postagem for criada e um anexo falhar, o registro permanece editavel e a interface informa que o envio pode ser tentado novamente.
 - Duplicacao cria copia fisica independente em novo path e registro proprio; arquivos legados sem identidade bloqueiam a duplicacao de modo explicito.
 - Retencao por postagem aceita `immediate`, `1d`, `7d`, `30d` e `never`. O comando manual `npm run storage:cleanup-retention` remove o objeto vencido, preserva metadados e registra `storage_deleted_at` ou `storage_delete_error`.
 - Nao existe scheduler, fila ou retry automatico nesta versao.
@@ -72,6 +77,7 @@ Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migratio
 - A implementacao foi validada localmente por builds, verificacoes tecnicas e testes manuais. Nao ha confirmacao de cobertura automatizada ponta a ponta completa.
 - A aplicacao integral de migrations, variaveis e configuracoes de Storage no ambiente publicado ainda precisa ser confirmada.
 - O bucket continua publico no fluxo atual; bucket privado e signed URLs nao foram implementados.
+- Em producao, cada arquivo ainda passa pela memoria do backend antes do Supabase. Upload direto ou retomavel para o Storage nao foi implementado.
 - A seed explicita e condicionada a `APP_MODE=demo`, mas a separacao completa entre Modo demonstracao e Modo producao ainda e trabalho futuro.
 - Multiempresa, identidade global de contas e entidades proprias de Projeto/Campanha ainda nao foram implementadas.
 

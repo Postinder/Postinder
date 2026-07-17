@@ -101,6 +101,7 @@ Depois de alterar `VITE_API_URL`, faca redeploy. Confirme tambem que `APP_PUBLIC
 3. Validar variaveis, CORS e URLs do portal.
 4. Validar `/health`, `/health/db` e `/health/storage`.
 5. Executar smoke test de login, criacao, envio, portal, decisao, correcao, execucao, upload e duplicacao.
-6. Executar a limpeza de Retencao somente com dados de teste quando for validar Storage.
+6. Validar upload e reproducao de um MP4 H.264/AAC, progresso por arquivo, rejeicao acima de 200 MB e uso dos controles sem disparar o swipe.
+7. Executar a limpeza de Retencao somente com dados de teste quando for validar Storage.
 
 Consulte [STORAGE_ARCHITECTURE.md](STORAGE_ARCHITECTURE.md) para o modelo de arquivos e [../ROADMAP.md](../ROADMAP.md) para pendencias de scheduler, retries e bucket privado.

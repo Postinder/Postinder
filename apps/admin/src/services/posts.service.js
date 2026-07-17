@@ -5,27 +5,26 @@ export async function fetchPosts(filters) {
   return data.data || []
 }
 
-export async function createPost(postData, files = []) {
+function getRequestErrorMessage(error) {
+  return error.response?.data?.error || error.response?.data?.message || error.message || 'Não foi possível enviar o arquivo.'
+}
+
+export async function createPost(postData, files = [], options = {}) {
+  let post
   try {
-    const { data: post } = await apiClient.post('/posts', postData)
+    const { data } = await apiClient.post('/posts', postData)
+    post = data
 
     if (files.length > 0) {
-      const formData = new FormData()
-      const sortOrders = []
-      files.forEach((item, index) => {
-        const file = item.file || item
-        formData.append('files', file)
-        sortOrders.push(item.sort_order || item.sortOrder || index + 1)
-      })
-      formData.append('sortOrders', sortOrders.join(','))
-      await apiClient.post(`/posts/${post.id}/files`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      await uploadPostFiles(post.id, files, options)
     }
 
     return post
   } catch (error) {
-    const message = error.response?.data?.error || error.response?.data?.message || error.message
+    const originalMessage = getRequestErrorMessage(error)
+    const message = post?.id
+      ? `A postagem foi criada, mas o arquivo não foi enviado. Você pode tentar novamente pela edição. Motivo: ${originalMessage}`
+      : originalMessage
     throw new Error(message)
   }
 }
@@ -35,20 +34,37 @@ export async function updatePost(postId, updates) {
   return data
 }
 
-export async function uploadPostFiles(postId, files = []) {
+export async function uploadPostFiles(postId, files = [], options = {}) {
   if (!files.length) return []
-  const formData = new FormData()
-  const sortOrders = []
-  files.forEach((item, index) => {
+  const uploadedFiles = []
+
+  for (let index = 0; index < files.length; index += 1) {
+    const item = files[index]
     const file = item.file || item
+    const formData = new FormData()
     formData.append('files', file)
-    sortOrders.push(item.sort_order || item.sortOrder || index + 1)
-  })
-  formData.append('sortOrders', sortOrders.join(','))
-  const { data } = await apiClient.post(`/posts/${postId}/files`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
-  return data.data || []
+    formData.append('sortOrders', String(item.sort_order || item.sortOrder || index + 1))
+
+    try {
+      const { data } = await apiClient.post(`/posts/${postId}/files`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: event => {
+          const percent = event.total ? Math.round((event.loaded * 100) / event.total) : 0
+          options.onUploadProgress?.({
+            fileIndex: index,
+            totalFiles: files.length,
+            fileName: file.name,
+            percent,
+          })
+        },
+      })
+      uploadedFiles.push(...(data.data || []))
+    } catch (error) {
+      throw new Error(`${file.name}: ${getRequestErrorMessage(error)}`)
+    }
+  }
+
+  return uploadedFiles
 }
 
 export async function reorderPostFiles(postId, files) {
@@ -95,13 +111,21 @@ export async function resubmitPost(postId, data) {
   return response.data
 }
 
-export async function replacePostFile(postId, fileId, file) {
+export async function replacePostFile(postId, fileId, file, options = {}) {
   const formData = new FormData()
   formData.append('file', file)
-  const { data } = await apiClient.post(`/posts/${postId}/files/${fileId}/replace`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
-  return data.data
+  try {
+    const { data } = await apiClient.post(`/posts/${postId}/files/${fileId}/replace`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: event => {
+        const percent = event.total ? Math.round((event.loaded * 100) / event.total) : 0
+        options.onUploadProgress?.({ fileIndex: 0, totalFiles: 1, fileName: file.name, percent })
+      },
+    })
+    return data.data
+  } catch (error) {
+    throw new Error(`${file.name}: ${getRequestErrorMessage(error)}`)
+  }
 }
 
 export async function removePostFile(postId, fileId) {

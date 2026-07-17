@@ -1,6 +1,6 @@
 # Postinder
 
-Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa arquivos pelo portal; a agencia registra a execucao depois da aprovacao.
+Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal oferece swipe e botoes acessiveis, player nativo de video e legenda expansivel com hifenizacao em portugues.
 
 ## Arquitetura
 
