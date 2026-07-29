@@ -10,6 +10,8 @@ import { Select } from '../../components/ui/Input'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
+import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
+import { soundtrackDraftFromPost } from '../../utils/soundtrack'
 import toast from 'react-hot-toast'
 
 const STATUS_DOT = {
@@ -182,6 +184,15 @@ function PostDetailsModal({ post, client, open, onClose }) {
             </div>
           </div>
         )}
+
+        {post.soundtrack ? (
+          <SoundtrackEditor
+            value={soundtrackDraftFromPost(post)}
+            attachments={files}
+            onChange={() => {}}
+            readOnly
+          />
+        ) : null}
 
         {files.length ? (
           <div>

@@ -1,11 +1,12 @@
 import cors from 'cors'
-import express, { Express } from 'express'
+import express, { Express, Router } from 'express'
 import path from 'path'
 import { requestLogger } from './shared/middlewares/requestLogger'
 import { errorHandler } from './shared/middlewares/errorHandler'
 import { authMiddleware } from './shared/middlewares/authMiddleware'
 import { adminAuthMiddleware } from './shared/middlewares/adminAuthMiddleware'
-import { readOnlyAdminMiddleware } from './shared/middlewares/readOnlyAdminMiddleware'
+import { clientAuthMiddleware } from './shared/middlewares/clientAuthMiddleware'
+import { requireAdminRouteCapability } from './shared/middlewares/requireCapability'
 import { createAuthRoutes } from './modules/auth/presentation/routes/auth.routes'
 import { createPostsRoutes } from './modules/posts/presentation/routes/posts.routes'
 import { createClientsRoutes } from './modules/clients/presentation/routes/clients.routes'
@@ -17,23 +18,37 @@ import { createPortalRoutes } from './modules/portal/presentation/routes/portal.
 import { createClientPortalRoutes } from './modules/portal/presentation/routes/clientPortal.routes'
 import { createMaintenanceRoutes } from './modules/maintenance/presentation/routes/maintenance.routes'
 import { pool } from './shared/database/pool'
-import { env } from './config/environment'
+import { env, Environment } from './config/environment'
 import { checkRemoteStorage } from './shared/upload/storage'
+import { getDemoResetAvailability } from './config/demoReset'
+import { MaintenanceController } from './modules/maintenance/presentation/controllers/MaintenanceController'
+import { logger } from './shared/utils/Logger'
+import { PortalController } from './modules/portal/presentation/controllers/PortalController'
+import { AIInsightsController } from './modules/integrations/presentation/controllers/AIInsightsController'
+import { createIntegrationsRoutes } from './modules/integrations/presentation/routes/integrations.routes'
 
-function parseCorsOrigins() {
+export interface AppOptions {
+  runtimeEnvironment?: Environment
+  maintenanceController?: MaintenanceController
+  portalController?: PortalController
+  aiInsightsController?: AIInsightsController
+}
+
+function parseCorsOrigins(runtimeEnvironment: Environment) {
   return [
-    env.APP_PUBLIC_URL,
-    ...(env.CORS_ORIGINS || '').split(','),
+    runtimeEnvironment.APP_PUBLIC_URL,
+    ...(runtimeEnvironment.CORS_ORIGINS || '').split(','),
     'http://localhost:5173',
   ]
     .map(origin => origin?.trim())
     .filter(Boolean) as string[]
 }
 
-export function createApp(): Express {
+export function createApp(options: AppOptions = {}): Express {
   const app = express()
+  const runtimeEnvironment = options.runtimeEnvironment || env
 
-  const allowedOrigins = parseCorsOrigins()
+  const allowedOrigins = parseCorsOrigins(runtimeEnvironment)
 
   app.use(cors({
     origin(origin, callback) {
@@ -62,7 +77,7 @@ export function createApp(): Express {
   })
 
   app.get('/health/storage', async (_req, res) => {
-    if (env.NODE_ENV !== 'production') {
+    if (runtimeEnvironment.NODE_ENV !== 'production') {
       return res.json({ status: 'ok', storage: 'local', path: '/uploads' })
     }
 
@@ -75,17 +90,44 @@ export function createApp(): Express {
   })
 
   app.use('/api/v1/auth', createAuthRoutes())
-  app.use('/api/v1/portal', createPortalRoutes())
-  app.use('/api/v1/client-portal', authMiddleware, createClientPortalRoutes())
-  app.use('/api/v1/notifications', authMiddleware, createNotificationsRoutes())
-  app.use('/api/v1/posts', authMiddleware, adminAuthMiddleware, readOnlyAdminMiddleware, createPostsRoutes())
-  app.use('/api/v1/clients', authMiddleware, readOnlyAdminMiddleware, createClientsRoutes())
-  app.use('/api/v1/users', authMiddleware, readOnlyAdminMiddleware, createUsersRoutes())
-  app.use('/api/v1/approvals', authMiddleware, readOnlyAdminMiddleware, createApprovalsRoutes())
-  app.use('/api/v1/files', authMiddleware, readOnlyAdminMiddleware, createFilesRoutes())
-  app.use('/api/v1/feedback', authMiddleware, readOnlyAdminMiddleware, createFeedbackRoutes())
-  app.use('/api/v1/activities', authMiddleware, readOnlyAdminMiddleware, createActivitiesRoutes())
-  app.use('/api/v1/maintenance', authMiddleware, readOnlyAdminMiddleware, createMaintenanceRoutes())
+  app.use('/api/v1/portal', createPortalRoutes(options.portalController))
+  app.all('/api/v1/portal/*', (_req, res) => {
+    res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' })
+  })
+  app.use('/api/v1/client-portal', authMiddleware, clientAuthMiddleware, createClientPortalRoutes())
+
+  const demoResetAvailability = getDemoResetAvailability(runtimeEnvironment)
+  const demoResetEnabled = demoResetAvailability.enabled
+  if (demoResetAvailability.reason === 'invalid-deployment-mode') {
+    logger.warn('Demo reset disabled because DEPLOYMENT_MODE is invalid')
+  }
+  if (!demoResetEnabled) {
+    app.all('/api/v1/maintenance/reset-demo-data', (_req, res) => {
+      res.status(404).json({ error: 'Not found' })
+    })
+  }
+
+  const adminRoutes = Router()
+  adminRoutes.use(authMiddleware, adminAuthMiddleware, requireAdminRouteCapability)
+  adminRoutes.use('/notifications', createNotificationsRoutes())
+  adminRoutes.use('/posts', createPostsRoutes())
+  adminRoutes.use('/clients', createClientsRoutes())
+  adminRoutes.use('/users', createUsersRoutes())
+  adminRoutes.use('/approvals', createApprovalsRoutes())
+  adminRoutes.use('/files', createFilesRoutes())
+  adminRoutes.use('/feedback', createFeedbackRoutes())
+  adminRoutes.use('/activities', createActivitiesRoutes())
+  adminRoutes.use(
+    '/integrations',
+    createIntegrationsRoutes(runtimeEnvironment, options.aiInsightsController),
+  )
+  if (demoResetEnabled) {
+    adminRoutes.use(
+      '/maintenance',
+      createMaintenanceRoutes(runtimeEnvironment, options.maintenanceController),
+    )
+  }
+  app.use('/api/v1', adminRoutes)
 
   app.use(errorHandler)
 

@@ -22,6 +22,9 @@ import {
   resetPortalFile,
   sendPortalFeedback,
   updatePortalFileFeedback,
+  approvePortalSoundtrack,
+  adjustPortalSoundtrack,
+  resetPortalSoundtrack,
 } from '../../services/portal.service'
 import {
   approveAuthenticatedPortalFile,
@@ -30,6 +33,9 @@ import {
   resetAuthenticatedPortalFile,
   sendAuthenticatedPortalFeedback,
   updateAuthenticatedPortalFileFeedback,
+  approveAuthenticatedPortalSoundtrack,
+  adjustAuthenticatedPortalSoundtrack,
+  resetAuthenticatedPortalSoundtrack,
 } from '../../services/clientPortal.service'
 import { useAuthStore } from '../../store/authStore'
 import { REJECTION_TAGS } from '../../utils/constants'
@@ -42,6 +48,7 @@ import PortalMetricsBar from './PortalMetricsBar'
 import PortalReviewActions from './PortalReviewActions'
 import PortalReviewHeader from './PortalReviewHeader'
 import PortalStatusBadge from './PortalStatusBadge'
+import SoundtrackReviewCard from './SoundtrackReviewCard'
 import {
   formatDate,
   getPostDate,
@@ -238,10 +245,13 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
   )
 }
 
-function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onApproveFile, onRejectFile, onUndo, canUndoLastAction, busy }) {
+function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onApproveFile, onRejectFile, onApproveSoundtrack, onAdjustSoundtrack, onUndo, canUndoLastAction, busy }) {
   const selectedProject = projects.find(post => post.id === selectedProjectId) || projects[0]
   const pendingFiles = selectedProject ? (selectedProject.files || []).filter(isPendingFile) : []
   const currentFile = pendingFiles[0]
+  const pendingSoundtrack = selectedProject?.soundtrack && (selectedProject.soundtrack.approvalStatus || selectedProject.soundtrack.approval_status) === 'pending'
+    ? selectedProject.soundtrack
+    : null
   const [rejectOpen, setRejectOpen] = useState(false)
   const [comment, setComment] = useState('')
   const [selectedTags, setSelectedTags] = useState([])
@@ -308,8 +318,8 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
       <section className="min-w-0 flex-1">
         <PortalReviewHeader
           content={selectedProject}
-          currentPosition={Math.max(currentFileIndex + 1, 1)}
-          totalFiles={(selectedProject.files || []).length}
+          currentPosition={currentFile ? Math.max(currentFileIndex + 1, 1) : (selectedProject.files || []).length + 1}
+          totalFiles={(selectedProject.files || []).length + (selectedProject.soundtrack ? 1 : 0)}
           onUndo={onUndo}
           canUndo={canUndoLastAction}
           busy={busy}
@@ -323,13 +333,23 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             onApprove={() => onApproveFile(selectedProject.id, currentFile.id)}
             onReject={() => setRejectOpen(true)}
           />
-        ) : (
+        ) : !pendingSoundtrack ? (
           <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center dark:border-green-800 dark:bg-green-950/30">
             <CheckCircle size={38} className="mx-auto text-green-600" />
             <h3 className="mt-3 text-lg font-black text-green-800 dark:text-green-200">Conteúdo revisado</h3>
             <p className="mt-1 text-sm text-green-700/80 dark:text-green-300/80">Todos os arquivos deste conteúdo foram analisados.</p>
           </div>
-        )}
+        ) : null}
+
+        {pendingSoundtrack ? (
+          <SoundtrackReviewCard
+            post={selectedProject}
+            soundtrack={pendingSoundtrack}
+            busy={busy}
+            onApprove={() => onApproveSoundtrack(selectedProject.id)}
+            onAdjust={comment => onAdjustSoundtrack(selectedProject.id, comment)}
+          />
+        ) : null}
 
         {rejectOpen ? (
           <PortalDialog
@@ -434,12 +454,17 @@ export default function ClientPortalPage({ mode = 'token' }) {
   )
 
   const pendingProjects = useMemo(
-    () => posts.filter(post => (post.files || []).some(isPendingFile)),
+    () => posts.filter(post => (
+      (post.files || []).some(isPendingFile)
+      || (post.soundtrack && (post.soundtrack.approvalStatus || post.soundtrack.approval_status) === 'pending')
+    )),
     [posts],
   )
 
   const pendingItemsCount = useMemo(
-    () => pendingProjects.reduce((total, post) => total + (post.files || []).filter(isPendingFile).length, 0),
+    () => pendingProjects.reduce((total, post) => total
+      + (post.files || []).filter(isPendingFile).length
+      + ((post.soundtrack?.approvalStatus || post.soundtrack?.approval_status) === 'pending' ? 1 : 0), 0),
     [pendingProjects],
   )
 
@@ -487,6 +512,11 @@ export default function ClientPortalPage({ mode = 'token' }) {
     [files],
   )
 
+  const rejectedSoundtracks = useMemo(
+    () => posts.filter(post => (post.soundtrack?.approvalStatus || post.soundtrack?.approval_status) === 'adjustment_requested'),
+    [posts],
+  )
+
   const canUndoLastAction = useMemo(() => {
     if (!lastAction) return false
     const project = posts.find(post => post.id === lastAction.projectId)
@@ -505,13 +535,21 @@ export default function ClientPortalPage({ mode = 'token' }) {
         created_at: file.updated_at || file.created_at,
       }))
 
+    const soundtrackFeedbacks = rejectedSoundtracks.map(post => ({
+      id: `soundtrack-${post.soundtrack.id}`,
+      post_title: post.title || 'Conteudo sem titulo',
+      text: post.soundtrack.adjustmentComment || post.soundtrack.adjustment_comment || 'Ajuste solicitado no fundo sonoro.',
+      tags: ['Fundo sonoro'],
+      created_at: post.soundtrack.adjustmentRequestedAt || post.soundtrack.adjustment_requested_at || post.soundtrack.updatedAt,
+    }))
+
     const generalFeedbacks = (payload?.feedbacks || []).map(item => ({
       ...item,
       tags: item.tags || [],
     }))
 
-    return [...fileFeedbacks, ...generalFeedbacks].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-  }, [files, payload?.feedbacks])
+    return [...fileFeedbacks, ...soundtrackFeedbacks, ...generalFeedbacks].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+  }, [files, payload?.feedbacks, rejectedSoundtracks])
 
   useEffect(() => {
     if (!payload) return
@@ -566,11 +604,48 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
+  async function handleApproveSoundtrack(projectId) {
+    setBusy(true)
+    try {
+      if (isAuthenticatedMode) await approveAuthenticatedPortalSoundtrack(projectId)
+      else await approvePortalSoundtrack(token, projectId)
+      const action = { projectId, kind: 'soundtrack', type: 'approved' }
+      setLastAction(action)
+      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      await reload()
+      toast.success('Fundo sonoro aprovado.')
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleAdjustSoundtrack(projectId, comment) {
+    setBusy(true)
+    try {
+      if (isAuthenticatedMode) await adjustAuthenticatedPortalSoundtrack(projectId, comment)
+      else await adjustPortalSoundtrack(token, projectId, comment)
+      const action = { projectId, kind: 'soundtrack', type: 'adjustment_requested' }
+      setLastAction(action)
+      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      await reload()
+      toast.success('Ajuste do fundo sonoro enviado.')
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleUndoLastAction() {
     if (!lastAction || !canUndoLastAction) return
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await resetAuthenticatedPortalFile(lastAction.fileId)
+      if (lastAction.kind === 'soundtrack') {
+        if (isAuthenticatedMode) await resetAuthenticatedPortalSoundtrack(lastAction.projectId)
+        else await resetPortalSoundtrack(token, lastAction.projectId)
+      } else if (isAuthenticatedMode) await resetAuthenticatedPortalFile(lastAction.fileId)
       else await resetPortalFile(token, lastAction.fileId)
       setSelectedProjectId(lastAction.projectId)
       setLastAction(null)
@@ -694,6 +769,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
             onSelectProject={setSelectedProjectId}
             onApproveFile={handleApproveFile}
             onRejectFile={handleRejectFile}
+            onApproveSoundtrack={handleApproveSoundtrack}
+            onAdjustSoundtrack={handleAdjustSoundtrack}
             onUndo={handleUndoLastAction}
             canUndoLastAction={canUndoLastAction}
             busy={busy}
@@ -762,7 +839,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
         {activeTab === 'rejected' && (
           <section id="portal-panel-rejected" role="tabpanel" aria-labelledby="portal-tab-rejected" tabIndex={0} className="space-y-4 focus:outline-none">
-            {rejectedFiles.length ? rejectedFiles.map(file => (
+            {rejectedFiles.length || rejectedSoundtracks.length ? rejectedFiles.map(file => (
               <article key={file.id} className="grid gap-4 rounded-lg border border-red-200 bg-white p-4 shadow-sm dark:border-red-900 dark:bg-neutral-900 lg:grid-cols-[220px_minmax(0,1fr)]">
                 <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="block">
                   <FilePreview file={file} />
@@ -810,6 +887,16 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 </div>
               </article>
             )) : <EmptyPanel title="Nenhum item recusado" description="Itens recusados ficarão aqui caso você queira revisar e aprovar depois." />}
+            {rejectedSoundtracks.map(post => (
+              <SoundtrackReviewCard
+                key={`soundtrack-${post.id}`}
+                post={post}
+                soundtrack={post.soundtrack}
+                busy={busy}
+                onApprove={() => handleApproveSoundtrack(post.id)}
+                onAdjust={comment => handleAdjustSoundtrack(post.id, comment)}
+              />
+            ))}
           </section>
         )}
 
@@ -837,6 +924,11 @@ export default function ClientPortalPage({ mode = 'token' }) {
                   <PortalStatusBadge status={getPostStatus(post)} />
                 </div>
                 {post.description && <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-300">{post.description}</p>}
+                {post.soundtrack ? (
+                  <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200">
+                    <strong>Fundo sonoro:</strong> {post.soundtrack.trackName || post.soundtrack.track_name || (post.soundtrack.mode === 'embedded' ? 'incluido no video' : post.soundtrack.mode === 'uploaded' ? 'arquivo enviado' : 'referencia externa')} · {post.soundtrack.approvalStatus || post.soundtrack.approval_status}
+                  </div>
+                ) : null}
               </div>
             )) : <EmptyPanel title="Sem histórico" description="Conteúdos aprovados, recusados ou concluídos aparecerão aqui." />}
           </section>

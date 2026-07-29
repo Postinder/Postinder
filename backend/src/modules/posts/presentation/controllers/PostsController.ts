@@ -9,6 +9,7 @@ import { PostDuplicationError, PostRepository } from '../../infrastructure/repos
 import { getFileCategory } from '../../../../shared/upload/multer'
 import { removeStoredFile, StoredFile, storeUploadedFile } from '../../../../shared/upload/storage'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
+import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
 
 interface AuthRequest extends Request {
   user?: any
@@ -22,6 +23,7 @@ export class PostsController {
     private getPostService: GetPostService,
     private postRepository: PostRepository,
     private activityRepository = new ActivityRepository(),
+    private soundtrackRepository = new SoundtrackRepository(),
   ) {}
 
   private async compensateUploadedFiles(files: StoredFile[]) {
@@ -192,6 +194,13 @@ export class PostsController {
     if (!uploadedFile) {
       return res.status(400).json({ error: 'No file uploaded' })
     }
+    if (await this.soundtrackRepository.isEmbeddedSource(req.params.id, req.params.fileId)
+      && getFileCategory(uploadedFile.mimetype) !== 'VIDEO') {
+      return res.status(400).json({
+        error: 'O arquivo vinculado ao fundo sonoro incorporado deve continuar sendo um video',
+        code: 'INVALID_SOUNDTRACK_SOURCE_MEDIA',
+      })
+    }
 
     const storedFile = await storeUploadedFile(uploadedFile)
     let savedFile
@@ -219,6 +228,11 @@ export class PostsController {
       await this.compensateUploadedFiles([storedFile])
       return res.status(404).json({ error: 'Rejected file not found' })
     }
+    await this.soundtrackRepository.invalidateEmbeddedSource(req.params.id, req.params.fileId, {
+      id: req.user?.userId,
+      role: req.user?.role,
+      companyId: req.tenantId,
+    })
     res.status(200).json({ data: savedFile })
   }
 

@@ -4,6 +4,8 @@ import { IPostRepository, FindPostsFilter, PaginationParams } from '../../domain
 import { PostMapper } from '../mappers/PostMapper'
 import { logger } from '../../../../shared/utils/Logger'
 import { copyStoredFile, removeStoredFile, StoredFile } from '../../../../shared/upload/storage'
+import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
+import { AppException } from '../../../../shared/exceptions/AppException'
 
 type PostMutationState = {
   allowed: boolean
@@ -25,7 +27,10 @@ export class PostDuplicationError extends Error {
 type StorageCopyFunction = typeof copyStoredFile
 
 export class PostRepository implements IPostRepository {
-  constructor(private readonly copyStorageObject: StorageCopyFunction = copyStoredFile) {}
+  constructor(
+    private readonly copyStorageObject: StorageCopyFunction = copyStoredFile,
+    private readonly soundtrackRepository = new SoundtrackRepository(),
+  ) {}
 
   private buildPostScope(id: string, companyId?: string, alias = '') {
     const params: any[] = [id]
@@ -62,12 +67,13 @@ export class PostRepository implements IPostRepository {
     }
 
     const shared = await query(
-      `SELECT 1
-       FROM files
-       WHERE bucket = $1
-         AND storage_path = $2
-         AND NOT (id = ANY($3::uuid[]))
-       LIMIT 1`,
+      `SELECT 1 FROM (
+         SELECT bucket, storage_path FROM files
+         WHERE bucket = $1 AND storage_path = $2 AND NOT (id = ANY($3::uuid[]))
+         UNION ALL
+         SELECT bucket, storage_path FROM post_soundtracks
+         WHERE bucket = $1 AND storage_path = $2 AND deleted_at IS NULL
+       ) active_references LIMIT 1`,
       [reference.bucket, reference.storagePath, excludedFileIds],
     )
     if (shared.rows[0]) return
@@ -169,7 +175,10 @@ export class PostRepository implements IPostRepository {
          GROUP BY p.id`,
         params,
       )
-      return result.rows[0] ? PostMapper.toDomainWithFiles(result.rows[0]) : null
+      if (!result.rows[0]) return null
+      const post = PostMapper.toDomainWithFiles(result.rows[0])
+      ;(post as any).soundtrack = await this.soundtrackRepository.findByPostId(id)
+      return post
     } catch (error) {
       logger.error('Failed to find post', { error })
       return null
@@ -237,8 +246,11 @@ export class PostRepository implements IPostRepository {
         params,
       )
 
+      const posts = result.rows.map(row => PostMapper.toDomainWithFiles(row))
+      const soundtracks = await this.soundtrackRepository.findByPostIds(posts.map(post => post.id))
+      posts.forEach(post => { ;(post as any).soundtrack = soundtracks.get(post.id) || null })
       return {
-        posts: result.rows.map(row => PostMapper.toDomainWithFiles(row)),
+        posts,
         total: parseInt(countResult.rows[0].count, 10),
       }
     } catch (error) {
@@ -515,6 +527,13 @@ export class PostRepository implements IPostRepository {
            AND status = 'rejected'`,
         [id],
       )
+      await query(
+        `UPDATE post_soundtracks
+         SET approval_status = 'pending', approved_at = NULL,
+             adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+         WHERE post_id = $1 AND deleted_at IS NULL AND approval_status = 'adjustment_requested'`,
+        [id],
+      )
     }
     return Boolean(result.rows[0])
   }
@@ -551,6 +570,9 @@ export class PostRepository implements IPostRepository {
   }
 
   async removeFile(postId: string, fileId: string, companyId?: string) {
+    if (await this.soundtrackRepository.isEmbeddedSource(postId, fileId)) {
+      throw new AppException('O video esta vinculado ao fundo sonoro incorporado. Altere a modalidade antes de remove-lo.', 409, 'SOUNDTRACK_SOURCE_IN_USE')
+    }
     const params: any[] = [postId, fileId]
     const postConditions = ['p.id = $1', 'p.deleted_at IS NULL', "p.status <> 'executed'"]
     if (companyId) {
@@ -661,6 +683,15 @@ export class PostRepository implements IPostRepository {
            AND status = 'rejected'`,
         [sentIds],
       )
+      await query(
+        `UPDATE post_soundtracks
+         SET approval_status = 'pending', approved_at = NULL,
+             adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+         WHERE post_id = ANY($1::uuid[])
+           AND deleted_at IS NULL
+           AND approval_status = 'adjustment_requested'`,
+        [sentIds],
+      )
     }
     return result.rows
   }
@@ -695,6 +726,16 @@ export class PostRepository implements IPostRepository {
       if (originalFiles.rows.some(file => !file.bucket || !file.storage_path)) {
         throw new PostDuplicationError('legacy_file_identity_missing')
       }
+      const originalSoundtrack = await client.query(
+        `SELECT * FROM post_soundtracks
+         WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
+         FOR UPDATE`,
+        [id],
+      )
+      if (originalSoundtrack.rows[0]?.mode === 'uploaded'
+        && (!originalSoundtrack.rows[0].bucket || !originalSoundtrack.rows[0].storage_path)) {
+        throw new PostDuplicationError('legacy_file_identity_missing')
+      }
 
       const source = originalPost.rows[0]
       const duplicatedPost = await client.query(
@@ -718,6 +759,8 @@ export class PostRepository implements IPostRepository {
       )
       const post = duplicatedPost.rows[0]
 
+      const duplicatedFileIds = new Map<string, string>()
+      let duplicatedAttachmentCount = 0
       for (const file of originalFiles.rows) {
         let copied: StoredFile
         try {
@@ -742,12 +785,13 @@ export class PostRepository implements IPostRepository {
         }
         copiedFiles.push(copied)
 
-        await client.query(
+        const duplicatedFile = await client.query(
           `INSERT INTO files (
              post_id, url, bucket, storage_path, mime_type, size_bytes,
              original_name, file_type, status, sort_order, rejection_reason, rejection_tags, created_at, updated_at
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, NULL, NULL, NOW(), NOW())`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, NULL, NULL, NOW(), NOW())
+           RETURNING id`,
           [
             post.id,
             copied.publicUrl,
@@ -760,11 +804,77 @@ export class PostRepository implements IPostRepository {
             file.sort_order,
           ],
         )
+        duplicatedFileIds.set(file.id, duplicatedFile.rows[0].id)
+        duplicatedAttachmentCount += 1
+      }
+
+      const sourceSoundtrack = originalSoundtrack.rows[0]
+      if (sourceSoundtrack) {
+        let soundtrackCopy: StoredFile | null = null
+        if (sourceSoundtrack.mode === 'uploaded') {
+          try {
+            soundtrackCopy = await this.copyStorageObject(
+              { bucket: sourceSoundtrack.bucket, storagePath: sourceSoundtrack.storage_path },
+              {
+                postId: post.id,
+                folder: 'soundtracks',
+                originalName: sourceSoundtrack.original_name,
+                mimeType: sourceSoundtrack.mime_type,
+                sizeBytes: sourceSoundtrack.size_bytes === null ? null : Number(sourceSoundtrack.size_bytes),
+              },
+            )
+            copiedFiles.push(soundtrackCopy)
+          } catch (error) {
+            logger.error('Failed to copy soundtrack while duplicating post', { sourcePostId: id, duplicatedPostId: post.id, error })
+            throw new PostDuplicationError('storage_copy_failed')
+          }
+        }
+
+        const sourceMediaId = sourceSoundtrack.source_media_id
+          ? duplicatedFileIds.get(sourceSoundtrack.source_media_id) || null
+          : null
+        const duplicatedSoundtrack = await client.query(
+          `INSERT INTO post_soundtracks (
+             post_id, mode, source_media_id, track_name, artist, external_url, platform,
+             start_time_seconds, usage_source, usage_notes, rights_notes,
+             audio_url, bucket, storage_path, mime_type, size_bytes, original_name,
+             approval_status, revision_number, created_at, updated_at
+           ) VALUES (
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+             $12, $13, $14, $15, $16, $17, 'pending', 1, NOW(), NOW()
+           ) RETURNING *`,
+          [
+            post.id,
+            sourceSoundtrack.mode,
+            sourceMediaId,
+            sourceSoundtrack.track_name,
+            sourceSoundtrack.artist,
+            sourceSoundtrack.external_url,
+            sourceSoundtrack.platform,
+            sourceSoundtrack.start_time_seconds,
+            sourceSoundtrack.usage_source,
+            sourceSoundtrack.usage_notes,
+            sourceSoundtrack.rights_notes,
+            soundtrackCopy?.publicUrl || null,
+            soundtrackCopy?.bucket || null,
+            soundtrackCopy?.storagePath || null,
+            soundtrackCopy?.mimeType || null,
+            soundtrackCopy?.sizeBytes ?? null,
+            sourceSoundtrack.original_name,
+          ],
+        )
+        const soundtrack = duplicatedSoundtrack.rows[0]
+        await client.query(
+          `INSERT INTO post_soundtrack_versions (
+             soundtrack_id, post_id, revision_number, reason, snapshot, actor_role
+           ) VALUES ($1, $2, 1, 'duplicated', to_jsonb($3::jsonb), 'system')`,
+          [soundtrack.id, post.id, JSON.stringify(soundtrack)],
+        )
       }
 
       await client.query('COMMIT')
       transactionStarted = false
-      return { ...post, duplicatedFileCount: copiedFiles.length }
+      return { ...post, duplicatedFileCount: duplicatedAttachmentCount, duplicatedSoundtrack: Boolean(sourceSoundtrack) }
     } catch (error) {
       if (transactionStarted) await client.query('ROLLBACK')
       const removals = await Promise.all(copiedFiles.map(file => removeStoredFile({
@@ -813,6 +923,13 @@ export class PostRepository implements IPostRepository {
     if (!result.rows[0]) return false
 
     await query(`UPDATE files SET status = 'pending' WHERE post_id = $1 AND status = 'rejected'`, [id])
+    await query(
+      `UPDATE post_soundtracks
+       SET approval_status = 'pending', approved_at = NULL,
+           adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+       WHERE post_id = $1 AND deleted_at IS NULL AND approval_status = 'adjustment_requested'`,
+      [id],
+    )
 
     return true
   }

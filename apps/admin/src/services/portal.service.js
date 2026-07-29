@@ -39,3 +39,18 @@ export async function updatePortalFileFeedback(token, fileId, comment, tags = []
   const { data } = await apiClient.patch(`/portal/${token}/files/${fileId}/feedback`, { comment, tags })
   return data
 }
+
+export async function approvePortalSoundtrack(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/soundtrack/approve`)
+  return data
+}
+
+export async function adjustPortalSoundtrack(token, postId, comment) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/soundtrack/adjust`, { comment })
+  return data
+}
+
+export async function resetPortalSoundtrack(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/soundtrack/reset`)
+  return data
+}

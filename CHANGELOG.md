@@ -2,6 +2,22 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
+## Nao publicado - consolidacao pre-deploy
+
+Estas alteracoes estao validadas no repositorio local, mas **ainda nao foram publicadas**:
+
+- A fronteira de autenticacao passou a separar access tokens administrativos, tokens de Cliente, refresh tokens e tokens privados de portal. Tokens ambiguos ou de contexto incorreto sao recusados antes dos controllers.
+- A autorizacao administrativa passou a usar 36 capacidades tipadas e negacao por padrao em 43 rotas. Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`.
+- O reset demo passou a exigir `DEPLOYMENT_MODE=demo`, `ENABLE_DEMO_RESET=true`, autenticacao administrativa e capacidade exclusiva, com rota condicional e segunda guarda no controller.
+- URLs privadas do portal, query strings sensiveis, objetos e erros passaram a ser sanitizados; tokens privados deixaram de ser persistidos nos eventos de atividade.
+- Credenciais e chamadas de integracoes foram removidas do frontend. Anthropic e Z-API sao server-side; Twilio, GoHighLevel, Canva e Resend permanecem desabilitados.
+- A IA passou a usar endpoint proprio do backend, autorizacao `ai-insights:generate`, URL fixa, modelo allowlisted, timeout/abort e payload agregado e pseudonimizado.
+- A estrutura de fundo sonoro foi concluida com estado atual, revisoes, decisoes, Storage e Retencao auditaveis.
+- O banco publicado foi inventariado ate `011`; `012` a `015` permanecem pendentes em producao.
+- O backup logico foi criado e sua restauracao foi validada em stack Supabase local com uma adaptacao minima e documentada na copia de `roles.sql`.
+- O migrador real aplicou `012` a `015` em clone restaurado, na ordem correta; a segunda execucao foi no-op e o advisory lock foi liberado corretamente.
+- Backend: 139/139 testes. Frontend: 14/14 testes. Builds, bundle scan com sentinelas e `git diff --check` aprovados.
+
 ## Consolidacao arquitetural
 
 - A documentacao oficial foi promovida a partir da reconstrucao das conversas historicas, auditorias tecnicas, correcoes implementadas e revisao final.
@@ -18,12 +34,21 @@ Este changelog registra os principais marcos funcionais e arquiteturais do proje
 
 ## Dominio, seguranca e ciclo de vida
 
-- Aprovacao e reprovacao passaram a ser exclusivas do Cliente. JWT de Cliente foi bloqueado nas rotas administrativas de postagens.
+- Aprovacao e reprovacao passaram a ser exclusivas do Cliente. JWT de Cliente foi bloqueado em toda a arvore administrativa, antes dos controllers.
 - O endpoint generico de status foi limitado a `draft <-> ready`.
 - Postagens `executed` passaram a ser imutaveis no backend e na interface; duplicacao permanece permitida.
 - O uso operacional de `archived` foi removido. Exclusao de postagem passou a usar `deleted_at`; `approved` exige admin e `executed` nao pode ser excluida.
 - A unicidade de e-mail entre usuarios e Clientes ativos passou a usar normalizacao, indices parciais e advisory lock transacional.
 - Usuarios ganharam alteracao de papel e exclusao protegida para o administrador principal. Clientes ganharam desativacao reversivel e exclusao definitiva separada.
+
+## Fundo sonoro da postagem
+
+- Foi adicionada uma secao independente dos anexos com os modos `none`, `embedded`, `uploaded` e `external_reference`.
+- A migration `015_post_soundtracks.sql` introduziu estado atual, revisoes imutaveis e decisoes historicas sem alterar postagens antigas, que continuam equivalentes a `none`.
+- Fundo sonoro passou a ter decisao exclusiva do Cliente. Pendencia ou ajuste bloqueia a aprovacao integral, enquanto controles de reproducao e mute permanecem neutros.
+- Troca de modalidade, arquivo, video ou referencia invalida a aprovacao vigente e preserva as decisoes anteriores. Postagens `executed` continuam imutaveis.
+- Audio enviado reutiliza o Storage atual, recebe identidade por bucket e path, copia fisica na duplicacao e auditoria de Retencao. O portal mantem a reproducao entre cards e separa som original do video e trilha.
+- Busca, download externo, integracoes, varias opcoes de trilha, mixagem, renderizacao e metricas de musica ficaram deliberadamente fora desta versao.
 
 ## Portal e experiencia
 
@@ -66,5 +91,7 @@ Este changelog registra os principais marcos funcionais e arquiteturais do proje
 
 ## Validacao conhecida
 
-- Builds e verificacoes locais foram executados durante as consolidacoes tecnicas.
-- A confirmacao do deploy final, das migrations no banco publicado e das configuracoes reais de Render, Vercel e Supabase permanece uma etapa operacional posterior.
+- A auditoria pre-deploy foi concluida e os bloqueadores tecnicos foram corrigidos localmente.
+- O Render foi conferido manualmente sem valores: nenhuma variavel `VITE_*`, credencial de integracao ou Environment Group foi evidenciado; as variaveis da demo e a credencial server-side da IA ainda nao estao configuradas.
+- A Vercel ainda exige inventario manual de variaveis, ambientes e deployments historicos.
+- O frontend e o backend publicados continuam anteriores as correcoes. Nenhum deploy ou migration de producao integra esta consolidacao.

@@ -8,6 +8,7 @@ function scheduledDate(content) {
 
 function ContentOption({ content, active, interactive, onSelect }) {
   const pendingCount = (content.files || []).filter(isPendingFile).length
+    + ((content.soundtrack?.approvalStatus || content.soundtrack?.approval_status) === 'pending' ? 1 : 0)
   const correction = isCorrectionPost(content)
   const sharedClassName = `w-full min-w-[16rem] rounded-xl border p-3 text-left transition xl:min-w-0 ${
     active

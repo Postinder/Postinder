@@ -1,43 +1,30 @@
 import { Request, Response } from 'express'
 import { UsersRepository } from '../../infrastructure/repositories/UsersRepository'
+import { isKnownAdminRole } from '../../../auth/domain/AdminCapability'
 
 interface AuthRequest extends Request {
   user?: any
   tenantId?: string
 }
 
-const allowedRoles = ['admin', 'manager', 'editor', 'viewer', 'gestor', 'equipe']
-
 export class UsersController {
   constructor(private usersRepository: UsersRepository) {}
 
-  private isAdmin(req: AuthRequest) {
-    return req.user?.type === 'admin' && req.user?.role === 'admin'
-  }
-
-  private ensureAdmin(req: AuthRequest, res: Response) {
-    if (!this.isAdmin(req)) {
-      res.status(403).json({ error: 'Admin access required' })
-      return false
-    }
-    return true
-  }
-
   async list(req: AuthRequest, res: Response) {
-    if (!this.ensureAdmin(req, res)) return
     const users = await this.usersRepository.findAll(req.tenantId)
     res.json({ data: users, total: users.length })
   }
 
   async create(req: AuthRequest, res: Response) {
-    if (!this.ensureAdmin(req, res)) return
     const { name, email, password, permissions = [] } = req.body
-    const role = String(req.body.role || 'viewer').trim().toLowerCase()
+    const role = req.body.role === undefined
+      ? 'viewer'
+      : String(req.body.role).trim().toLowerCase()
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
-    if (!allowedRoles.includes(role)) {
+    if (!isKnownAdminRole(role)) {
       return res.status(400).json({ error: 'Invalid role' })
     }
 
@@ -62,12 +49,11 @@ export class UsersController {
   }
 
   async update(req: AuthRequest, res: Response) {
-    if (!this.ensureAdmin(req, res)) return
     const role = req.body.role !== undefined
       ? String(req.body.role).trim().toLowerCase()
       : undefined
 
-    if (role !== undefined && !allowedRoles.includes(role)) {
+    if (role !== undefined && !isKnownAdminRole(role)) {
       return res.status(400).json({ error: 'Invalid role' })
     }
 
@@ -78,7 +64,6 @@ export class UsersController {
   }
 
   async delete(req: AuthRequest, res: Response) {
-    if (!this.ensureAdmin(req, res)) return
     if (req.user?.userId === req.params.id) {
       return res.status(400).json({ error: 'Voce nao pode excluir o proprio usuario.' })
     }

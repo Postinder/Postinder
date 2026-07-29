@@ -24,6 +24,7 @@ export type StorageRemovalResult = StorageObjectReference & {
 
 export type StorageCopyTarget = {
   postId: string
+  folder?: string
   originalName?: string | null
   mimeType?: string | null
   sizeBytes?: number | null
@@ -66,12 +67,23 @@ export async function checkRemoteStorage() {
   return { ok: true, bucket: data.name }
 }
 
-export async function storeUploadedFile(file: Express.Multer.File): Promise<StoredFile> {
+export async function storeUploadedFile(
+  file: Express.Multer.File,
+  target?: { postId?: string; folder?: string },
+): Promise<StoredFile> {
   if (env.NODE_ENV !== 'production') {
+    let storagePath = file.filename
+    if (target?.postId) {
+      const extension = path.extname(file.originalname).toLowerCase()
+      storagePath = `posts/${target.postId}/${target.folder ? `${target.folder}/` : ''}${uuidv4()}${extension}`
+      const destinationFile = getLocalStoragePath(storagePath)
+      await fs.mkdir(path.dirname(destinationFile), { recursive: true })
+      await fs.rename(file.path, destinationFile)
+    }
     return {
       bucket: LOCAL_STORAGE_BUCKET,
-      storagePath: file.filename,
-      publicUrl: `/uploads/${file.filename}`,
+      storagePath,
+      publicUrl: `/uploads/${storagePath}`,
       mimeType: file.mimetype,
       sizeBytes: file.size,
     }
@@ -83,7 +95,9 @@ export async function storeUploadedFile(file: Express.Multer.File): Promise<Stor
   }
 
   const ext = path.extname(file.originalname).toLowerCase()
-  const storagePath = `${new Date().toISOString().slice(0, 10)}/${uuidv4()}${ext}`
+  const storagePath = target?.postId
+    ? `posts/${target.postId}/${target.folder ? `${target.folder}/` : ''}${uuidv4()}${ext}`
+    : `${new Date().toISOString().slice(0, 10)}/${uuidv4()}${ext}`
   const bucket = env.SUPABASE_STORAGE_BUCKET
 
   const { error } = await supabase.storage
@@ -118,7 +132,7 @@ export async function copyStoredFile(
   }
 
   const extension = path.extname(target.originalName || sourcePath).toLowerCase()
-  const storagePath = `posts/${target.postId}/${uuidv4()}${extension}`
+  const storagePath = `posts/${target.postId}/${target.folder ? `${target.folder}/` : ''}${uuidv4()}${extension}`
 
   if (env.NODE_ENV !== 'production') {
     if (bucket !== LOCAL_STORAGE_BUCKET) {

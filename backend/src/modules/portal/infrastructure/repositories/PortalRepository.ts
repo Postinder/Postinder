@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { query } from '../../../../shared/database/pool'
+import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
 
 function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex')
@@ -30,6 +31,7 @@ const clientVisiblePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'p
 const clientReviewablePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval', 'rejected')"
 
 export class PortalRepository {
+  private readonly soundtrackRepository = new SoundtrackRepository()
   async getClient(clientId: string, companyId?: string) {
     const params: any[] = [clientId]
     const conditions = ['id = $1', 'is_active = true']
@@ -197,7 +199,13 @@ export class PortalRepository {
       params,
     )
 
-    return result.rows.map(normalizePost)
+    const posts = result.rows.map(normalizePost)
+    const soundtracks = await this.soundtrackRepository.findByPostIds(posts.map(post => post.id))
+    posts.forEach(post => {
+      ;(post as any).soundtrack = soundtracks.get(post.id) || null
+      ;(post as any).soundtrackMode = (post as any).soundtrack?.mode || 'none'
+    })
+    return posts
   }
 
   async approvePost(postId: string, scope: { clientId: string; companyId?: string }) {
@@ -211,50 +219,17 @@ export class PortalRepository {
     const post = await query(`SELECT id FROM posts p WHERE ${conditions.join(' AND ')} AND ${clientReviewablePostStatusSql}`, params)
     if (!post.rows[0]) return false
 
+    const soundtrack = await this.soundtrackRepository.findByPostId(postId)
+    if (soundtrack) {
+      await this.soundtrackRepository.decide(postId, 'approved', null, scope, 'client_portal')
+    }
     await query(`UPDATE files SET status = 'approved', updated_at = NOW() WHERE post_id = $1`, [postId])
-    await query(
-      `UPDATE posts SET status = 'approved', approved_at = NOW(), updated_at = NOW() WHERE id = $1 AND client_id = $2`,
-      [postId, scope.clientId],
-    )
+    await this.soundtrackRepository.recalculatePostStatus(postId)
     return true
   }
 
   private async recalculatePostStatus(postId: string) {
-    const result = await query(
-      `SELECT
-         COUNT(*) FILTER (WHERE LOWER(COALESCE(NULLIF(status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent')) AS pending_count,
-         COUNT(*) FILTER (WHERE status = 'rejected') AS rejected_count,
-         COUNT(*) FILTER (WHERE status = 'approved') AS approved_count,
-         COUNT(*) AS total_count
-       FROM files
-       WHERE post_id = $1`,
-      [postId],
-    )
-
-    const row = result.rows[0]
-    const pendingCount = Number(row?.pending_count || 0)
-    const rejectedCount = Number(row?.rejected_count || 0)
-    const totalCount = Number(row?.total_count || 0)
-
-    if (pendingCount > 0) {
-      await query(
-        `UPDATE posts
-         SET status = CASE WHEN $2::integer > 0 THEN 'rejected' ELSE 'sent' END,
-             updated_at = NOW()
-         WHERE id = $1`,
-        [postId, rejectedCount],
-      )
-      return
-    }
-
-    if (rejectedCount > 0) {
-      await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [postId])
-      return
-    }
-
-    if (totalCount > 0) {
-      await query(`UPDATE posts SET status = 'approved', approved_at = NOW(), updated_at = NOW() WHERE id = $1`, [postId])
-    }
+    await this.soundtrackRepository.recalculatePostStatus(postId)
   }
 
   async approveFile(fileId: string, scope: { clientId: string; companyId?: string }) {

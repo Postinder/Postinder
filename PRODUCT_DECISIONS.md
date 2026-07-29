@@ -35,6 +35,15 @@
 - Uma nova versao enviada pela agencia deve ser identificada como `Correcao`.
 - A ordem dos anexos e dado de negocio, persistida por `sort_order` e mantida em todas as telas.
 
+## Fundo sonoro
+
+- O fundo sonoro e uma parte independente da postagem e nao pertence a lista ordenavel de anexos. Suas modalidades sao `none`, `embedded`, `uploaded` e `external_reference`; nenhuma modalidade e inferida automaticamente a partir dos anexos.
+- `none` nao cria requisito adicional. Nos demais modos, somente o Cliente pode aprovar ou solicitar ajuste do fundo sonoro, com comentario obrigatorio no ajuste. Reproduzir, pausar, silenciar ou reativar audio serve apenas para a previa e nunca representa uma decisao.
+- A aprovacao integral exige todos os anexos obrigatorios e, quando houver fundo sonoro, a decisao `approved` da revisao vigente. Fundo sonoro `pending` ou `adjustment_requested` impede que a postagem seja considerada aprovada.
+- `embedded` referencia exclusivamente um video ativo da mesma postagem e possui decisao semantica propria, mesmo quando audio e imagem estao no mesmo arquivo. `uploaded` aceita um unico arquivo de audio ativo. `external_reference` registra apenas a indicacao e nao simula player quando nao existe arquivo local.
+- Alteracao material, substituicao ou troca de modalidade invalida a aprovacao vigente, abre nova revisao e preserva versoes e decisoes anteriores. Postagens `executed` nao podem ter o fundo sonoro alterado.
+- Na primeira versao nao existem busca, download de fonte externa, integracao com plataformas, multiplas opcoes, mixagem, renderizacao definitiva nem controle avancado de volume.
+
 ## Historico e comunicacao
 
 - Metricas preservam a primeira decisao e feedbacks historicos; uma correcao aprovada nao apaga uma recusa anterior.
@@ -47,14 +56,34 @@
 - Usuarios e Clientes ativos compartilham namespace global de e-mail neste modelo. O mesmo endereco nao pode existir simultaneamente nas duas categorias.
 - E-mails de registros excluidos ou inativos podem ser reutilizados; reativacao nao pode violar a unicidade vigente.
 - A protecao combina normalizacao, indices unicos parciais e lock transacional por e-mail.
-- `viewer` e somente leitura. O administrador principal de demonstracao nao pode ser excluido.
+- Identidade administrativa e identidade de Cliente sao contextos distintos. Assinatura valida, sozinha, nao promove um token a contexto administrativo.
+- Access tokens, refresh tokens e tokens privados de portal possuem finalidades explicitas e nao sao intercambiaveis.
+- A autorizacao administrativa e baseada em capacidades, ocorre depois da autenticacao/contexto e nega por padrao.
+- Toda nova rota administrativa deve declarar uma capacidade; rota nao declarada recebe `403`.
+- Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`. Perfis desconhecidos, legados ou identidades nao administrativas recebem zero capacidades.
+- `admin` possui todas as capacidades; `manager` possui capacidades operacionais sem usuarios administrativos, exclusoes destrutivas ou reset; `editor` possui capacidades editoriais sem mutacoes de Clientes, execucao, exclusoes, usuarios ou reset; `viewer` possui somente leituras aprovadas.
+- `viewer` e estritamente somente leitura. Criacao e alteracao de usuarios e papeis exigem capacidades exclusivas do administrador.
+- O administrador principal de demonstracao nao pode ser excluido.
 
 ## Banco, demonstracao e producao
 
 - Migrations versionadas sao a unica fonte de verdade do schema. Startup nao corrige schema nem cria dados.
+- Migrations de producao devem executar em Pre-Deploy Command/release step separado, serializado e bloqueante. Falha de migration deve impedir o startup do backend novo.
+- Backup logico recuperavel e preflight atualizado sao obrigatorios antes de executar migrations em producao.
 - Dados demo sao criados somente por comando explicito; bootstrap do primeiro admin e processo separado.
-- Reset e credenciais de demonstracao sao aceitaveis apenas em ambiente controlado de demonstracao.
-- O produto deve evoluir para Modo demonstracao e Modo producao no mesmo codigo-fonte. Hoje apenas a seed explicita e protegida por `APP_MODE=demo`; a separacao integral ainda nao esta implementada.
+- `NODE_ENV` descreve somente o modo tecnico do Node; `DEPLOYMENT_MODE` descreve a finalidade da implantacao.
+- Reset e credenciais de demonstracao sao aceitaveis apenas em implantacao explicitamente demo.
+- O reset exige simultaneamente `DEPLOYMENT_MODE=demo`, `ENABLE_DEMO_RESET=true`, autenticacao administrativa e a capacidade propria. Configuracao ausente ou invalida nega por padrao.
+- O frontend pode refletir o modo por `VITE_DEPLOYMENT_MODE`, mas nunca habilita o reset do backend.
+
+## Integracoes e inteligencia artificial
+
+- O frontend nunca recebe chaves, tokens, client secrets ou outras credenciais.
+- Integracoes que exigem segredo executam exclusivamente no backend, depois de autenticacao e autorizacao.
+- Somente `VITE_API_URL`, `VITE_DEPLOYMENT_MODE` e `VITE_GA_MEASUREMENT_ID` sao configuracoes frontend permitidas no estado atual.
+- A IA envia somente dados agregados, minimizados e pseudonimizados. Nomes, contatos, IDs internos, tokens e links privados nao integram o payload.
+- A pergunta livre do administrador e enviada apenas por acao explicita, com transparencia no ponto de uso; nao existe chamada automatica no startup.
+- A habilitacao real da IA depende de decisao formal sobre provedor, privacidade e tratamento de dados, seguida de configuracao server-side deliberada.
 
 ## Arquivos e Retencao
 
@@ -65,6 +94,7 @@
 - Duplicacao de postagem cria objetos fisicos independentes.
 - Retencao preserva metadados, decisao, metricas e historico depois da remocao fisica do objeto.
 - As politicas disponiveis por postagem sao `immediate`, `1d`, `7d`, `30d` e `never`. `immediate` torna o arquivo elegivel ao comando de limpeza, sem apagar durante a marcacao de execucao.
+- Audio enviado usa o mesmo Storage dos anexos, com identidade `bucket + storage_path`, limite proprio de 50 MB e formatos iniciais MP3, WAV, OGG, AAC e M4A. A duplicacao cria copia fisica independente e a Retencao preserva metadados, versoes e decisoes depois da remocao do objeto.
 
 ## Direcao futura
 

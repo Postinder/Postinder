@@ -11,7 +11,10 @@ import Input, { Textarea, Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
+import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
+import { getMediaKind } from '../../components/media/MediaPreview'
 import { prepareUploadFiles } from '../../utils/uploadValidation'
+import { emptySoundtrackDraft, validateSoundtrackDraft } from '../../utils/soundtrack'
 import toast from 'react-hot-toast'
 
 function Section({ number, title, description, children }) {
@@ -45,6 +48,8 @@ export default function NewPostPage() {
   const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
   const [loading, setLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
+  const [soundtrack, setSoundtrack] = useState(emptySoundtrackDraft)
+  const [soundtrackUploadProgress, setSoundtrackUploadProgress] = useState(null)
   const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft' })
 
   useEffect(() => {
@@ -123,6 +128,11 @@ export default function NewPostPage() {
       toast.error('Adicione ao menos um arquivo.')
       return
     }
+    const soundtrackError = validateSoundtrackDraft(soundtrack, files.filter(file => getMediaKind(file) === 'video'))
+    if (soundtrackError) {
+      toast.error(soundtrackError)
+      return
+    }
 
     setLoading(true)
     setUploadProgress(null)
@@ -145,6 +155,8 @@ export default function NewPostPage() {
         createdById: user?.id,
       }, isEmail ? [] : files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
         onUploadProgress: setUploadProgress,
+        soundtrack,
+        onSoundtrackUploadProgress: setSoundtrackUploadProgress,
       })
 
       toast.success(status === 'ready' ? 'Postagem salva como pronta para envio.' : 'Rascunho salvo.')
@@ -158,6 +170,7 @@ export default function NewPostPage() {
     } finally {
       setLoading(false)
       setUploadProgress(null)
+      setSoundtrackUploadProgress(null)
     }
   }
 
@@ -169,6 +182,8 @@ export default function NewPostPage() {
     setFunnelTag('')
     setEmailLink('')
     setUploadProgress(null)
+    setSoundtrack(emptySoundtrackDraft())
+    setSoundtrackUploadProgress(null)
   }
 
   return (
@@ -329,6 +344,16 @@ export default function NewPostPage() {
           ) : null}
         </Section>
       )}
+
+      <Section number={isEmail ? '4' : '5'} title="Fundo sonoro" description="Configure a trilha sem inclui-la na ordenacao dos arquivos da publicacao.">
+        <SoundtrackEditor value={soundtrack} onChange={setSoundtrack} attachments={files} />
+        {soundtrackUploadProgress ? (
+          <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs font-bold text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300">
+            <div className="flex justify-between gap-3"><span className="truncate">Enviando fundo sonoro: {soundtrackUploadProgress.fileName}</span><span>{soundtrackUploadProgress.percent}%</span></div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-violet-100 dark:bg-violet-900"><div className="h-full bg-violet-600" style={{ width: `${soundtrackUploadProgress.percent}%` }} /></div>
+          </div>
+        ) : null}
+      </Section>
 
       <div className="sticky bottom-0 z-10 -mx-4 border-t border-neutral-200 bg-neutral-100/95 px-4 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 md:-mx-6 md:px-6">
         <div className="flex flex-wrap justify-end gap-3">

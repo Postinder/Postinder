@@ -48,8 +48,7 @@ export class ClientsController {
     )
 
     if (!response.ok) {
-      const details = await response.text().catch(() => '')
-      throw new Error(details || 'WhatsApp provider failed')
+      throw new Error('WhatsApp provider failed')
     }
 
     return { sent: true, provider: 'z-api' }
@@ -228,8 +227,8 @@ export class ClientsController {
         message,
         approvalUrl,
       })
-    } catch (error: any) {
-      res.status(502).json({ error: error.message || 'Failed to send WhatsApp notification' })
+    } catch {
+      res.status(502).json({ error: 'Failed to send WhatsApp notification' })
     }
   }
 }

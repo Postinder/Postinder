@@ -39,3 +39,18 @@ export async function updateAuthenticatedPortalFileFeedback(fileId, comment, tag
   const { data } = await apiClient.patch(`/client-portal/files/${fileId}/feedback`, { comment, tags })
   return data
 }
+
+export async function approveAuthenticatedPortalSoundtrack(postId) {
+  const { data } = await apiClient.post(`/client-portal/posts/${postId}/soundtrack/approve`)
+  return data
+}
+
+export async function adjustAuthenticatedPortalSoundtrack(postId, comment) {
+  const { data } = await apiClient.post(`/client-portal/posts/${postId}/soundtrack/adjust`, { comment })
+  return data
+}
+
+export async function resetAuthenticatedPortalSoundtrack(postId) {
+  const { data } = await apiClient.post(`/client-portal/posts/${postId}/soundtrack/reset`)
+  return data
+}

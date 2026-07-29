@@ -309,8 +309,8 @@ export default function ApprovalsPage() {
     <div>
       <PageHeader
         icon={CheckCircle}
-        title="Acompanhamento de aprovacoes"
-        subtitle="A empresa acompanha o status e corrige reprovacoes, mas a aprovacao final e sempre do cliente."
+        title="Acompanhamento de aprovações"
+        subtitle="A empresa acompanha o status e corrige reprovações, mas a aprovação final é sempre do cliente."
         actions={
           <div className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
             {actionable.length} em acompanhamento

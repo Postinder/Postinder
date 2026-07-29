@@ -12,6 +12,9 @@ import GlobalSearch from '../search/GlobalSearch'
 import { logout } from '../../services/auth.service'
 import { ROLE_PERMISSIONS } from '../../utils/constants'
 import toast from 'react-hot-toast'
+import { isDemoDeploymentMode } from '../../config/deploymentMode'
+
+const demoResetVisible = isDemoDeploymentMode(import.meta.env.VITE_DEPLOYMENT_MODE)
 
 const Logo20Cinco = () => (
   <svg viewBox="0 0 260 80" className="w-full max-w-[180px]">
@@ -107,7 +110,7 @@ export default function AdminLayout() {
         {(isGestor || canAccess('integrations')) && <NavItem to="/admin/integrations" icon={Plug} label="Integrações" />}
 
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-4 pb-1">Conta</div>
-        {isAdmin && <NavItem to="/admin/reset" icon={RotateCcw} label="Reset de testes" />}
+        {isAdmin && demoResetVisible && <NavItem to="/admin/reset" icon={RotateCcw} label="Reset de testes" />}
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium text-red-300/80 hover:text-red-300 hover:bg-white/5 transition-all"

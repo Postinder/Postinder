@@ -2,6 +2,10 @@
 
 Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal oferece swipe e botoes acessiveis, player nativo de video e legenda expansivel com hifenizacao em portugues.
 
+## Estado atual
+
+A auditoria tecnica pre-deploy e as correcoes criticas foram concluidas e validadas localmente. As correcoes ainda nao foram publicadas: frontend e backend online continuam em versoes anteriores, e o deploy permanece **nao autorizado**. A proxima frente e de ajustes pontuais de interface, seguida da preparacao operacional final.
+
 ## Arquitetura
 
 ```text
@@ -49,7 +53,10 @@ cd backend
 npm run db:seed-demo
 ```
 
-O comando de seed e opcional. Ele e o unico comportamento atualmente condicionado a `APP_MODE=demo`; a separacao completa entre Modo demonstracao e Modo producao ainda nao esta implementada.
+O comando de seed e opcional e continua condicionado a `APP_MODE=demo`. Seed,
+reset HTTP e bootstrap sao processos separados.
+
+`NODE_ENV` define apenas o modo tecnico do Node. A finalidade da implantacao usa `DEPLOYMENT_MODE`. O reset de demonstracao so pode existir com a combinacao explicita `DEPLOYMENT_MODE=demo` e `ENABLE_DEMO_RESET=true`, alem de autenticacao e capacidade administrativa. `VITE_DEPLOYMENT_MODE=demo` controla apenas a apresentacao no frontend.
 
 ## URLs locais
 
@@ -80,6 +87,27 @@ npm run db:migrate
 
 O startup nao cria nem corrige schema. A migration `002_development_seed.sql` e historica e nao faz parte do migrador estrutural.
 
+Em deploy, `npm run db:migrate` deve ser um Pre-Deploy Command/release step bloqueante anterior ao Start Command. Backup logico e preflight do banco sao obrigatorios antes de migrations em producao.
+
+## Autenticacao e autorizacao
+
+- JWT administrativo e JWT de Cliente sao contextos distintos; refresh tokens tambem possuem contexto explicito.
+- Todas as rotas administrativas exigem autenticacao, identidade administrativa e capacidade declarada antes do controller.
+- Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`.
+- `admin` possui todas as capacidades; `manager` executa operacoes nao destrutivas; `editor` atua no fluxo editorial; `viewer` e estritamente somente leitura.
+- Rotas administrativas sem politica declarada negam acesso por padrao.
+- O portal autenticado de Cliente e o portal por token privado permanecem fluxos separados.
+
+## Integracoes e variaveis frontend
+
+O frontend pode consumir somente configuracoes publicas:
+
+- `VITE_API_URL`;
+- `VITE_DEPLOYMENT_MODE`;
+- `VITE_GA_MEASUREMENT_ID`.
+
+Segredos nunca pertencem ao frontend. Anthropic e Z-API executam no backend; Twilio, GoHighLevel, Canva e Resend permanecem desabilitados ate uma implementacao server-side segura. A IA chama somente a API do Postinder, exige a capacidade `ai-insights:generate` e envia ao provedor apenas dados agregados e pseudonimizados.
+
 ## Comandos uteis
 
 ```bash
@@ -109,6 +137,7 @@ Para reiniciar somente o banco local: `docker compose down -v`, depois `docker c
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
 - [Deploy, banco e ambientes](docs/DEPLOYMENT.md)
+- [Checklist de deploy](docs/deploy/CHECKLIST_DEPLOY_TESTE.md)
 - [Storage e Retencao](docs/STORAGE_ARCHITECTURE.md)
 
 Os arquivos `*_TEMP.md` permanecem no repositorio como referencia temporaria de conferencia da promocao documental.

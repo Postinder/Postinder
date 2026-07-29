@@ -3,6 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import { Request } from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import fsPromises from 'fs/promises'
+import { AppException } from '../exceptions/AppException'
 
 const ALLOWED_MIME_TYPES = new Set([
   // Images
@@ -55,6 +57,80 @@ export const upload = multer({
   fileFilter,
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB for videos
 })
+
+const SOUNDTRACK_MIME_TYPES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/wave',
+  'audio/x-wav',
+  'audio/ogg',
+  'audio/aac',
+  'audio/mp4',
+])
+
+const SOUNDTRACK_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.aac', '.m4a'])
+export const MAX_SOUNDTRACK_SIZE = 50 * 1024 * 1024
+
+function soundtrackFileFilter(_req: Request, file: Express.Multer.File, cb: FileFilterCallback) {
+  const extension = path.extname(file.originalname).toLowerCase()
+  if (SOUNDTRACK_MIME_TYPES.has(String(file.mimetype).toLowerCase()) && SOUNDTRACK_EXTENSIONS.has(extension)) {
+    cb(null, true)
+    return
+  }
+  cb(new AppException('Use um arquivo de audio MP3, WAV, OGG, AAC ou M4A', 415, 'UNSUPPORTED_SOUNDTRACK_TYPE'))
+}
+
+export const soundtrackUpload = multer({
+  storage,
+  fileFilter: soundtrackFileFilter,
+  limits: { fileSize: MAX_SOUNDTRACK_SIZE, files: 1 },
+})
+
+async function readFileHeader(file: Express.Multer.File) {
+  if (file.buffer?.length) return file.buffer.subarray(0, 16)
+  if (!file.path) return Buffer.alloc(0)
+  const handle = await fsPromises.open(file.path, 'r')
+  try {
+    const buffer = Buffer.alloc(16)
+    const result = await handle.read(buffer, 0, buffer.length, 0)
+    return buffer.subarray(0, result.bytesRead)
+  } finally {
+    await handle.close()
+  }
+}
+
+async function discardTemporaryUpload(file: Express.Multer.File) {
+  if (!file.path) return
+  await fsPromises.unlink(file.path).catch(() => {})
+}
+
+export async function assertSoundtrackAudioFile(file: Express.Multer.File) {
+  const extension = path.extname(file.originalname).toLowerCase()
+  const header = await readFileHeader(file)
+  const ascii = header.toString('ascii')
+  const isMp3 = ascii.startsWith('ID3') || (header[0] === 0xff && (header[1] & 0xe0) === 0xe0)
+  const isWav = ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WAVE'
+  const isOgg = ascii.startsWith('OggS')
+  const isMp4 = ascii.slice(4, 8) === 'ftyp'
+  const isAac = header[0] === 0xff && (header[1] & 0xf6) === 0xf0
+  const valid = extension === '.mp3'
+    ? isMp3
+    : extension === '.wav'
+      ? isWav
+      : extension === '.ogg'
+        ? isOgg
+        : extension === '.m4a'
+          ? isMp4
+          : extension === '.aac'
+            ? isAac || isMp4
+            : false
+
+  if (!valid) {
+    await discardTemporaryUpload(file)
+    throw new AppException('O conteudo do arquivo nao corresponde a um audio suportado', 415, 'INVALID_SOUNDTRACK_CONTENT')
+  }
+}
 
 export function getFileCategory(mimeType: string): string {
   if (mimeType.startsWith('image/')) return 'IMAGE'

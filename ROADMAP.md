@@ -1,20 +1,46 @@
 # Roadmap do Postinder
 
-Este documento contem somente trabalho futuro e validacoes ainda pendentes.
+Este documento registra o estado das frentes de preparacao e o trabalho futuro. Investigacoes e relatorios tecnicos nao sao funcionalidades de produto.
+
+## Estado da preparacao pre-deploy
+
+| Frente | Estado |
+| --- | --- |
+| Auditoria tecnica | concluida |
+| Correcoes criticas e altas C-01, C-02, H-02, H-03 e H-04 | concluidas e validadas localmente |
+| Backup, restauracao e cadeia de migrations | validados localmente |
+| Auditoria operacional do Render | concluida |
+| Auditoria operacional da Vercel | pendente |
+| Ajustes pontuais de layout | proxima frente |
+| Preparacao final de deploy | pendente |
+| Deploy | pendente e nao autorizado |
+| Validacao pos-deploy | pendente |
+
+## P0 - Ajustes pontuais de interface
+
+- Executar somente os ajustes de layout, espacamento, responsividade, organizacao visual, textos, menus, cards e modais que forem definidos pelo usuario.
+- Alinhar visualmente as acoes dos perfis `admin`, `manager`, `editor` e `viewer`.
+- Remover referencias visuais legadas a `gestor` e `equipe`.
+- Preservar C-01, C-02, H-02, H-03, H-04, contratos da API, acessibilidade, portal do Cliente e temas claro/escuro.
 
 ## P0 - Publicacao e ambientes
 
-- Configurar etapa de release no Render para executar `npm run db:migrate` antes do startup.
-- Confirmar no Supabase publicado as migrations estruturais e `schema_migrations`.
-- Validar variaveis de Render, Vercel e Supabase, incluindo API, CORS, URLs de portal e Storage.
-- Executar smoke test publicado para criacao, envio, portal, decisao do Cliente, correcao, execucao, exclusao logica e duplicacao.
-- Validar no ambiente publicado metadados de Storage, copia fisica e limpeza manual de Retencao com dados descartaveis.
-- Definir backup, restauracao e rollback antes de migrations de impacto ou exclusao definitiva.
+- Concluir a verificacao manual da Vercel: nomes e escopos de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews.
+- Rotacionar ou invalidar credenciais somente se a verificacao confirmar ou presumir exposicao historica.
+- Revisar as variaveis finais da Vercel e do Render sem transportar segredos para o frontend.
+- Configurar a demo publicada com `DEPLOYMENT_MODE=demo`, `ENABLE_DEMO_RESET=true` e `VITE_DEPLOYMENT_MODE=demo`.
+- Decidir se a IA sera habilitada; se for, configurar a credencial somente no backend.
+- Criar novo backup logico e executar novo preflight imediatamente antes do deploy.
+- Reconfirmar o impacto da migration `012` e configurar `npm run db:migrate` como release step bloqueante anterior ao Start Command.
+- Publicar primeiro o backend, confirmar migrations e startup, depois publicar o frontend.
+- Confirmar commits e bundles ativos e executar smoke tests, conferencia de logs sanitizados e teste controlado do reset demo.
+- Validar no ambiente publicado metadados de Storage, copia fisica e limpeza manual de Retencao somente com dados descartaveis.
 
 ## P0 - Modo demonstracao e Modo producao
 
-- Completar `APP_MODE=demo|production` como configuracao central para local, demonstracao, homologacao e producao.
-- Restringir reset, seed e credenciais demonstrativas ao Modo demonstracao.
+- Manter `DEPLOYMENT_MODE` como finalidade da implantacao e `NODE_ENV` como modo tecnico.
+- Preservar a dupla guarda do reset, sua capacidade exclusiva e a negacao por padrao.
+- Manter seed, reset e credenciais demonstrativas restritos a ambientes controlados.
 - Em producao, exigir bootstrap do primeiro admin por ambiente e avaliar troca obrigatoria de senha no primeiro acesso.
 
 ## P1 - Storage, seguranca e operacao
@@ -59,4 +85,5 @@ Este documento contem somente trabalho futuro e validacoes ainda pendentes.
 - Recuperacao de senha real.
 - E-mail/Resend para notificacoes e links.
 - WhatsApp/Z-API depois da estabilizacao do fluxo principal.
-- Painel de IA, custos, privacidade e gestao de chaves.
+- Decidir politica de privacidade, provedor, tratamento de dados, custos e gestao server-side de chaves antes de habilitar a IA real.
+- Implementar Twilio, GoHighLevel, Canva e Resend somente por fluxos server-side/OAuth seguros.

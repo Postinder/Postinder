@@ -40,10 +40,14 @@ import {
   reorderPostFiles,
   removePostFile,
   markPostExecuted,
+  savePostSoundtrack,
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
 import MediaPreview, { getMediaName } from '../../components/media/MediaPreview'
+import { getMediaKind } from '../../components/media/MediaPreview'
+import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
+import { soundtrackDraftFromPost, validateSoundtrackDraft } from '../../utils/soundtrack'
 import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
 import { useAuthStore } from '../../store/authStore'
 
@@ -98,6 +102,16 @@ function getPostChannels(post) {
 
 function getAttachmentName(file) {
   return getMediaName(file)
+}
+
+function getSoundtrackLabel(post) {
+  const soundtrack = post?.soundtrack
+  const mode = soundtrack?.mode || 'none'
+  const suffix = (soundtrack?.approvalStatus || soundtrack?.approval_status) === 'adjustment_requested' ? ' · ajuste solicitado' : ''
+  if (mode === 'embedded') return `Audio no video${suffix}`
+  if (mode === 'uploaded') return `Audio enviado${suffix}`
+  if (mode === 'external_reference') return `Musica indicada${suffix}`
+  return 'Sem fundo sonoro'
 }
 
 function CompactFeedPreview({ channels, files }) {
@@ -199,6 +213,9 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
   const [files, setFiles] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
+  const [soundtrack, setSoundtrack] = useState(soundtrackDraftFromPost(null))
+  const [soundtrackDirty, setSoundtrackDirty] = useState(false)
+  const [soundtrackUploadProgress, setSoundtrackUploadProgress] = useState(null)
 
   useEffect(() => {
     if (!post) return
@@ -211,6 +228,9 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
     setRemovedExistingFiles([])
     setFiles([])
     setUploadProgress(null)
+    setSoundtrack(soundtrackDraftFromPost(post))
+    setSoundtrackDirty(false)
+    setSoundtrackUploadProgress(null)
     setForm({
       clientId: getPostClientId(post) || '',
       title: post.title || '',
@@ -230,6 +250,11 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
   async function handleSave() {
     if (isApproved && !confirm('Este post ja foi aprovado. Deseja alterar mesmo assim?')) return
     if (isSent && !confirm('Este post ja foi enviado ao cliente. Alterar pode afetar uma aprovacao em andamento. Continuar?')) return
+    const soundtrackError = validateSoundtrackDraft(soundtrack, previewFiles.filter(file => getMediaKind(file) === 'video'))
+    if (soundtrackError) {
+      toast.error(soundtrackError)
+      return
+    }
 
     setSaving(true)
     try {
@@ -241,17 +266,32 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
         funnelTag: form.funnelTag || null,
         channels: Object.keys(channels),
       })
+      let uploadedNewFiles = []
+      if (files.length) {
+        uploadedNewFiles = await uploadPostFiles(post.id, files.map((item, index) => ({
+          ...item,
+          sortOrder: existingFiles.length + index + 1,
+        })), { onUploadProgress: setUploadProgress })
+      }
+      if (soundtrackDirty) {
+        let sourceMediaId = null
+        if (soundtrack.mode === 'embedded') {
+          sourceMediaId = existingFiles.find(file => file.id === soundtrack.sourceMediaKey)?.id || null
+          if (!sourceMediaId) {
+            const newIndex = files.findIndex(file => file.localId === soundtrack.sourceMediaKey)
+            sourceMediaId = uploadedNewFiles[newIndex]?.id || null
+          }
+        }
+        await savePostSoundtrack(post.id, soundtrack, {
+          sourceMediaId,
+          onUploadProgress: setSoundtrackUploadProgress,
+        })
+      }
       if (removedExistingFiles.length) {
         await Promise.all(removedExistingFiles.map(file => removePostFile(post.id, file.id)))
       }
       if (existingFiles.length) {
         await reorderPostFiles(post.id, existingFiles.map((file, index) => ({ id: file.id, sort_order: index + 1 })))
-      }
-      if (files.length) {
-        await uploadPostFiles(post.id, files.map((item, index) => ({
-          ...item,
-          sortOrder: existingFiles.length + index + 1,
-        })), { onUploadProgress: setUploadProgress })
       }
       toast.success('Postagem atualizada.')
       onSaved()
@@ -261,6 +301,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
     } finally {
       setSaving(false)
       setUploadProgress(null)
+      setSoundtrackUploadProgress(null)
     }
   }
 
@@ -344,6 +385,21 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
         {removedExistingFiles.length ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
             {removedExistingFiles.length} arquivo(s) atual(is) marcado(s) para remoção ao salvar.
+          </div>
+        ) : null}
+
+        <SoundtrackEditor
+          value={soundtrack}
+          attachments={previewFiles}
+          onChange={next => {
+            setSoundtrack(next)
+            setSoundtrackDirty(true)
+          }}
+        />
+
+        {soundtrackUploadProgress ? (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs font-bold text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300">
+            Enviando fundo sonoro: {soundtrackUploadProgress.percent}%
           </div>
         ) : null}
 
@@ -751,6 +807,7 @@ export default function ManagePostsPage() {
                   <div className="flex flex-wrap items-center gap-3 lg:justify-center">
                     <StatusBadge status={status} />
                     <span className="text-xs font-semibold text-neutral-400">{(post.files || []).length} arquivo(s)</span>
+                    <span className="text-xs font-semibold text-violet-500">{getSoundtrackLabel(post)}</span>
                     <span className="text-xs text-neutral-400">Atualizado {formatDate(getUpdatedDate(post))}</span>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1.5">

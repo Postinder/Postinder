@@ -1,9 +1,11 @@
 import { Response, NextFunction } from 'express'
+import { isAdminAccessToken } from '../../modules/auth/domain/AuthToken'
+import { ForbiddenException } from '../exceptions/AppException'
 import { AuthRequest } from './authMiddleware'
 
-export function adminAuthMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-  if (req.user?.type !== 'admin' || !req.user.userId) {
-    return res.status(403).json({ error: 'Administrative access required' })
+export function adminAuthMiddleware(req: AuthRequest, _res: Response, next: NextFunction) {
+  if (!isAdminAccessToken(req.user)) {
+    return next(new ForbiddenException('Administrative access required'))
   }
 
   next()

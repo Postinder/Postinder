@@ -6,6 +6,8 @@ Cada registro de `files` identifica seu objeto por `bucket + storage_path`. A `u
 
 Os metadados persistidos incluem caminho, bucket, MIME, tamanho, ordem e estado de aprovacao. Registros legados que nao puderam receber identidade segura continuam compativeis por URL, mas bloqueiam duplicacao para evitar uma copia parcial ou ambigua.
 
+Arquivos de fundo sonoro usam a mesma identidade no registro `post_soundtracks`, mas permanecem separados de `files`: nao recebem `sort_order` nem entram na ordenacao de cards. O path segue `posts/{postId}/soundtracks/{id}` e existe no mesmo bucket/adaptador dos demais objetos.
+
 ## Upload e remocao
 
 1. O frontend valida tipo e limite de 200 MB antes da rede.
@@ -16,6 +18,8 @@ Os metadados persistidos incluem caminho, bucket, MIME, tamanho, ordem e estado 
 6. Remocoes usam somente `bucket + storage_path`; falhas retornam informacao auditavel e nao sao ignoradas silenciosamente.
 
 O limite excedido retorna HTTP `413` com codigo `FILE_TOO_LARGE`. Tipo recusado retorna HTTP `415` com codigo `UNSUPPORTED_FILE_TYPE`. A interface apresenta a mensagem do backend e, se a postagem ja tiver sido criada, preserva o registro para nova tentativa pela edicao.
+
+O upload de fundo sonoro aceita um unico arquivo ativo por postagem, ate 50 MB, inicialmente nos formatos MP3, WAV, OGG, AAC e M4A. Extensao, MIME e assinatura basica sao confrontados antes do envio ao Storage. Falha de persistencia compensa o objeto enviado; substituicao remove o objeto anterior somente quando nenhuma referencia ativa permanece.
 
 Em producao, o Multer ainda recebe cada arquivo em memoria antes de o backend o enviar ao Supabase. O envio sequencial limita esse pico a um arquivo por vez, mas nao elimina a passagem pelo backend. Upload direto ou retomavel por URL assinada permanece trabalho futuro.
 
@@ -31,6 +35,8 @@ Duplicar uma postagem cria um objeto fisico novo para cada arquivo identificado,
 
 Falha na copia ou na gravacao da duplicacao compensa os novos objetos e reverte a nova postagem. O sistema nao adota compartilhamento implicito de URL para novas duplicacoes.
 
+Quando o fundo sonoro e `uploaded`, a duplicacao tambem cria objeto e registro fisicamente independentes. No modo `embedded`, o vinculo e remapeado para a copia independente do video correspondente. Referencias externas copiam apenas os metadados; nenhuma midia e baixada.
+
 ## Retencao
 
 Ao marcar uma postagem como `executed`, a agencia escolhe `immediate`, `1d`, `7d`, `30d` ou `never`. A escolha calcula a elegibilidade do arquivo; ela nao remove o objeto dentro da requisicao de execucao.
@@ -44,6 +50,8 @@ npm run storage:cleanup-retention
 
 Depois da remocao fisica, o registro permanece. `storage_deleted_at` registra sucesso e `storage_delete_error` registra falha. O comando nao tenta remover novamente objetos ja marcados como removidos. Interface e historico preservam nome, tipo, tamanho, ordem, decisao, politica e data de remocao.
 
+O comando processa anexos e audios enviados. Antes da remocao, verifica referencias ativas em ambos os conjuntos; para fundo sonoro preserva tambem revisoes e decisoes historicas.
+
 ## Limitacoes atuais
 
 - Nao ha scheduler, fila, outbox ou retry automatico.
@@ -51,3 +59,4 @@ Depois da remocao fisica, o registro permanece. `storage_deleted_at` registra su
 - Nao ha upload direto, retomavel nem transcodificacao de video; cada arquivo ainda atravessa a memoria do backend em producao.
 - Objetos compartilhados e arquivos legados sem identidade possuem diagnostico, mas nao migracao automatica.
 - Multiempresa ainda nao esta implementada; um path futuro devera incluir identificador de Empresa/agencia antes de habilitar isolamento por Storage.
+- O sistema nao baixa, transcodifica, mixa nem renderiza audio externo. Links de referencia nao geram objeto local nem player no portal.

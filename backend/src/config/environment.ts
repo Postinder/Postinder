@@ -5,6 +5,8 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') })
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development','production','test']).default('development'),
+  DEPLOYMENT_MODE: z.string().optional(),
+  ENABLE_DEMO_RESET: z.string().optional(),
   PORT: z.coerce.number().default(3001),
   DATABASE_URL: z.string(),
   JWT_SECRET: z.string().min(8),
@@ -19,6 +21,9 @@ const envSchema = z.object({
   ZAPI_TOKEN: z.string().optional(),
   ZAPI_INSTANCE: z.string().optional(),
   ZAPI_CLIENT_TOKEN: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().optional(),
+  ANTHROPIC_TIMEOUT_MS: z.string().optional(),
 })
 
 export type Environment = z.infer<typeof envSchema>

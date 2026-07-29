@@ -1,4 +1,5 @@
 import { apiClient } from '../lib/axios'
+import { buildSoundtrackPayload } from '../utils/soundtrack'
 
 export async function fetchPosts(filters) {
   const { data } = await apiClient.get('/posts', { params: filters })
@@ -15,8 +16,15 @@ export async function createPost(postData, files = [], options = {}) {
     const { data } = await apiClient.post('/posts', postData)
     post = data
 
-    if (files.length > 0) {
-      await uploadPostFiles(post.id, files, options)
+    const uploadedFiles = files.length > 0 ? await uploadPostFiles(post.id, files, options) : []
+
+    if (options.soundtrack?.mode && options.soundtrack.mode !== 'none') {
+      let sourceMediaId = null
+      if (options.soundtrack.mode === 'embedded') {
+        const sourceIndex = files.findIndex(item => (item.id || item.localId) === options.soundtrack.sourceMediaKey)
+        sourceMediaId = uploadedFiles[sourceIndex]?.id || null
+      }
+      await savePostSoundtrack(post.id, options.soundtrack, { sourceMediaId, onUploadProgress: options.onSoundtrackUploadProgress })
     }
 
     return post
@@ -133,6 +141,28 @@ export async function removePostFile(postId, fileId) {
   return data
 }
 
+export async function savePostSoundtrack(postId, soundtrack, options = {}) {
+  const payload = buildSoundtrackPayload(soundtrack, options.sourceMediaId || soundtrack.sourceMediaKey || null)
+  if (soundtrack.mode === 'uploaded' && soundtrack.audioFile) {
+    const formData = new FormData()
+    formData.append('file', soundtrack.audioFile)
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) formData.append(key, String(value))
+    })
+    const { data } = await apiClient.post(`/posts/${postId}/soundtrack/file`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: event => {
+        const percent = event.total ? Math.round((event.loaded * 100) / event.total) : 0
+        options.onUploadProgress?.({ fileName: soundtrack.audioFile.name, percent })
+      },
+    })
+    return data.data
+  }
+
+  const { data } = await apiClient.put(`/posts/${postId}/soundtrack`, payload)
+  return data.data
+}
+
 export function computePostStatus(post) {
   // Accept post object or files array (backwards-compat)
   if (Array.isArray(post)) {
@@ -146,12 +176,15 @@ export function computePostStatus(post) {
   const files = Array.isArray(post?.files) ? post.files : []
   const fileStatus = files.length ? computePostStatus(files) : null
   const status = post?.status || 'draft'
+  const soundtrack = post?.soundtrack
+  const soundtrackRequired = Boolean(soundtrack && soundtrack.mode !== 'none')
+  const soundtrackStatus = soundtrack?.approvalStatus || soundtrack?.approval_status || null
 
   if (status === 'executed') return 'executed'
 
-  if (fileStatus === 'approved' && ['sent', 'pending_approval', 'rejected'].includes(status)) return 'approved'
-  if (fileStatus === 'rejected' && ['sent', 'pending_approval', 'approved'].includes(status)) return 'rejected'
-  if (fileStatus === 'pending_approval' && ['sent', 'pending_approval'].includes(status)) return 'pending_approval'
+  if ((fileStatus === 'rejected' || soundtrackStatus === 'adjustment_requested') && ['sent', 'pending_approval', 'approved', 'rejected'].includes(status)) return 'rejected'
+  if ((fileStatus === 'pending_approval' || soundtrackStatus === 'pending') && ['sent', 'pending_approval', 'rejected'].includes(status)) return 'pending_approval'
+  if (fileStatus === 'approved' && (!soundtrackRequired || soundtrackStatus === 'approved') && ['sent', 'pending_approval', 'rejected', 'approved'].includes(status)) return 'approved'
 
   return post?.status || 'draft'
 }

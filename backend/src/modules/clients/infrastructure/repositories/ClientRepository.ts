@@ -307,10 +307,16 @@ export class ClientRepository {
       }
 
       const files = await client.query(
-        `SELECT DISTINCT f.bucket, f.storage_path
-         FROM files f
-         JOIN posts p ON p.id = f.post_id
-         WHERE p.client_id = $1`,
+        `SELECT DISTINCT storage.bucket, storage.storage_path
+         FROM (
+           SELECT f.bucket, f.storage_path, p.client_id
+           FROM files f JOIN posts p ON p.id = f.post_id
+           UNION ALL
+           SELECT ps.bucket, ps.storage_path, p.client_id
+           FROM post_soundtracks ps JOIN posts p ON p.id = ps.post_id
+           WHERE ps.storage_path IS NOT NULL
+         ) storage
+         WHERE storage.client_id = $1`,
         [id],
       )
 
@@ -319,12 +325,17 @@ export class ClientRepository {
           return { bucket: row.bucket, storagePath: row.storage_path, removed: false, error: 'Storage object identity is missing' }
         }
         const shared = await client.query(
-          `SELECT 1
-           FROM files f
-           JOIN posts p ON p.id = f.post_id
-           WHERE f.bucket = $1
-             AND f.storage_path = $2
-             AND p.client_id <> $3
+          `SELECT 1 FROM (
+             SELECT f.bucket, f.storage_path, p.client_id
+             FROM files f JOIN posts p ON p.id = f.post_id
+             UNION ALL
+             SELECT ps.bucket, ps.storage_path, p.client_id
+             FROM post_soundtracks ps JOIN posts p ON p.id = ps.post_id
+             WHERE ps.deleted_at IS NULL
+           ) storage
+           WHERE storage.bucket = $1
+             AND storage.storage_path = $2
+             AND storage.client_id <> $3
            LIMIT 1`,
           [row.bucket, row.storage_path, id],
         )
