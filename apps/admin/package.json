@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node --test src/utils/soundtrack.test.js src/config/deploymentMode.test.js src/services/integrations/ai.integration.test.js",
+    "test": "node --test src/utils/soundtrack.test.js src/utils/collapsiblePanels.test.js src/config/deploymentMode.test.js src/services/integrations/ai.integration.test.js src/features/clients/ClientsPage.test.js src/features/posts/ManagePostsPage.test.js src/features/portal/portalSwipe.test.js src/features/portal/portalBranding.test.js src/features/portal/portalReadability.test.js",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },

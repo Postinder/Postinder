@@ -55,6 +55,7 @@ export default function MediaPreview({
   mediaClassName = 'h-full w-full object-contain',
   fallbackClassName = '',
   controls = true,
+  muted = false,
   compact = false,
   onMediaError,
 }) {
@@ -86,6 +87,7 @@ export default function MediaPreview({
       <div className={className}>
         <video
           controls={controls}
+          muted={muted}
           playsInline
           preload="metadata"
           className={mediaClassName}

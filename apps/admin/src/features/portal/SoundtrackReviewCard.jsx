@@ -82,7 +82,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
           <h3 id={`soundtrack-${post.id}`} className="mt-1 flex items-center gap-2 text-base font-black text-neutral-950 dark:text-white">
             <Music2 size={18} /> {soundtrack.trackName || soundtrack.track_name || MODE_LABELS[soundtrack.mode]}
           </h3>
-          <p className="mt-1 text-xs text-neutral-500">{MODE_LABELS[soundtrack.mode]}{soundtrack.artist ? ` - ${soundtrack.artist}` : ''}</p>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-300/80">{MODE_LABELS[soundtrack.mode]}{soundtrack.artist ? ` - ${soundtrack.artist}` : ''}</p>
         </div>
         <PortalStatusBadge status={status === 'adjustment_requested' ? 'rejected' : status} />
       </div>
@@ -105,7 +105,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
               {muted ? <VolumeX size={16} /> : <Volume2 size={16} />} Fundo sonoro {muted ? 'desligado' : 'ligado'}
             </button>
           </div>
-          <p className="mt-2 text-xs text-neutral-500">Reproduzir, pausar ou desligar o som altera somente esta previa e nunca registra uma decisao.</p>
+          <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-300/80">Reproduzir, pausar ou desligar o som altera somente esta previa e nunca registra uma decisao.</p>
           {(post.files || []).some(file => String(file.file_type || '').toUpperCase() === 'VIDEO') ? (
             <p className="mt-2 text-xs font-semibold text-neutral-600 dark:text-neutral-300">Som original do video: use o volume do player de video. Fundo sonoro: use os controles acima. Os dois podem ser testados separadamente ou juntos.</p>
           ) : null}
@@ -118,21 +118,21 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
           {soundtrack.externalUrl || soundtrack.external_url ? (
             <a href={soundtrack.externalUrl || soundtrack.external_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 font-bold text-violet-600"><ExternalLink size={14} /> Abrir referencia externa</a>
           ) : null}
-          <p className="mt-2 text-xs text-neutral-500">Esta modalidade e somente uma referencia. Nao existe uma previa sonora hospedada no Postinder.</p>
+          <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-300/80">Esta modalidade e somente uma referencia. Nao existe uma previa sonora hospedada no Postinder.</p>
         </div>
       ) : null}
 
       {soundtrack.mode === 'embedded' ? (
         <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-800 dark:bg-neutral-950">
           <p className="font-semibold">A musica ja esta incorporada ao video {soundtrack.sourceMediaName ? `“${soundtrack.sourceMediaName}”` : 'indicado'}.</p>
-          <p className="mt-1 text-xs text-neutral-500">Use o controle de volume do proprio video para silenciar ou reativar. Nao ha um player de audio separado.</p>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-300/80">Use o controle de volume do proprio video para silenciar ou reativar. Nao ha um player de audio separado.</p>
           {sourceMediaUrl ? (
             <video controls playsInline preload="metadata" src={sourceMediaUrl} className="mt-3 max-h-72 w-full rounded-lg bg-black object-contain" aria-label="Video com fundo sonoro incorporado" />
           ) : null}
         </div>
       ) : null}
 
-      {soundtrack.startTimeSeconds || soundtrack.start_time_seconds ? <p className="mt-3 text-xs text-neutral-500">Ponto inicial sugerido: {soundtrack.startTimeSeconds || soundtrack.start_time_seconds}s</p> : null}
+      {soundtrack.startTimeSeconds || soundtrack.start_time_seconds ? <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-300/80">Ponto inicial sugerido: {soundtrack.startTimeSeconds || soundtrack.start_time_seconds}s</p> : null}
       {soundtrack.usageNotes || soundtrack.usage_notes ? <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-600 dark:text-neutral-300">{soundtrack.usageNotes || soundtrack.usage_notes}</p> : null}
       {status === 'adjustment_requested' && (soundtrack.adjustmentComment || soundtrack.adjustment_comment) ? (
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
@@ -155,7 +155,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
       {adjustOpen ? (
         <PortalDialog labelledBy="soundtrack-adjust-title" describedBy="soundtrack-adjust-description" onClose={() => setAdjustOpen(false)} initialFocusRef={commentRef}>
           <h3 id="soundtrack-adjust-title" className="text-lg font-black">Solicitar ajuste no fundo sonoro</h3>
-          <p id="soundtrack-adjust-description" className="mt-1 text-sm text-neutral-500">Explique obrigatoriamente o que precisa ser alterado.</p>
+          <p id="soundtrack-adjust-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Explique obrigatoriamente o que precisa ser alterado.</p>
           <textarea ref={commentRef} value={comment} onChange={event => setComment(event.target.value)} className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-neutral-700 dark:bg-neutral-950" aria-label="Comentario do ajuste do fundo sonoro" />
           <div className="mt-4 flex gap-3">
             <button type="button" onClick={() => setAdjustOpen(false)} className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold dark:border-neutral-700">Cancelar</button>

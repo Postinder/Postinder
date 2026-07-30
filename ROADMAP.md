@@ -11,14 +11,14 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 | Backup, restauracao e cadeia de migrations | validados localmente |
 | Auditoria operacional do Render | concluida |
 | Auditoria operacional da Vercel | pendente |
-| Ajustes pontuais de layout | proxima frente |
+| Ajustes pontuais de layout definidos na rodada atual | concluidos e validados localmente |
 | Preparacao final de deploy | pendente |
 | Deploy | pendente e nao autorizado |
 | Validacao pos-deploy | pendente |
 
 ## P0 - Ajustes pontuais de interface
 
-- Executar somente os ajustes de layout, espacamento, responsividade, organizacao visual, textos, menus, cards e modais que forem definidos pelo usuario.
+- [x] Concluir a rodada definida de Previa do Feed com videos, paineis recolhiveis, swipe em videos, reorganizacao do portal, identidade da 20Cinco e contraste nos temas.
 - Alinhar visualmente as acoes dos perfis `admin`, `manager`, `editor` e `viewer`.
 - Remover referencias visuais legadas a `gestor` e `equipe`.
 - Preservar C-01, C-02, H-02, H-03, H-04, contratos da API, acessibilidade, portal do Cliente e temas claro/escuro.
@@ -77,6 +77,8 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 - Definir o destino de `EmailPage`, `IntegrationsPage` e das rotas `/api/v1/approvals`, `/api/v1/files` e `/api/v1/feedback`.
 - Revisar filtros, escopos e metricas entre `approved` e `executed`.
 - Ampliar testes automatizados, regressao responsiva, acessibilidade de teclado e smoke test apos deploy.
+- Substituir a adaptacao SVG atual da 20Cinco por asset vetorial oficial ou variante oficial para fundos escuros quando fornecida, sem fabricar versao negativa por CSS.
+- Configurar uma cadeia de lint coerente com JS/JSX/TS/TSX. O script atual existe, mas ESLint e sua configuracao ainda nao estao disponiveis; lint nao participa de CI nem das configuracoes versionadas/documentadas de Vercel e Render.
 - Cobrir upload e reproducao de video nos navegadores suportados, incluindo MP4 compativel, codec nao reproduzivel, arquivo acima de 200 MB, progresso, nova tentativa e controles de video sem acionamento do swipe.
 - Corrigir textos remanescentes com acentuacao/mojibake e avaliar code splitting do bundle Vite.
 

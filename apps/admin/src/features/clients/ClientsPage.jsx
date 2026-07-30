@@ -84,17 +84,17 @@ function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, on
       </div>
 
       <div className="grid grid-cols-3 gap-2 mb-4">
-        <div className="rounded-lg bg-green-50 px-2.5 py-2 text-center dark:bg-green-950/40">
-          <div className="text-sm font-extrabold text-green-700 dark:text-green-400">{apv}</div>
-          <div className="text-[10px] font-semibold uppercase text-green-700/70 dark:text-green-400/70">Aprov</div>
+        <div className="rounded-lg bg-green-50 px-2.5 py-2 text-center dark:bg-green-900/40 dark:ring-1 dark:ring-inset dark:ring-green-700/40">
+          <div className="text-sm font-extrabold text-green-700 dark:text-green-300">{apv}</div>
+          <div className="text-[10px] font-semibold uppercase text-green-700/70 dark:text-green-300/80">Aprov</div>
         </div>
-        <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-center dark:bg-amber-950/40">
-          <div className="text-sm font-extrabold text-amber-700 dark:text-amber-400">{pnd}</div>
-          <div className="text-[10px] font-semibold uppercase text-amber-700/70 dark:text-amber-400/70">Pend</div>
+        <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-center dark:bg-amber-900/40 dark:ring-1 dark:ring-inset dark:ring-amber-700/40">
+          <div className="text-sm font-extrabold text-amber-700 dark:text-amber-300">{pnd}</div>
+          <div className="text-[10px] font-semibold uppercase text-amber-700/70 dark:text-amber-300/80">Pend</div>
         </div>
-        <div className="rounded-lg bg-red-50 px-2.5 py-2 text-center dark:bg-red-950/40">
-          <div className="text-sm font-extrabold text-red-700 dark:text-red-400">{rjt}</div>
-          <div className="text-[10px] font-semibold uppercase text-red-700/70 dark:text-red-400/70">Reprov</div>
+        <div className="rounded-lg bg-red-50 px-2.5 py-2 text-center dark:bg-red-900/40 dark:ring-1 dark:ring-inset dark:ring-red-700/40">
+          <div className="text-sm font-extrabold text-red-700 dark:text-red-300">{rjt}</div>
+          <div className="text-[10px] font-semibold uppercase text-red-700/70 dark:text-red-300/80">Reprov</div>
         </div>
       </div>
 

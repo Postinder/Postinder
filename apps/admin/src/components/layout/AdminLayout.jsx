@@ -74,7 +74,7 @@ export default function AdminLayout() {
 
 
   const sidebar = (
-    <aside className="flex flex-col h-full bg-mag-600 dark:bg-neutral-950">
+    <aside className="flex flex-col h-full bg-mag-600 dark:bg-mag-700">
       {/* Logo */}
       <div className="px-4 py-5 border-b border-white/10">
         <Logo20Cinco />

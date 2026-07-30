@@ -1,10 +1,18 @@
 # Postinder
 
-Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal oferece swipe e botoes acessiveis, player nativo de video e legenda expansivel com hifenizacao em portugues.
+Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal oferece swipe equivalente para imagens e videos, botoes acessiveis, player nativo de video e legenda expansivel com hifenizacao em portugues.
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy e as correcoes criticas foram concluidas e validadas localmente. As correcoes ainda nao foram publicadas: frontend e backend online continuam em versoes anteriores, e o deploy permanece **nao autorizado**. A proxima frente e de ajustes pontuais de interface, seguida da preparacao operacional final.
+A auditoria tecnica pre-deploy, as correcoes criticas e a rodada atual de interface foram concluidas e validadas localmente. Backend: 139/139 testes. Frontend: 33/33 testes. As alteracoes ainda nao foram publicadas: frontend e backend online continuam em versoes anteriores, migrations `012` a `015` permanecem pendentes em producao e o deploy permanece **nao autorizado**. O proximo passo e a preparacao operacional final.
+
+## Interface atual
+
+- A Previa do Feed usa o componente compartilhado de midia para imagens e videos, com player e fallback neutro quando necessario.
+- **Atividade recente** e **Postagens** iniciam recolhidas no Dashboard e podem ser expandidas independentemente.
+- O portal prioriza a aprovacao; metricas, calendario, historico, arquivos e feedbacks ficam disponiveis na **Visao geral** recolhivel.
+- O layout do portal reserva mais espaco para a midia principal, preserva videos verticais com `object-contain`, responsividade e botoes acessiveis.
+- A identidade visual atual do portal e da 20Cinco, com tokens restritos ao portal, temas claro/escuro e cores semanticas preservadas. O cabecalho usa temporariamente uma adaptacao vetorial SVG aprovada; um asset vetorial oficial permanece como evolucao futura.
 
 ## Arquitetura
 

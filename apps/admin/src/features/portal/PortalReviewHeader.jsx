@@ -8,7 +8,7 @@ export default function PortalReviewHeader({ content, currentPosition, totalFile
   return (
     <header className="mb-1 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2 md:flex-nowrap">
-        <span className="shrink-0 rounded-full bg-mag-50 px-2.5 py-1 text-xs font-black text-mag-600 dark:bg-mag-500/10 dark:text-mag-300">
+        <span className="shrink-0 rounded-full bg-[var(--portal-brand-soft)] px-2.5 py-1 text-xs font-black text-[var(--portal-brand-foreground)]">
           {currentPosition} de {totalFiles}
         </span>
         {isCorrectionPost(content) ? (
@@ -20,7 +20,7 @@ export default function PortalReviewHeader({ content, currentPosition, totalFile
           {content?.title || 'Conteúdo sem título'}
         </h2>
         <PortalChannelChips channels={content?.channels || []} compact />
-        <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-300/80">
           <CalendarDays size={14} aria-hidden="true" />
           {formatDate(date, 'Sem data prevista')}
         </span>
@@ -30,7 +30,7 @@ export default function PortalReviewHeader({ content, currentPosition, totalFile
           disabled={!canUndo || busy}
           aria-label="Desfazer a última decisão"
           title="Desfazer a última decisão"
-          className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-mag-300 hover:text-mag-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:focus-visible:ring-offset-neutral-950"
+          className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-[var(--portal-brand-border)] hover:text-[var(--portal-brand-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:focus-visible:ring-offset-neutral-950"
         >
           <RotateCcw size={15} aria-hidden="true" />
           <span className="hidden 2xl:inline">Desfazer</span>

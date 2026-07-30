@@ -10,10 +10,10 @@ function ContentOption({ content, active, interactive, onSelect }) {
   const pendingCount = (content.files || []).filter(isPendingFile).length
     + ((content.soundtrack?.approvalStatus || content.soundtrack?.approval_status) === 'pending' ? 1 : 0)
   const correction = isCorrectionPost(content)
-  const sharedClassName = `w-full min-w-[16rem] rounded-xl border p-3 text-left transition xl:min-w-0 ${
+  const sharedClassName = `w-full min-w-[16rem] rounded-xl border p-3 text-left transition xl:min-w-0 xl:px-3 xl:py-2.5 ${
     active
-      ? 'border-mag-500 bg-mag-50 shadow-sm ring-1 ring-mag-500/20 dark:bg-mag-500/10'
-      : 'border-neutral-200 bg-white hover:border-mag-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-mag-700'
+      ? 'border-[var(--portal-brand-border)] bg-[var(--portal-brand-soft)] shadow-sm ring-1 ring-[var(--portal-brand-selection-ring)]'
+      : 'border-neutral-200 bg-white hover:border-[var(--portal-brand-border)] dark:border-neutral-800 dark:bg-neutral-900'
   }`
 
   const contentBody = (
@@ -31,11 +31,11 @@ function ContentOption({ content, active, interactive, onSelect }) {
         )}
       </div>
 
-      <div className="mt-2">
+      <div className="mt-2 xl:mt-1.5">
         <PortalChannelChips channels={content.channels || []} compact />
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-neutral-500 dark:text-neutral-300/80 xl:mt-1.5">
         <span className="inline-flex items-center gap-1">
           <CalendarDays size={12} aria-hidden="true" />
           {formatDate(scheduledDate(content), 'Sem data prevista')}
@@ -58,7 +58,7 @@ function ContentOption({ content, active, interactive, onSelect }) {
       type="button"
       onClick={() => onSelect(content.id)}
       aria-pressed={active}
-      className={`${sharedClassName} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-950`}
+      className={`${sharedClassName} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-950`}
     >
       {contentBody}
     </button>
@@ -71,15 +71,15 @@ export default function PortalContentSelector({ contents, totalPendingItems, sel
   const contentLabel = contents.length === 1 ? 'conteúdo' : 'conteúdos'
 
   return (
-    <aside className="min-w-0 xl:w-[300px] xl:shrink-0" aria-label="Conteúdos para aprovar">
-      <div className="mb-2 flex items-center justify-between gap-3 px-1">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-400">Conteúdos para aprovar</p>
-        <p className="shrink-0 text-xs font-bold text-mag-600 dark:text-mag-300">
+    <aside className="min-w-0 xl:w-[clamp(15rem,17vw,16.5rem)] xl:shrink-0" aria-label="Conteúdos para aprovar">
+      <div className="mb-2 px-1 text-center">
+        <h2 className="text-xs font-black uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-300">Conteúdos para aprovar</h2>
+        <p className="mt-1 text-xs font-bold text-[var(--portal-brand-foreground)]">
           {totalPendingItems} {itemLabel} em {contents.length} {contentLabel}
         </p>
       </div>
 
-      <div className="flex snap-x gap-3 overflow-x-auto pb-2 xl:max-h-[calc(100vh-8rem)] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden xl:pr-1">
+      <div className="flex snap-x gap-3 overflow-x-auto pb-2 xl:max-h-[calc(100vh-8rem)] xl:flex-col xl:gap-2 xl:overflow-y-auto xl:overflow-x-hidden xl:pr-1">
         {contents.map(content => (
           <div key={content.id} className="snap-start xl:w-full">
             <ContentOption

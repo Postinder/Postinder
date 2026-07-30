@@ -466,6 +466,7 @@ export default function FeedPreviewPage() {
               const firstFile = p.files?.[0]
               const firstFileRemoved = isStorageDeleted(firstFile)
               const url = firstFileRemoved ? null : resolveMediaUrl(firstFile?.url || firstFile?.storage_url)
+              const firstFileIsVideo = getMediaKind(firstFile) === 'video'
               return (
                 <button
                   type="button"
@@ -476,6 +477,18 @@ export default function FeedPreviewPage() {
                 >
                   {firstFileRemoved
                     ? <div className="flex flex-col items-center gap-2 px-4 text-center text-neutral-400"><ImageIcon size={28} /><span className="text-xs font-semibold">Arquivo removido conforme retencao</span></div>
+                    : firstFileIsVideo
+                    ? (
+                      <MediaPreview
+                        file={firstFile}
+                        src={url}
+                        className="h-full w-full"
+                        mediaClassName="pointer-events-none h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                        controls={false}
+                        muted
+                        compact
+                      />
+                    )
                     : url
                     ? <img src={url} alt="" className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" />
                     : <div className="flex flex-col items-center gap-2 text-neutral-400"><ImageIcon size={28} /><span className="text-xs font-semibold">Sem mídia</span></div>

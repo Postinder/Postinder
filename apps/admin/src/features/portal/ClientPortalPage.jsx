@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   CalendarDays,
   CheckCircle,
+  ChevronDown,
   Clock,
   ExternalLink,
   FileText,
@@ -41,6 +42,7 @@ import { useAuthStore } from '../../store/authStore'
 import { REJECTION_TAGS } from '../../utils/constants'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
+import { PORTAL_OVERVIEW_INITIAL_STATE, togglePortalOverview } from '../../utils/collapsiblePanels'
 import PortalDialog from './PortalDialog'
 import PortalContentSelector from './PortalContentSelector'
 import PortalHeader from './PortalHeader'
@@ -60,6 +62,14 @@ import {
   countContentsWithAdjustments,
   findNextScheduledPost,
 } from './portalMetrics'
+import {
+  PORTAL_SWIPE_INTENT_THRESHOLD,
+  clampPortalSwipeOffset,
+  getPortalSwipeAction,
+  getPortalSwipeIntent,
+  isVideoControlsArea,
+} from './portalSwipe'
+import './portalBrand.css'
 
 const tabs = [
   { id: 'calendar', label: 'Calendário', icon: CalendarDays },
@@ -81,7 +91,10 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
   const cardRef = useRef(null)
   const pointerIdRef = useRef(null)
   const startXRef = useRef(0)
+  const startYRef = useRef(0)
   const dragXRef = useRef(0)
+  const gestureIntentRef = useRef(null)
+  const suppressClickUntilRef = useRef(0)
   const mediaUrl = resolveMediaUrl(file?.storage_url || file?.url)
   const fileType = String(file?.file_type || '').toUpperCase()
   const fileName = file?.name || 'Arquivo'
@@ -92,64 +105,143 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
 
   useEffect(() => {
     setDescriptionExpanded(false)
+    pointerIdRef.current = null
+    dragXRef.current = 0
+    gestureIntentRef.current = null
+    suppressClickUntilRef.current = 0
+    setDragging(false)
+    setDragX(0)
   }, [file?.id])
+
+  function isPortalVideoFullscreen() {
+    if (!isVideo || typeof document === 'undefined') return false
+    const video = cardRef.current?.querySelector('video')
+    const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
+    return Boolean(
+      (fullscreenElement && video && (fullscreenElement === video || fullscreenElement.contains?.(video) || video.contains?.(fullscreenElement)))
+      || video?.webkitDisplayingFullscreen,
+    )
+  }
+
+  function isInteractiveGestureTarget(event) {
+    const target = event.target
+    if (target?.closest?.('button, a, input, select, textarea, [role="button"], [contenteditable="true"]')) return true
+
+    const video = isVideo ? target?.closest?.('video') : null
+    if (!video) return false
+    const bounds = video.getBoundingClientRect()
+    return isVideoControlsArea(event.clientY, bounds.top, bounds.height)
+  }
+
+  function resetPointer(event) {
+    const pointerId = pointerIdRef.current
+    const captureTarget = event?.currentTarget || cardRef.current
+    pointerIdRef.current = null
+    dragXRef.current = 0
+    gestureIntentRef.current = null
+    if (pointerId !== null && captureTarget?.hasPointerCapture?.(pointerId)) {
+      captureTarget.releasePointerCapture(pointerId)
+    }
+    setDragging(false)
+    setDragX(0)
+  }
 
   function handlePointerDown(event) {
     if (busy || (event.pointerType === 'mouse' && event.button !== 0)) return
+    if (isPortalVideoFullscreen() || isInteractiveGestureTarget(event)) return
     pointerIdRef.current = event.pointerId
     startXRef.current = event.clientX
+    startYRef.current = event.clientY
     dragXRef.current = 0
+    gestureIntentRef.current = isVideo ? 'pending' : 'horizontal'
     setDragX(0)
-    setDragging(true)
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setDragging(!isVideo)
+    if (!isVideo) event.currentTarget.setPointerCapture?.(event.pointerId)
   }
 
   function handlePointerMove(event) {
-    if (pointerIdRef.current !== event.pointerId || busy) return
-    const nextDragX = Math.max(-140, Math.min(140, event.clientX - startXRef.current))
+    if (pointerIdRef.current !== event.pointerId) return
+    if (busy || isPortalVideoFullscreen()) {
+      resetPointer(event)
+      return
+    }
+
+    const deltaX = event.clientX - startXRef.current
+    const deltaY = event.clientY - startYRef.current
+    if (gestureIntentRef.current === 'pending') {
+      const intent = getPortalSwipeIntent(deltaX, deltaY)
+      if (intent === 'pending') return
+      if (intent === 'vertical') {
+        resetPointer(event)
+        return
+      }
+
+      gestureIntentRef.current = 'horizontal'
+      setDragging(true)
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    }
+
+    if (gestureIntentRef.current !== 'horizontal') return
+    const nextDragX = clampPortalSwipeOffset(deltaX)
     dragXRef.current = nextDragX
     setDragX(nextDragX)
     if (Math.abs(nextDragX) > 6) event.preventDefault()
   }
 
   function finishPointer(event) {
-    if (pointerIdRef.current !== event.pointerId || busy) return
+    if (pointerIdRef.current !== event.pointerId) return
     const finalX = dragXRef.current
-    pointerIdRef.current = null
-    dragXRef.current = 0
-    setDragging(false)
-    setDragX(0)
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
-    if (finalX >= 90) onApprove()
-    if (finalX <= -90) onReject()
+    const wasHorizontalGesture = gestureIntentRef.current === 'horizontal'
+    const fullscreen = isPortalVideoFullscreen()
+    if (isVideo && wasHorizontalGesture && Math.abs(finalX) >= PORTAL_SWIPE_INTENT_THRESHOLD) {
+      suppressClickUntilRef.current = Date.now() + 400
+    }
+    resetPointer(event)
+    if (busy || fullscreen || !wasHorizontalGesture) return
+
+    const action = getPortalSwipeAction(finalX)
+    if (action === 'approve') onApprove()
+    if (action === 'reject') onReject()
   }
 
   function cancelPointer(event) {
     if (pointerIdRef.current !== event.pointerId) return
-    pointerIdRef.current = null
-    dragXRef.current = 0
-    setDragging(false)
-    setDragX(0)
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (isVideo && gestureIntentRef.current === 'horizontal') {
+      suppressClickUntilRef.current = Date.now() + 400
+    }
+    resetPointer(event)
+  }
+
+  function handleClickCapture(event) {
+    if (!isVideo || Date.now() > suppressClickUntilRef.current) return
+    suppressClickUntilRef.current = 0
+    event.preventDefault()
+    event.stopPropagation()
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl xl:max-w-5xl">
       <div
         ref={cardRef}
-        className={`relative select-none overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl touch-pan-y dark:border-neutral-800 dark:bg-neutral-900 ${dragging ? 'cursor-grabbing' : 'cursor-grab transition-transform duration-200'}`}
+        className={`relative select-none overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl touch-pan-y dark:border-neutral-800 dark:bg-neutral-900 ${dragging ? 'cursor-grabbing' : 'cursor-grab transition-transform duration-200 motion-reduce:transition-none'}`}
         style={{ transform: `translateX(${dragX}px) rotate(${dragX * 0.04}deg)` }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={finishPointer}
-        onPointerCancel={cancelPointer}
+        onPointerDown={isVideo ? undefined : handlePointerDown}
+        onPointerMove={isVideo ? undefined : handlePointerMove}
+        onPointerUp={isVideo ? undefined : finishPointer}
+        onPointerCancel={isVideo ? undefined : cancelPointer}
+        onPointerDownCapture={isVideo ? handlePointerDown : undefined}
+        onPointerMoveCapture={isVideo ? handlePointerMove : undefined}
+        onPointerUpCapture={isVideo ? finishPointer : undefined}
+        onPointerCancelCapture={isVideo ? cancelPointer : undefined}
+        onLostPointerCapture={cancelPointer}
+        onClickCapture={isVideo ? handleClickCapture : undefined}
         onDragStart={event => event.preventDefault()}
       >
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-between px-6">
-          <span className={`rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white transition-opacity ${dragX < -35 ? 'opacity-100' : 'opacity-0'}`}>
+          <span className={`rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white transition-opacity motion-reduce:transition-none ${dragX < -35 ? 'opacity-100' : 'opacity-0'}`}>
             AJUSTAR
           </span>
-          <span className={`rounded-full bg-green-600 px-4 py-2 text-sm font-black text-white transition-opacity ${dragX > 35 ? 'opacity-100' : 'opacity-0'}`}>
+          <span className={`rounded-full bg-green-600 px-4 py-2 text-sm font-black text-white transition-opacity motion-reduce:transition-none ${dragX > 35 ? 'opacity-100' : 'opacity-0'}`}>
             APROVAR
           </span>
         </div>
@@ -170,7 +262,7 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
               className="pointer-events-none h-[min(500px,56vh)] w-full object-contain md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]"
             />
           ) : mediaUrl ? (
-            <div className="flex h-[min(500px,56vh)] flex-col items-center justify-center gap-4 px-6 text-center text-neutral-500 md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]">
+            <div className="flex h-[min(500px,56vh)] flex-col items-center justify-center gap-4 px-6 text-center text-neutral-500 dark:text-neutral-300 md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]">
               <FileText size={52} />
               <p className="max-w-full truncate text-sm font-semibold">{fileName}</p>
               <a
@@ -178,24 +270,24 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 onPointerDown={event => event.stopPropagation()}
-                className="rounded-lg bg-mag-600 px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-950"
+                className="rounded-lg bg-[var(--portal-brand-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--portal-brand-primary-hover)] active:bg-[var(--portal-brand-primary-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-950"
               >
                 Abrir arquivo
               </a>
             </div>
           ) : (
-            <div className="flex h-[min(500px,56vh)] items-center justify-center text-neutral-400 md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]">Arquivo indisponível</div>
+            <div className="flex h-[min(500px,56vh)] items-center justify-center text-neutral-400 dark:text-neutral-300/80 md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]">Arquivo indisponível</div>
           )}
         </div>
 
         <div className="px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex min-w-0 items-center gap-2 md:max-w-[14rem] xl:max-w-xs">
-              <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-400">Arquivo</span>
+              <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-300/80">Arquivo</span>
               <h3 className="truncate text-sm font-black text-neutral-950 dark:text-white">{fileName}</h3>
             </div>
             <PortalStatusBadge status={file.status || 'pending'} />
-            <p className="w-full text-center text-[11px] font-semibold text-neutral-400 sm:ml-auto sm:w-auto sm:text-right">
+            <p className="w-full text-center text-[11px] font-semibold text-neutral-400 dark:text-neutral-300/80 sm:ml-auto sm:w-auto sm:text-right">
               Arraste: esquerda para ajustar · direita para aprovar
             </p>
           </div>
@@ -203,7 +295,7 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
           <div className="mt-2 flex min-w-0 items-start gap-3 border-t border-neutral-100 pt-2 dark:border-neutral-800">
             {description ? (
               <div className="flex min-w-0 flex-1 items-start gap-2 overflow-hidden">
-                <span className="shrink-0 pt-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-400">Legenda</span>
+                <span className="shrink-0 pt-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-300/80">Legenda</span>
                 <p lang="pt-BR" className={`min-w-0 flex-1 break-words hyphens-auto text-xs leading-5 text-neutral-600 dark:text-neutral-300 ${descriptionExpanded ? 'whitespace-pre-wrap' : canExpandDescription ? 'line-clamp-2 md:line-clamp-1' : 'whitespace-pre-wrap'}`}>
                   {description}
                 </p>
@@ -213,14 +305,14 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
                     onClick={() => setDescriptionExpanded(value => !value)}
                     onPointerDown={event => event.stopPropagation()}
                     aria-expanded={descriptionExpanded}
-                    className="shrink-0 pt-0.5 text-[11px] font-bold text-mag-600 hover:text-mag-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 dark:text-mag-300"
+                    className="shrink-0 rounded-sm pt-0.5 text-[11px] font-bold text-[var(--portal-brand-foreground)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)]"
                   >
                     {descriptionExpanded ? 'Ver menos' : 'Ver mais'}
                   </button>
                 ) : null}
               </div>
             ) : (
-              <p className="min-w-0 flex-1 text-xs text-neutral-400">Sem legenda informada.</p>
+              <p className="min-w-0 flex-1 text-xs text-neutral-400 dark:text-neutral-300/80">Sem legenda informada.</p>
             )}
             <PortalReviewActions
               fileName={fileName}
@@ -359,7 +451,7 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             initialFocusRef={rejectTextareaRef}
           >
               <h3 id="portal-reject-title" className="text-lg font-black">Solicitar ajuste</h3>
-              <p id="portal-reject-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Selecione as tags e descreva o que precisa mudar neste item.</p>
+              <p id="portal-reject-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Selecione as tags e descreva o que precisa mudar neste item.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {REJECTION_TAGS.map(tag => {
                   const active = selectedTags.includes(tag)
@@ -381,11 +473,11 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
                 value={comment}
                 onChange={event => setComment(event.target.value)}
                 aria-label="Descrição do ajuste solicitado"
-                className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-mag-400 focus-visible:ring-2 focus-visible:ring-mag-500 dark:border-neutral-700 dark:bg-neutral-950"
+                className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-[var(--portal-brand-border)] focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:bg-neutral-950"
                 placeholder="Ex: trocar imagem, ajustar texto, revisar cor..."
               />
               <div className="mt-4 flex gap-3">
-                <button type="button" onClick={closeRejectDialog} className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 dark:border-neutral-700 dark:text-neutral-300">
+                <button type="button" onClick={closeRejectDialog} className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:text-neutral-300">
                   Cancelar
                 </button>
                 <button type="button" onClick={submitReject} disabled={busy} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-neutral-900">
@@ -404,7 +496,7 @@ function EmptyPanel({ title, description }) {
     <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center dark:border-neutral-700 dark:bg-neutral-900">
       <LayoutGrid size={32} className="mx-auto text-neutral-300" />
       <h3 className="mt-3 text-sm font-extrabold text-neutral-700 dark:text-neutral-200">{title}</h3>
-      <p className="mt-1 text-sm text-neutral-500">{description}</p>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">{description}</p>
     </div>
   )
 }
@@ -420,6 +512,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [generalFeedback, setGeneralFeedback] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [isOverviewExpanded, dispatchPortalOverview] = useReducer(togglePortalOverview, PORTAL_OVERVIEW_INITIAL_STATE)
   const [lastAction, setLastAction] = useState(null)
   const [editingFeedback, setEditingFeedback] = useState(null)
   const feedbackTextareaRef = useRef(null)
@@ -717,15 +810,15 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-100 text-neutral-500 dark:bg-neutral-950">
-        <Loader2 size={32} className="animate-spin text-mag-600" aria-label="Carregando portal" />
+      <div className="portal-brand flex min-h-screen items-center justify-center bg-neutral-100 text-neutral-500 dark:bg-neutral-950">
+        <Loader2 size={32} className="animate-spin text-[var(--portal-brand-foreground)]" aria-label="Carregando portal" />
       </div>
     )
   }
 
   if (!payload) {
     return (
-      <div className="min-h-screen bg-neutral-100 text-neutral-950 dark:bg-neutral-950 dark:text-white">
+      <div className="portal-brand min-h-screen bg-neutral-100 text-neutral-950 dark:bg-neutral-950 dark:text-white">
         <PortalHeader clientName={user?.name} isAuthenticated={isAuthenticatedMode} onLogout={logout} />
         <main className="mx-auto flex max-w-[1440px] justify-center px-4 py-16 sm:px-6">
           <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-8 text-center shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
@@ -733,7 +826,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
             <h1 className="mt-4 text-xl font-extrabold">
               {isAuthenticatedMode ? 'Não foi possível carregar o portal' : 'Link indisponível'}
             </h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-500 dark:text-neutral-400">
+            <p className="mt-2 text-sm leading-6 text-neutral-500 dark:text-neutral-300/80">
               {isAuthenticatedMode
                 ? (loadError?.response?.data?.error || 'O portal está temporariamente indisponível. Tente novamente em instantes.')
                 : 'Este link pode ter expirado ou ter sido substituído por um novo link do portal.'}
@@ -741,7 +834,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
             <button
               type="button"
               onClick={loadPortal}
-              className="mt-5 rounded-lg bg-mag-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-mag-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900"
+              className="mt-5 rounded-lg bg-[var(--portal-brand-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--portal-brand-primary-hover)] active:bg-[var(--portal-brand-primary-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900"
             >
               Tentar novamente
             </button>
@@ -752,7 +845,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100 text-neutral-950 dark:bg-neutral-950 dark:text-white">
+    <div className="portal-brand min-h-screen bg-neutral-100 text-neutral-950 dark:bg-neutral-950 dark:text-white">
       <PortalHeader
         clientName={client?.name}
         expiresAt={payload.expiresAt}
@@ -778,55 +871,79 @@ export default function ClientPortalPage({ mode = 'token' }) {
         </section>
 
         <section className="space-y-5 border-t border-neutral-200 pt-6 dark:border-neutral-800" aria-labelledby="portal-overview-title">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-400">Visão geral</div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-400 dark:text-neutral-300/80">Visão geral</div>
               <h2 id="portal-overview-title" className="mt-1 text-lg font-black text-neutral-950 dark:text-white">Acompanhamento do conteúdo</h2>
+              <p className="mt-1 truncate text-sm text-neutral-500 dark:text-neutral-300/80">
+                Acesse calendário, histórico, arquivos e feedbacks.
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={dispatchPortalOverview}
+              aria-expanded={isOverviewExpanded}
+              aria-controls="portal-overview-content"
+              aria-label={`${isOverviewExpanded ? 'Recolher' : 'Expandir'} visão geral`}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 transition-colors hover:border-[var(--portal-brand-border)] hover:bg-[var(--portal-brand-soft-hover)] hover:text-[var(--portal-brand-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:focus-visible:ring-offset-neutral-950"
+            >
+              <ChevronDown
+                size={19}
+                aria-hidden="true"
+                className={`transition-transform duration-200 motion-reduce:transition-none ${isOverviewExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
           </div>
 
-          <PortalMetricsBar items={[
-            { id: 'pending', icon: <Clock size={16} />, label: 'Aguardando aprovação', value: pendingProjects.length, sub: `${pendingItemsCount} itens pendentes` },
-            { id: 'approved', icon: <CheckCircle size={16} />, label: 'Aprovados no mês', value: monthApproved, sub: 'conteúdos liberados' },
-            { id: 'adjustments', icon: <XCircle size={16} />, label: 'Com ajustes', value: rejectedCount, sub: 'conteúdos com ajustes solicitados' },
-            { id: 'next', icon: <CalendarDays size={16} />, label: 'Próxima data prevista', value: nextPost ? formatDate(getPostDate(nextPost)) : 'Sem previsão', sub: nextPost?.title || 'nenhum conteúdo planejado' },
-          ]} />
+          <div
+            id="portal-overview-content"
+            role="region"
+            aria-labelledby="portal-overview-title"
+            hidden={!isOverviewExpanded}
+            className="space-y-5"
+          >
+            <PortalMetricsBar items={[
+              { id: 'pending', icon: <Clock size={16} />, label: 'Aguardando aprovação', value: pendingProjects.length, sub: `${pendingItemsCount} itens pendentes` },
+              { id: 'approved', icon: <CheckCircle size={16} />, label: 'Aprovados no mês', value: monthApproved, sub: 'conteúdos liberados' },
+              { id: 'adjustments', icon: <XCircle size={16} />, label: 'Com ajustes', value: rejectedCount, sub: 'conteúdos com ajustes solicitados' },
+              { id: 'next', icon: <CalendarDays size={16} />, label: 'Próxima data prevista', value: nextPost ? formatDate(getPostDate(nextPost)) : 'Sem previsão', sub: nextPost?.title || 'nenhum conteúdo planejado' },
+            ]} />
 
-          <nav role="tablist" aria-label="Informações complementares do portal" className="flex gap-2 overflow-x-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-          {tabs.map((tab, index) => {
-            const Icon = tab.icon
-            const active = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                ref={element => { tabRefs.current[tab.id] = element }}
-                id={`portal-tab-${tab.id}`}
-                role="tab"
-                aria-selected={active}
-                aria-controls={`portal-panel-${tab.id}`}
-                tabIndex={active ? 0 : -1}
-                className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 ${active ? 'bg-mag-600 text-white' : 'text-neutral-600 hover:bg-neutral-50 hover:text-mag-600 dark:text-neutral-300 dark:hover:bg-neutral-800'}`}
-                onClick={() => setActiveTab(tab.id)}
-                onKeyDown={event => handleTabKeyDown(event, index)}
-                type="button"
-              >
-                <Icon size={16} /> {tab.label}
-              </button>
-            )
-          })}
-          </nav>
+            <nav role="tablist" aria-label="Informações complementares do portal" className="flex gap-2 overflow-x-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+            {tabs.map((tab, index) => {
+              const Icon = tab.icon
+              const active = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  ref={element => { tabRefs.current[tab.id] = element }}
+                  id={`portal-tab-${tab.id}`}
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls={`portal-panel-${tab.id}`}
+                  tabIndex={active ? 0 : -1}
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] ${active ? 'bg-[var(--portal-brand-primary)] text-white' : 'text-neutral-600 hover:bg-[var(--portal-brand-soft-hover)] hover:text-[var(--portal-brand-foreground)] dark:text-neutral-300'}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  onKeyDown={event => handleTabKeyDown(event, index)}
+                  type="button"
+                >
+                  <Icon size={16} /> {tab.label}
+                </button>
+              )
+            })}
+            </nav>
 
-        {activeTab === 'calendar' && (
+          {activeTab === 'calendar' && (
           <section id="portal-panel-calendar" role="tabpanel" aria-labelledby="portal-tab-calendar" tabIndex={0} className="space-y-4 focus:outline-none">
             {calendarGroups.length ? calendarGroups.map(([date, items]) => (
               <div key={date} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                <h3 className="mb-3 text-sm font-extrabold text-neutral-500">{date}</h3>
+                <h3 className="mb-3 text-sm font-extrabold text-neutral-500 dark:text-neutral-300">{date}</h3>
                 <div className="space-y-2">
                   {items.map(post => (
                     <div key={post.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-neutral-50 px-3 py-3 dark:bg-neutral-800">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-bold">{post.title || 'Conteúdo sem título'}</div>
-                        <div className="mt-1 text-xs text-neutral-500">{(post.channels || []).join(', ') || 'Sem canais definidos'}</div>
+                        <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-300/80">{(post.channels || []).join(', ') || 'Sem canais definidos'}</div>
                       </div>
                       <PortalStatusBadge status={getPostStatus(post)} />
                     </div>
@@ -835,9 +952,9 @@ export default function ClientPortalPage({ mode = 'token' }) {
               </div>
             )) : <EmptyPanel title="Sem calendário" description="Não existem conteúdos com data para exibir." />}
           </section>
-        )}
+          )}
 
-        {activeTab === 'rejected' && (
+          {activeTab === 'rejected' && (
           <section id="portal-panel-rejected" role="tabpanel" aria-labelledby="portal-tab-rejected" tabIndex={0} className="space-y-4 focus:outline-none">
             {rejectedFiles.length || rejectedSoundtracks.length ? rejectedFiles.map(file => (
               <article key={file.id} className="grid gap-4 rounded-lg border border-red-200 bg-white p-4 shadow-sm dark:border-red-900 dark:bg-neutral-900 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -849,7 +966,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                     <div className="min-w-0">
                       <div className="text-xs font-black uppercase tracking-wider text-red-500">Item recusado</div>
                       <h3 className="mt-1 truncate text-lg font-black text-neutral-950 dark:text-white">{file.post?.title || 'Conteúdo sem título'}</h3>
-                      <p className="mt-1 truncate text-sm font-semibold text-neutral-500">{file.name || 'Arquivo'}</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-neutral-500 dark:text-neutral-300">{file.name || 'Arquivo'}</p>
                     </div>
                     <PortalStatusBadge status="rejected" />
                   </div>
@@ -871,7 +988,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                       type="button"
                       onClick={() => setEditingFeedback({ file, comment: file.rejection_reason || '', tags: file.rejection_tags || [] })}
                       disabled={busy}
-                      className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-bold text-neutral-600 transition hover:border-mag-300 hover:text-mag-600 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                      className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-bold text-neutral-600 transition hover:border-[var(--portal-brand-border)] hover:text-[var(--portal-brand-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
                     >
                       Editar feedback
                     </button>
@@ -898,9 +1015,9 @@ export default function ClientPortalPage({ mode = 'token' }) {
               />
             ))}
           </section>
-        )}
+          )}
 
-        {activeTab === 'history' && (
+          {activeTab === 'history' && (
           <section id="portal-panel-history" role="tabpanel" aria-labelledby="portal-tab-history" tabIndex={0} className="space-y-4 focus:outline-none">
             <div className="flex flex-wrap gap-2">
               {[
@@ -909,7 +1026,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 ['rejected', 'Com ajustes'],
                 ['executed', 'Postados na rede'],
               ].map(([value, label]) => (
-                <button key={value} className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusFilter === value ? 'bg-mag-600 text-white' : 'bg-white text-neutral-500 dark:bg-neutral-900'}`} onClick={() => setStatusFilter(value)} type="button">
+                <button key={value} className={`rounded-full px-3 py-1.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] ${statusFilter === value ? 'bg-[var(--portal-brand-primary)] text-white' : 'bg-white text-neutral-500 hover:bg-[var(--portal-brand-soft-hover)] hover:text-[var(--portal-brand-foreground)] dark:bg-neutral-900 dark:text-neutral-300'}`} onClick={() => setStatusFilter(value)} type="button">
                   {label}
                 </button>
               ))}
@@ -919,7 +1036,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="font-extrabold">{post.title || 'Conteúdo sem título'}</h3>
-                    <p className="mt-1 text-sm text-neutral-500">{formatDate(getPostDate(post))}</p>
+                    <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">{formatDate(getPostDate(post))}</p>
                   </div>
                   <PortalStatusBadge status={getPostStatus(post)} />
                 </div>
@@ -932,35 +1049,35 @@ export default function ClientPortalPage({ mode = 'token' }) {
               </div>
             )) : <EmptyPanel title="Sem histórico" description="Conteúdos aprovados, recusados ou concluídos aparecerão aqui." />}
           </section>
-        )}
+          )}
 
-        {activeTab === 'files' && (
+          {activeTab === 'files' && (
           <section id="portal-panel-files" role="tabpanel" aria-labelledby="portal-tab-files" tabIndex={0} className="grid gap-4 focus:outline-none md:grid-cols-2 xl:grid-cols-3">
             {files.length ? files.map(file => (
-              <article key={file.id} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm transition hover:border-mag-300 dark:border-neutral-800 dark:bg-neutral-900">
+              <article key={file.id} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm transition hover:border-[var(--portal-brand-border)] dark:border-neutral-800 dark:bg-neutral-900">
                 <FilePreview file={file} />
                 <div className="mt-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold">{file.name || 'Arquivo'}</div>
-                    <div className="mt-1 truncate text-xs text-neutral-500">{file.post?.title || 'Conteúdo sem título'}</div>
+                    <div className="mt-1 truncate text-xs text-neutral-500 dark:text-neutral-300/80">{file.post?.title || 'Conteúdo sem título'}</div>
                   </div>
                   <PortalStatusBadge status={file.status || getPostStatus(file.post)} />
                 </div>
-                <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-mag-600 hover:text-mag-700">
+                <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 rounded-sm text-xs font-bold text-[var(--portal-brand-foreground)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)]">
                   <ExternalLink size={13} /> Abrir arquivo original
                 </a>
               </article>
             )) : <div className="md:col-span-2 xl:col-span-3"><EmptyPanel title="Sem arquivos" description="Arquivos anexados aos conteúdos aparecerão aqui." /></div>}
           </section>
-        )}
+          )}
 
-        {activeTab === 'feedbacks' && (
+          {activeTab === 'feedbacks' && (
           <section id="portal-panel-feedbacks" role="tabpanel" aria-labelledby="portal-tab-feedbacks" tabIndex={0} className="grid gap-4 focus:outline-none lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
               <h3 className="font-extrabold">Enviar feedback geral</h3>
-              <p className="mt-1 text-sm text-neutral-500">Use este campo para comentários sobre a rotina de conteúdo.</p>
-              <textarea value={generalFeedback} onChange={event => setGeneralFeedback(event.target.value)} className="mt-4 h-32 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-mag-400 dark:border-neutral-700 dark:bg-neutral-950" placeholder="Escreva seu comentario..." />
-              <button className="mt-3 inline-flex items-center gap-2 rounded-lg bg-mag-600 px-4 py-2 text-sm font-bold text-white hover:bg-mag-700 disabled:opacity-60" onClick={handleGeneralFeedback} disabled={busy} type="button">
+              <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Use este campo para comentários sobre a rotina de conteúdo.</p>
+              <textarea value={generalFeedback} onChange={event => setGeneralFeedback(event.target.value)} className="mt-4 h-32 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-[var(--portal-brand-border)] focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:bg-neutral-950" placeholder="Escreva seu comentario..." />
+              <button className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[var(--portal-brand-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--portal-brand-primary-hover)] active:bg-[var(--portal-brand-primary-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] disabled:opacity-60" onClick={handleGeneralFeedback} disabled={busy} type="button">
                 <Send size={15} /> Enviar feedback
               </button>
             </div>
@@ -969,7 +1086,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 <div key={item.id} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="font-bold">{item.post_title || 'Feedback geral'}</div>
-                    <div className="text-xs text-neutral-400">{formatDate(item.created_at)}</div>
+                    <div className="text-xs text-neutral-400 dark:text-neutral-300/80">{formatDate(item.created_at)}</div>
                   </div>
                   {item.tags?.length ? (
                     <div className="mt-3 flex flex-wrap gap-1.5">
@@ -984,7 +1101,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
               )) : <EmptyPanel title="Sem feedbacks" description="Comentários e motivos de ajuste aparecerão aqui." />}
             </div>
           </section>
-        )}
+          )}
+          </div>
         </section>
 
         {editingFeedback ? (
@@ -995,7 +1113,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
             initialFocusRef={feedbackTextareaRef}
           >
               <h3 id="portal-feedback-title" className="text-lg font-black">Editar feedback</h3>
-              <p id="portal-feedback-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Atualize as tags e o comentário do item recusado.</p>
+              <p id="portal-feedback-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Atualize as tags e o comentário do item recusado.</p>
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {REJECTION_TAGS.map(tag => {
@@ -1024,7 +1142,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 value={editingFeedback.comment}
                 onChange={event => setEditingFeedback(current => ({ ...current, comment: event.target.value }))}
                 aria-label="Comentário do feedback"
-                className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-mag-400 focus-visible:ring-2 focus-visible:ring-mag-500 dark:border-neutral-700 dark:bg-neutral-950"
+                className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-[var(--portal-brand-border)] focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:bg-neutral-950"
                 placeholder="Descreva o que precisa ser ajustado..."
               />
 
@@ -1032,7 +1150,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 <button
                   type="button"
                   onClick={() => setEditingFeedback(null)}
-                  className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 dark:border-neutral-700 dark:text-neutral-300"
+                  className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:text-neutral-300"
                 >
                   Cancelar
                 </button>
@@ -1040,7 +1158,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                   type="button"
                   onClick={handleUpdateRejectedFeedback}
                   disabled={busy}
-                  className="flex-1 rounded-lg bg-mag-600 px-4 py-2 text-sm font-bold text-white hover:bg-mag-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-neutral-900"
+                  className="flex-1 rounded-lg bg-[var(--portal-brand-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--portal-brand-primary-hover)] active:bg-[var(--portal-brand-primary-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-neutral-900"
                 >
                   Salvar feedback
                 </button>

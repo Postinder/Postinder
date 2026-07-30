@@ -16,6 +16,8 @@ O estado efetivamente publicado deve ser confirmado no painel de cada provedor. 
 - O backend ativo observado no Render correspondia ao commit abreviado `3552b8e` (`Correcao swipe`); isso nao prova a inexistencia de deployments intermediarios.
 - O bundle frontend ativo contem a arquitetura antiga de integracoes e nomes legados `VITE_*`, sem credencial funcional evidenciada. A exposicao historica permanece inconclusiva.
 - As correcoes atuais existem somente no repositorio local. A versao publicada nao deve receber dados reais sensiveis nem novas credenciais frontend.
+- A rodada local de interface e identidade da 20Cinco tambem ainda nao foi publicada. Ela foi validada com 33/33 testes de frontend e build TypeScript/Vite.
+- O script de lint do frontend nao e executavel no estado atual porque ESLint e sua configuracao nao estao instalados. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; a pendencia nao bloqueia esta publicacao, mas nao deve ser descrita como validacao aprovada. A verificacao administrativa da Vercel deve confirmar que nao existe override remoto.
 
 ## Banco e migrations
 
@@ -145,7 +147,7 @@ de segredo `VITE_*`, autorize uma microetapa separada de rotacao ou invalidacao.
 
 ## Ordem de publicacao
 
-1. Concluir layout e validacao local.
+1. Revisar a consolidacao local concluida e preparar o commit correspondente.
 2. Concluir a verificacao manual da Vercel e as decisoes de rotacao.
 3. Criar novo backup e executar preflight do banco.
 4. Configurar variaveis e o release step bloqueante no Render.
@@ -164,7 +166,12 @@ de segredo `VITE_*`, autorize uma microetapa separada de rotacao ou invalidacao.
 - Confirmar que URLs de portal aparecem nos logs com token redigido e que
   respostas/erros nao refletem credenciais.
 - Validar upload e reproducao de MP4 H.264/AAC, progresso, rejeicao acima de
-  200 MB e controles que nao disparam swipe.
+  200 MB, swipe horizontal em imagens e videos, rolagem vertical, fullscreen e
+  controles nativos que nao disparam aprovacao ou ajuste.
+- Validar os paineis recolhiveis do Dashboard e a Visao geral do portal,
+  inclusive preservacao de filtros e conteudos ao recolher e reabrir.
+- Conferir a identidade da 20Cinco, contraste e foco nos temas claro e escuro,
+  sem alterar as cores semanticas.
 - Executar limpeza de Retencao e reset demo somente com dados descartaveis.
 
 ## Rollback operacional

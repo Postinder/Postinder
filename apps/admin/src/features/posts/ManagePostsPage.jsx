@@ -757,13 +757,13 @@ export default function ManagePostsPage() {
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-neutral-500">
+          <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-300">
             <Filter size={16} />
             {filtered.length} postagem(ns) {view === 'executed' ? 'postada(s) na rede' : view === 'completed' ? 'aprovada(s) pelo cliente' : 'em andamento'} encontrada(s)
-            {view === 'active' && selected.length ? <span className="font-bold text-mag-600">- {selected.length} selecionada(s)</span> : null}
+            {view === 'active' && selected.length ? <span className="font-bold text-mag-600 dark:text-mag-300">- {selected.length} selecionada(s)</span> : null}
           </div>
           {view === 'active' ? (
-            <Button disabled={!sendableSelected.length} onClick={() => setBatchOpen(true)} icon={<Send size={16} />}>
+            <Button disabled={!sendableSelected.length} onClick={() => setBatchOpen(true)} icon={<Send size={16} />} className="dark:disabled:opacity-60">
               Enviar lote para aprovacao
             </Button>
           ) : null}
@@ -794,31 +794,31 @@ export default function ManagePostsPage() {
                     <Avatar name={client.name} color={client.color} />
                     <div className="min-w-0">
                       <div className="truncate text-sm font-bold text-neutral-900 dark:text-white">{client.name || 'Cliente'}</div>
-                      <div className="text-xs text-neutral-400">{formatDate(getScheduledDate(post))}</div>
+                      <div className="text-xs text-neutral-400 dark:text-neutral-300/80">{formatDate(getScheduledDate(post))}</div>
                     </div>
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-base font-extrabold text-neutral-950 dark:text-white">{post.title || 'Post sem titulo'}</div>
-                    <div className="mt-1 line-clamp-1 text-sm text-neutral-500">{post.description || 'Sem legenda cadastrada.'}</div>
+                    <div className="mt-1 line-clamp-1 text-sm text-neutral-500 dark:text-neutral-300">{post.description || 'Sem legenda cadastrada.'}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {getPostChannels(post).map(channel => <span key={channel} className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-500 dark:bg-neutral-800">{channel}</span>)}
+                      {getPostChannels(post).map(channel => <span key={channel} className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-1 dark:ring-inset dark:ring-neutral-700/70">{channel}</span>)}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 lg:justify-center">
                     <StatusBadge status={status} />
-                    <span className="text-xs font-semibold text-neutral-400">{(post.files || []).length} arquivo(s)</span>
-                    <span className="text-xs font-semibold text-violet-500">{getSoundtrackLabel(post)}</span>
-                    <span className="text-xs text-neutral-400">Atualizado {formatDate(getUpdatedDate(post))}</span>
+                    <span className="text-xs font-semibold text-neutral-400 dark:text-neutral-300">{(post.files || []).length} arquivo(s)</span>
+                    <span className="text-xs font-semibold text-violet-500 dark:text-violet-300">{getSoundtrackLabel(post)}</span>
+                    <span className="text-xs text-neutral-400 dark:text-neutral-300/80">Atualizado {formatDate(getUpdatedDate(post))}</span>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1.5">
-                    <button title="Previa" onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:hover:bg-neutral-800"><Eye size={16} /></button>
-                    {status !== 'executed' && <button title="Editar" onClick={() => setEditPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><Edit3 size={16} /></button>}
-                    <button title="Duplicar" onClick={() => runAction(() => duplicatePost(post.id), 'Postagem duplicada.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 dark:hover:bg-neutral-800"><Copy size={16} /></button>
-                    {status === 'draft' && <button title="Marcar pronto" onClick={() => runAction(() => updatePostStatus(post.id, 'ready'), 'Postagem marcada como pronta.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-green-600 dark:hover:bg-neutral-800"><CheckCircle size={16} /></button>}
-                    {status === 'ready' && <button title="Voltar para rascunho" onClick={() => runAction(() => updatePostStatus(post.id, 'draft'), 'Postagem voltou para rascunho.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-amber-600 dark:hover:bg-neutral-800"><RotateCcw size={16} /></button>}
-                    {canSend && <button title="Enviar para aprovacao" onClick={() => handleSend(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:hover:bg-neutral-800"><Send size={16} /></button>}
-                    {canExecute && <button title="Marcar como executado" onClick={() => setExecutePost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><CheckCircle size={16} /></button>}
-                    {canDelete && <button title="Excluir postagem" onClick={() => setPostToDelete(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"><Trash2 size={16} /></button>}
+                    <button title="Previa" onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-mag-200"><Eye size={16} /></button>
+                    {status !== 'executed' && <button title="Editar" onClick={() => setEditPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-teal-100"><Edit3 size={16} /></button>}
+                    <button title="Duplicar" onClick={() => runAction(() => duplicatePost(post.id), 'Postagem duplicada.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-blue-300"><Copy size={16} /></button>
+                    {status === 'draft' && <button title="Marcar pronto" onClick={() => runAction(() => updatePostStatus(post.id, 'ready'), 'Postagem marcada como pronta.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-green-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-green-300"><CheckCircle size={16} /></button>}
+                    {status === 'ready' && <button title="Voltar para rascunho" onClick={() => runAction(() => updatePostStatus(post.id, 'draft'), 'Postagem voltou para rascunho.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-amber-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-amber-300"><RotateCcw size={16} /></button>}
+                    {canSend && <button title="Enviar para aprovacao" onClick={() => handleSend(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-mag-200"><Send size={16} /></button>}
+                    {canExecute && <button title="Marcar como executado" onClick={() => setExecutePost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-teal-100"><CheckCircle size={16} /></button>}
+                    {canDelete && <button title="Excluir postagem" onClick={() => setPostToDelete(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:text-neutral-300 dark:hover:bg-red-950/30 dark:hover:text-red-300"><Trash2 size={16} /></button>}
                   </div>
                 </div>
               </Card>

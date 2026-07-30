@@ -7,10 +7,10 @@ versao equivalente aprovada posteriormente.
 
 ## Consolidacao e verificacao
 
-1. [ ] Concluir os ajustes pontuais de layout.
+1. [x] Concluir os ajustes pontuais de layout definidos na rodada atual.
 2. [ ] Alinhar visualmente `admin`, `manager`, `editor` e `viewer`.
 3. [ ] Remover referencias visuais legadas a `gestor` e `equipe`.
-4. [ ] Executar validacao local final, incluindo 139 testes de backend, 14 de
+4. [x] Executar validacao local final, incluindo 139 testes de backend, 33 de
    frontend, builds, bundle scan e `git diff --check`.
 5. [ ] Concluir a verificacao manual da Vercel: nomes, escopos, ambientes,
    commit ativo, deployments historicos e previews, sempre sem abrir valores.
@@ -50,11 +50,25 @@ Validacoes de midia dentro do smoke test:
 
 - [ ] MP4 H.264/AAC e enviado com progresso e reproduzido no portal e nas telas administrativas.
 - [ ] Controles de reproducao nao acionam swipe, aprovacao ou solicitacao de ajuste.
+- [ ] Swipe em videos preserva rolagem vertical, fullscreen, posicao do player e botoes explicitos.
 - [ ] Arquivo acima de 200 MB e tipo nao suportado exibem mensagens especificas; falha depois da criacao preserva a postagem editavel.
 - [ ] Codec nao reproduzivel oferece acesso ao arquivo original.
 - [ ] `draft` e `ready` nao aparecem ao Cliente.
 - [ ] Postagem Executada nao aceita mutacoes e a duplicacao cria novo registro.
 - [ ] Copia fisica na duplicacao persiste `bucket`, `storage_path`, MIME e tamanho.
+
+Validacoes da interface consolidada:
+
+- [ ] Dashboard inicia **Atividade recente** e **Postagens** recolhidas e permite expansao independente.
+- [ ] Portal mantem a aprovacao prioritaria e a **Visao geral** recolhida por padrao, sem perder aba ou filtros ao reabrir.
+- [ ] Identidade da 20Cinco, contraste, foco e cores semanticas permanecem corretos nos temas claro e escuro.
+
+O script `npm run lint` existe, mas ESLint e sua configuracao ainda nao estao
+disponiveis. Nenhum workflow de CI, configuracao versionada da Vercel ou
+comando documentado do Render executa lint; portanto, essa pendencia tecnica
+nao bloqueia a publicacao desta rodada e nao deve ser marcada como validacao
+aprovada. A verificacao administrativa da Vercel ainda deve confirmar a
+ausencia de override remoto.
 
 ## Observacao
 

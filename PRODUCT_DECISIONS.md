@@ -26,14 +26,29 @@
 ## Portal e aprovacao
 
 - Cada arquivo e revisado individualmente; swipe e a interacao principal, com botoes como alternativa acessivel.
+- O portal deve priorizar o conteudo que exige decisao do Cliente. Metricas, calendario, historico, arquivos e feedbacks sao informacoes complementares e iniciam recolhidos, permanecendo disponiveis sob demanda.
+- Swipe deve oferecer experiencia equivalente em imagens e videos sem substituir os botoes explicitos.
 - O gesto horizontal nao deve bloquear rolagem vertical nem acionar arraste nativo da imagem.
-- Controles interativos de video nao participam do gesto de swipe. Reproduzir, pausar, alterar volume ou navegar no video nao pode aprovar nem reprovar o arquivo.
+- Controles interativos e fullscreen de video prevalecem em suas areas e nao participam do gesto de swipe. Reproduzir, pausar, alterar volume ou navegar no video nao pode aprovar nem reprovar o arquivo.
 - Imagens e videos devem ser visualizados no proprio fluxo de revisao. Para video, o padrao e player nativo sem reproducao automatica, com `playsInline`, `preload="metadata"` e acesso ao arquivo original como alternativa.
 - A legenda permanece alinhada a esquerda. Textos extensos usam expansao explicita, quebras preservadas e hifenizacao automatica com idioma `pt-BR`; justificacao nao e usada em colunas estreitas por prejudicar a regularidade dos espacos.
 - O primeiro viewport deve priorizar a decisao: contexto da postagem, midia, identificacao do arquivo, instrucao, legenda e acoes devem caber juntos sempre que a altura disponivel permitir, sem comprimir controles essenciais.
 - O Cliente pode desfazer somente a ultima decisao quando o fluxo permitir. Pode editar feedback e reconsiderar uma recusa antes de uma nova correcao.
 - Uma nova versao enviada pela agencia deve ser identificada como `Correcao`.
 - A ordem dos anexos e dado de negocio, persistida por `sort_order` e mantida em todas as telas.
+
+## Interface administrativa
+
+- O Dashboard pode compactar sua abertura com paineis recolhiveis. **Atividade recente** e **Postagens** iniciam recolhidas, expandem independentemente e preservam filtros, paginacao, ordenacao e acoes quando abertas.
+- O estado de expansao e local ao carregamento atual; nao existe requisito de persistencia entre sessoes.
+
+## Identidade visual
+
+- A identidade visual adotada no portal do Cliente nesta fase e a da 20Cinco. A area administrativa continua identificada internamente como Postinder.
+- O magenta da marca pertence a navegacao, selecao, foco e destaques nao semanticos. Verde para aprovacao, vermelho para recusa ou ajuste e amarelo/laranja para pendencia nao devem ser substituidos pela cor da marca.
+- Tokens de marca devem permanecer centralizados e restritos ao portal para permitir futura parametrizacao sem reescrever componentes.
+- O cabecalho usa temporariamente uma adaptacao vetorial SVG aprovada. Ela nao e o asset oficial fornecido e deve ser substituida quando houver asset vetorial oficial ou variante oficial adequada para fundos escuros.
+- Multiempresa e white-label permanecem possibilidades futuras; nao sao funcionalidades atuais.
 
 ## Fundo sonoro
 

@@ -16,7 +16,19 @@ Estas alteracoes estao validadas no repositorio local, mas **ainda nao foram pub
 - O banco publicado foi inventariado ate `011`; `012` a `015` permanecem pendentes em producao.
 - O backup logico foi criado e sua restauracao foi validada em stack Supabase local com uma adaptacao minima e documentada na copia de `roles.sql`.
 - O migrador real aplicou `012` a `015` em clone restaurado, na ordem correta; a segunda execucao foi no-op e o advisory lock foi liberado corretamente.
-- Backend: 139/139 testes. Frontend: 14/14 testes. Builds, bundle scan com sentinelas e `git diff --check` aprovados.
+- Backend: 139/139 testes. Frontend: 33/33 testes. Builds, bundle scan sem marcadores sensiveis e `git diff --check` aprovados.
+
+## Rodada local de interface e identidade
+
+- A Previa do Feed passou a reconhecer videos pelo mecanismo compartilhado e a renderiza-los com `MediaPreview`, mantendo imagens e a primeira midia na ordenacao oficial sem alteracao de Storage, API ou backend.
+- **Atividade recente** e **Postagens** passaram a iniciar recolhidas no Dashboard, com expansao independente, conteudo preservado e controles acessiveis.
+- **Visao geral / Acompanhamento do conteudo** passou a iniciar recolhida no portal, mantendo a aprovacao em destaque e preservando metricas, abas, filtros e dados montados sob expansao.
+- O swipe do portal passou a cobrir videos com o mesmo sentido de decisao das imagens, reconhecimento de intencao horizontal, rolagem vertical preservada e protecao dos controles nativos, fullscreen e clique residual.
+- A tela principal do portal recebeu coluna lateral mais estreita, cards compactos, cabecalho e resumo centralizados e mais espaco para a midia, preservando `object-contain`, videos verticais, mobile e breakpoints.
+- O portal adotou a identidade visual da 20Cinco em tokens restritos aos temas claro e escuro. O magenta passou a orientar navegacao e destaques nao semanticos, enquanto verde, vermelho e amarelo/laranja permaneceram funcionais.
+- O cabecalho usa temporariamente uma adaptacao vetorial SVG aprovada, sem apresenta-la como asset oficial. A substituicao por asset vetorial oficial ou variante oficial para fundos escuros ficou como melhoria futura; o PNG recebido permanece preservado, mas nao e renderizado atualmente.
+- A barra lateral administrativa manteve o magenta no tema escuro, e cards de Clientes, listagem de postagens, textos, metadados, chips e acoes receberam contraste reforcado.
+- Foram adicionados testes de branding, escopo dos tokens, legibilidade, cores semanticas, swipe e paineis recolhiveis. O lint continua indisponivel porque ESLint e sua configuracao nao existem; nenhum workflow de CI nem configuracao versionada/documentada de Vercel ou Render o executa.
 
 ## Consolidacao arquitetural
 
@@ -56,7 +68,7 @@ Estas alteracoes estao validadas no repositorio local, mas **ainda nao foram pub
 - Portal ganhou swipe, botoes alternativos, feedbacks, tags, desfazer limitado, recusados, calendario, historico e identificacao de correcao.
 - O quadro principal de revisao foi compactado: cabecalho, faixa de contexto, midia, legenda e acoes passaram a ocupar melhor o primeiro viewport, com acoes fixas no mobile e junto da legenda no desktop.
 - Legendas extensas ganharam `Ver mais`/`Ver menos`, quebra segura, preservacao de linhas e hifenizacao automatica em portugues, mantendo alinhamento a esquerda.
-- Imagens e videos passaram a usar uma previa centralizada. Videos ganharam player nativo nas telas administrativas e no portal, controles independentes do swipe, carregamento por metadados e alternativa para codecs nao reproduziveis.
+- Imagens e videos passaram a usar uma previa centralizada. Videos ganharam player nativo nas telas administrativas e no portal, controles protegidos do swipe, carregamento por metadados e alternativa para codecs nao reproduziveis.
 - Textos do fluxo de exclusao receberam correcoes de portugues e acentuacao.
 - Rascunhos e itens prontos deixaram de ficar visiveis ao Cliente e de gerar notificacoes indevidas.
 - A central administrativa foi organizada em Em andamento, Aprovado pelo cliente e Postado na rede.

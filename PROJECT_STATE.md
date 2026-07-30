@@ -4,10 +4,22 @@
 
 - A auditoria tecnica pre-deploy foi concluida.
 - Os bloqueadores tecnicos C-01, C-02, H-02, H-03 e H-04 foram corrigidos e validados localmente.
-- Backend: 139/139 testes aprovados. Frontend: 14/14 testes aprovados. Os dois builds e `git diff --check` foram aprovados.
+- Backend: 139/139 testes aprovados. Frontend: 33/33 testes aprovados. Os dois builds, o bundle scan e `git diff --check` foram aprovados.
 - As correcoes ainda nao foram publicadas. O frontend ativo em `postinder.vercel.app` e o backend ativo no Render continuam em versoes anteriores.
 - O deploy permanece **nao autorizado**. Nenhuma migration pendente foi aplicada no banco publicado.
-- A proxima frente e composta por ajustes pontuais de interface; depois deles ocorrera a preparacao operacional final de deploy.
+- A rodada atual de ajustes visuais e funcionais esta concluida localmente. O proximo passo e a preparacao operacional final, iniciando pela revisao das pendencias de publicacao; nenhuma etapa operacional foi executada nesta consolidacao.
+
+## Rodada visual e funcional concluida localmente
+
+- A Previa do Feed reconhece videos pelo mecanismo compartilhado de midia e usa `MediaPreview`, sem enviar URL de video para `<img>`. Imagens preservam o comportamento anterior, a primeira midia continua seguindo a ordenacao oficial dos arquivos e nao houve alteracao de Storage, API ou backend para gerar thumbnails.
+- No Dashboard, **Atividade recente** e **Postagens** iniciam recolhidas, expandem de forma independente e mantem seus conteudos montados. O estado e local a cada carregamento, e os controles expõem `aria-expanded`, `aria-controls` e regioes associadas.
+- No portal do Cliente, a area principal de aprovacao permanece prioritaria. **Visao geral / Acompanhamento do conteudo** inicia recolhida; metricas, abas e conteudos complementares permanecem montados com `hidden`, preservando aba ativa, filtros e dados ao recolher e reabrir. O `localStorage` existente continua reservado ao desfazer da ultima decisao.
+- Imagens e videos compartilham o fluxo de swipe: esquerda solicita ajuste e direita aprova. O video reconhece a intencao horizontal antes da captura, preserva rolagem vertical, protege clique residual, controles nativos e fullscreen padrao/WebKit, e nao e remontado durante o gesto. Os botoes explicitos continuam disponiveis.
+- A tela principal do portal ganhou coluna lateral responsiva mais estreita, cards compactos, cabecalho e resumo centralizados e mais espaco para a midia principal. `object-contain`, videos verticais, breakpoints e experiencia movel foram preservados.
+- O portal do Cliente adotou a identidade visual da 20Cinco em temas claro e escuro, com tokens restritos ao portal, magenta em navegacao, selecao, foco e destaques nao semanticos, e contraste reforcado. Verde, vermelho e amarelo/laranja continuam reservados a aprovacao, ajuste/recusa e pendencia.
+- O cabecalho usa, nesta etapa, uma adaptacao vetorial SVG da marca aprovada visualmente. Ela nao e descrita como o asset oficial fornecido; a troca por asset vetorial oficial ou variante oficial para fundos escuros permanece melhoria futura. O PNG horizontal recebido esta preservado no repositorio, mas nao e o asset renderizado atualmente.
+- A barra lateral administrativa mantem magenta nos dois temas. Cards de Clientes, listagem administrativa de postagens, titulos, metadados, chips e acoes receberam ajustes de contraste no tema escuro.
+- A camada de tokens prepara uma futura parametrizacao por empresa sem implementar multiempresa ou white-label.
 
 ## Visao do produto
 
@@ -53,7 +65,7 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 ## Postagens, anexos e metricas
 
 - A agencia cria, edita, ordena anexos, duplica e envia postagens individualmente ou em lote.
-- O portal oferece swipe e botoes, feedback por arquivo, tags, edicao de feedback e desfazer apenas da ultima decisao no fluxo permitido. Em dispositivos moveis, as acoes permanecem fixas na parte inferior; em telas maiores, ficam junto da legenda.
+- O portal oferece swipe equivalente para imagens e videos, botoes acessiveis, feedback por arquivo, tags, edicao de feedback e desfazer apenas da ultima decisao no fluxo permitido. Em dispositivos moveis, as acoes permanecem fixas na parte inferior; em telas maiores, ficam junto da legenda.
 - Imagens e videos usam uma previa reutilizavel nas telas administrativas e no portal. Videos possuem player nativo com controles, `playsInline`, carregamento por metadados e alternativa para abrir o arquivo original quando o navegador nao reproduz o codec.
 - Os controles do video sao isolados do gesto horizontal de decisao. Legendas permanecem alinhadas a esquerda, preservam quebras, usam hifenizacao automatica em portugues e podem ser expandidas por `Ver mais` sem sobrepor as acoes.
 - O primeiro quadro de revisao foi compactado para priorizar, na abertura, faixa de contexto, midia, nome, estado, instrucao de swipe, legenda e acoes. A altura da midia responde ao viewport e usa limite menor em telas grandes para manter a borda inferior visivel.
@@ -130,7 +142,8 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 
 ## Estado operacional e limitacoes
 
-- As correcoes foram validadas localmente com 139/139 testes de backend, 14/14 de frontend, builds dos dois projetos, `git diff --check` e bundle scan com zero sentinelas. Nenhum teste chamou provedor real, e as correcoes nao acessaram banco ou servico remoto.
+- As correcoes e a rodada visual foram validadas localmente com 139/139 testes de backend, 33/33 de frontend, builds dos dois projetos, `git diff --check` e bundle scan sem marcadores sensiveis. O frontend inclui testes de branding, legibilidade, cores semanticas, swipe e paineis recolhiveis. Nenhum teste chamou provedor real, e as correcoes nao acessaram banco ou servico remoto.
+- O script `npm run lint` do frontend existe, mas ESLint e sua configuracao nao estao disponiveis. O comando nao foi aprovado. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; por isso, a pendencia e tecnica e nao bloqueante para a publicacao atual. A verificacao administrativa da Vercel continua necessaria para confirmar que nao existe override remoto.
 - Nenhuma migration pendente foi executada em producao e nenhum deploy foi realizado.
 - O dominio ativo ainda serve o bundle anterior a H-04. Ele contem nomes legados `VITE_*`, mas nenhuma credencial funcional foi identificada: codigo vulneravel publicado sem credencial evidenciada e exposicao historica inconclusiva.
 - A verificacao manual da Vercel continua pendente para nomes de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews. Eventual segredo historico exigira rotacao ou invalidacao em etapa separada.
