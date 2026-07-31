@@ -11,12 +11,12 @@ O estado efetivamente publicado deve ser confirmado no painel de cada provedor. 
 
 ## Estado atual da publicacao
 
-- O deploy esta **nao autorizado**.
-- Frontend e backend ativos ainda correspondem a versoes anteriores as correcoes pre-deploy.
-- O backend ativo observado no Render correspondia ao commit abreviado `3552b8e` (`Correcao swipe`); isso nao prova a inexistencia de deployments intermediarios.
-- O bundle frontend ativo contem a arquitetura antiga de integracoes e nomes legados `VITE_*`, sem credencial funcional evidenciada. A exposicao historica permanece inconclusiva.
-- As correcoes atuais existem somente no repositorio local. A versao publicada nao deve receber dados reais sensiveis nem novas credenciais frontend.
-- A rodada local de interface e identidade da 20Cinco tambem ainda nao foi publicada. Ela foi validada com 33/33 testes de frontend e build TypeScript/Vite.
+- Backend e frontend das correcoes anteriores foram publicados em 30/07/2026.
+- As migrations `012`, `013`, `014` e `015` foram aplicadas com sucesso e confirmadas em `schema_migrations`.
+- `/health`, `/health/db` e `/health/storage` responderam com sucesso depois da publicacao.
+- A hotfix de CPF/CNPJ e `deadline_days` existe somente localmente, validada com 151/151 testes de backend, 40/40 de frontend, os dois builds e `git diff --check`.
+- A hotfix permanece sem commit, push ou deploy, e sua publicacao esta **nao autorizada** nesta etapa.
+- Somente `016_client_documents.sql` permanece pendente em producao.
 - O script de lint do frontend nao e executavel no estado atual porque ESLint e sua configuracao nao estao instalados. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; a pendencia nao bloqueia esta publicacao, mas nao deve ser descrita como validacao aprovada. A verificacao administrativa da Vercel deve confirmar que nao existe override remoto.
 
 ## Banco e migrations
@@ -30,9 +30,9 @@ npm run db:migrate
 
 O migrador registra cada migration em `schema_migrations`. A migration `002_development_seed.sql` e historica e nao deve ser executada como parte da cadeia estrutural. O startup valida migrations pendentes e nao corrige schema automaticamente.
 
-O banco publicado usa PostgreSQL da Supabase. O inventario confirmou `001`, a `002` historica e `003` a `011`; `012`, `013`, `014` e `015` ainda nao foram aplicadas. No snapshot auditado havia 1 Cliente ativo, nenhum inativo, 0 posts e 0 files, sem orfaos, duplicidades incompatíveis ou FKs invalidas. A `012` atingiria zero linhas naquele snapshot, mas esse impacto deve ser reconfirmado imediatamente antes da execucao real.
+O banco publicado usa PostgreSQL da Supabase e esta em `015`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `015` estao registrados, incluindo `012`, `013`, `014` e `015`, aplicadas em 30/07/2026. Somente a `016` ainda nao foi aplicada. Ela adiciona campos anulaveis de documento do Cliente e nao faz backfill.
 
-O migrador oficial e `backend/scripts/migrate.ts`. Em um clone restaurado, `npm run db:migrate` executado em `backend` aplicou `012` a `015` na ordem correta; uma segunda execucao foi no-op, e o advisory lock foi adquirido e liberado.
+O migrador oficial e `backend/scripts/migrate.ts`. Na futura publicacao da hotfix, ele devera consultar `schema_migrations`, ignorar `001` a `015` e aplicar somente `016_client_documents.sql`.
 
 No Render, configure um Pre-Deploy Command/release step separado e bloqueante:
 
@@ -46,7 +46,7 @@ Ele deve terminar com sucesso antes do Start Command. Nao incorpore migrations a
 
 - Criar um novo backup logico imediatamente antes do deploy; o backup auditado pode ficar desatualizado durante os proximos testes.
 - Validar hashes e preservar juntos `roles.sql`, `schema.sql` e `data.sql`, fora do repositorio.
-- Executar novo inventario/preflight somente leitura, incluindo contagens afetaveis pela `012`.
+- Executar novo inventario/preflight somente leitura para a `016`.
 - O procedimento de restauracao validado usa stack Supabase local compativel e transacao unica.
 - A copia preparada de `roles.sql` comenta somente a instrucao que altera `statement_timeout` de `supabase_admin`; `schema.sql` e `data.sql` permanecem identicos.
 - O backup e restauravel com esse procedimento documentado de compatibilidade.
@@ -115,8 +115,8 @@ Start Command: npm run start
 A verificacao manual do servico confirmou categorias de URL/CORS, banco, JWT,
 Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de Anthropic, Z-API,
 Twilio, GoHighLevel, Canva ou Resend, nem Environment Group foi evidenciado.
-O backend publicado ainda e anterior as correcoes. `DEPLOYMENT_MODE`,
-`ENABLE_DEMO_RESET` e a credencial server-side da IA continuam ausentes.
+O backend foi publicado em 30/07/2026, depois da aplicacao de `012` a `015`.
+Os tres endpoints de health responderam com sucesso.
 
 Depois da etapa de migration e do startup, valide:
 
@@ -147,12 +147,12 @@ de segredo `VITE_*`, autorize uma microetapa separada de rotacao ou invalidacao.
 
 ## Ordem de publicacao
 
-1. Revisar a consolidacao local concluida e preparar o commit correspondente.
+1. Revisar a hotfix local concluida e, somente apos autorizacao, preparar o commit correspondente.
 2. Concluir a verificacao manual da Vercel e as decisoes de rotacao.
-3. Criar novo backup e executar preflight do banco.
+3. Criar novo backup e executar preflight da `016`.
 4. Configurar variaveis e o release step bloqueante no Render.
-5. Publicar primeiro o backend.
-6. Confirmar `012` a `015`, ausencia de pendencias, startup e health checks.
+5. Publicar primeiro o backend; o migrador deve ignorar `001` a `015` e aplicar somente a `016`.
+6. Confirmar a aplicacao da `016`, ausencia de pendencias, startup e health checks.
 7. Publicar o frontend.
 8. Confirmar commits e bundles ativos.
 9. Executar smoke tests, conferir logs sanitizados e validar o reset demo.
@@ -172,6 +172,8 @@ de segredo `VITE_*`, autorize uma microetapa separada de rotacao ou invalidacao.
   inclusive preservacao de filtros e conteudos ao recolher e reabrir.
 - Conferir a identidade da 20Cinco, contraste e foco nos temas claro e escuro,
   sem alterar as cores semanticas.
+- Criar e editar Cliente com e sem CPF/CNPJ, remover o documento e confirmar
+  prazo de aprovacao diferente de 7 dias.
 - Executar limpeza de Retencao e reset demo somente com dados descartaveis.
 
 ## Rollback operacional

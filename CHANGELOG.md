@@ -2,9 +2,9 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
-## Nao publicado - consolidacao pre-deploy
+## Publicado em 30/07/2026 - consolidacao pre-deploy
 
-Estas alteracoes estao validadas no repositorio local, mas **ainda nao foram publicadas**:
+Estas alteracoes foram publicadas em backend e frontend em 30/07/2026:
 
 - A fronteira de autenticacao passou a separar access tokens administrativos, tokens de Cliente, refresh tokens e tokens privados de portal. Tokens ambiguos ou de contexto incorreto sao recusados antes dos controllers.
 - A autorizacao administrativa passou a usar 36 capacidades tipadas e negacao por padrao em 43 rotas. Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`.
@@ -13,10 +13,19 @@ Estas alteracoes estao validadas no repositorio local, mas **ainda nao foram pub
 - Credenciais e chamadas de integracoes foram removidas do frontend. Anthropic e Z-API sao server-side; Twilio, GoHighLevel, Canva e Resend permanecem desabilitados.
 - A IA passou a usar endpoint proprio do backend, autorizacao `ai-insights:generate`, URL fixa, modelo allowlisted, timeout/abort e payload agregado e pseudonimizado.
 - A estrutura de fundo sonoro foi concluida com estado atual, revisoes, decisoes, Storage e Retencao auditaveis.
-- O banco publicado foi inventariado ate `011`; `012` a `015` permanecem pendentes em producao.
+- As migrations `012`, `013`, `014` e `015` foram aplicadas com sucesso em producao e confirmadas em `schema_migrations`; o banco publicado esta em `015`.
 - O backup logico foi criado e sua restauracao foi validada em stack Supabase local com uma adaptacao minima e documentada na copia de `roles.sql`.
 - O migrador real aplicou `012` a `015` em clone restaurado, na ordem correta; a segunda execucao foi no-op e o advisory lock foi liberado corretamente.
-- Backend: 139/139 testes. Frontend: 33/33 testes. Builds, bundle scan sem marcadores sensiveis e `git diff --check` aprovados.
+- Depois da publicacao, `/health`, `/health/db` e `/health/storage` responderam com sucesso.
+
+## Hotfix local de Clientes
+
+- Backend: 151/151 testes. Frontend: 40/40 testes. Builds e `git diff --check` aprovados nesta hotfix; o bundle scan aprovado na auditoria permanece valido.
+- CPF/CNPJ opcional passou a ser persistido em `document_type` e `document_number`, com digitos no banco, mascara na interface e validacao de digitos verificadores no frontend e no backend.
+- Criacao, edicao, remocao, listagem, detalhe e busca passaram a usar o contrato oficial `document_type`/`document_number`; documentos ausentes permanecem nulos e Clientes existentes nao receberam preenchimento retroativo.
+- O frontend passou a enviar `deadline_days` na criacao, edicao e importacao VCF. O backend preserva compatibilidade temporaria de entrada com `deadlineDays`.
+- A migration `016_client_documents.sql` adiciona as duas colunas anulaveis e uma constraint de coerencia entre tipo, quantidade e somente digitos. Nao ha indice unico.
+- A `016` ainda nao foi aplicada em producao e e a unica migration pendente. A hotfix permanece sem commit, push ou deploy.
 
 ## Rodada local de interface e identidade
 
@@ -106,4 +115,4 @@ Estas alteracoes estao validadas no repositorio local, mas **ainda nao foram pub
 - A auditoria pre-deploy foi concluida e os bloqueadores tecnicos foram corrigidos localmente.
 - O Render foi conferido manualmente sem valores: nenhuma variavel `VITE_*`, credencial de integracao ou Environment Group foi evidenciado; as variaveis da demo e a credencial server-side da IA ainda nao estao configuradas.
 - A Vercel ainda exige inventario manual de variaveis, ambientes e deployments historicos.
-- O frontend e o backend publicados continuam anteriores as correcoes. Nenhum deploy ou migration de producao integra esta consolidacao.
+- A consolidacao anterior foi publicada em 30/07/2026 com as migrations `012` a `015`. A hotfix de Clientes e a migration `016` continuam somente locais.

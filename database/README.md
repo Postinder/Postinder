@@ -17,19 +17,23 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 
 `002_development_seed.sql` e uma migration historica preservada para compatibilidade de bancos antigos, mas nao e executada pela cadeia estrutural.
 
-No snapshot auditado do PostgreSQL publicado da Supabase, `001`, a `002`
-historica e `003` a `011` estavam registradas; `012`, `013`, `014` e `015`
-permaneciam pendentes. Havia 1 Cliente ativo, nenhum inativo, 0 posts e 0
-files, sem orfaos, duplicidades incompatíveis ou FKs invalidas. A `012` nao
-atingia linhas nesse snapshot, mas o preflight deve ser repetido imediatamente
-antes do deploy.
+No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `015`
+estao registradas. As migrations `012`, `013`, `014` e `015` foram aplicadas
+com sucesso em 30/07/2026 e confirmadas em `schema_migrations`. O banco
+publicado esta em `015`; somente `016_client_documents.sql` permanece pendente.
 
-O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado:
-aplicou `012` a `015` na ordem correta, a segunda execucao foi no-op e o
-advisory lock foi liberado. No Render, execute `npm run db:migrate` em release
+O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
+e posteriormente aplicou `012` a `015` em producao. Na futura publicacao da
+hotfix, ele devera ignorar `001` a `015` e aplicar somente a `016`, em release
 step bloqueante anterior ao Start Command.
 
 A migration `015_post_soundtracks.sql` cria o estado atual do fundo sonoro, suas revisoes imutaveis e decisoes do Cliente. O vinculo e opcional: postagens anteriores continuam semanticamente no modo `none`, sem backfill de registros nem reescrita de historico.
+
+A migration `016_client_documents.sql` adiciona `document_type` e
+`document_number` anulaveis a `clients`, com constraint de coerencia para CPF
+de 11 digitos ou CNPJ de 14 digitos. Ela nao cria unicidade nem altera
+registros existentes. A migration integra a cadeia estrutural, mas ainda nao
+foi aplicada em producao.
 
 ## Backup e recuperacao
 

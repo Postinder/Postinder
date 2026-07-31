@@ -4,7 +4,7 @@ Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e 
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy, as correcoes criticas e a rodada atual de interface foram concluidas e validadas localmente. Backend: 139/139 testes. Frontend: 33/33 testes. As alteracoes ainda nao foram publicadas: frontend e backend online continuam em versoes anteriores, migrations `012` a `015` permanecem pendentes em producao e o deploy permanece **nao autorizado**. O proximo passo e a preparacao operacional final.
+A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface foram publicadas em 30/07/2026. Backend, frontend e os endpoints `/health`, `/health/db` e `/health/storage` foram validados; o banco publicado esta em `015`. A hotfix local de Clientes foi validada com 151/151 testes de backend, 40/40 de frontend, os dois builds e `git diff --check`, mas permanece sem commit, push ou deploy. Somente `016_client_documents.sql` esta pendente em producao.
 
 ## Interface atual
 

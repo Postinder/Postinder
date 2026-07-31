@@ -11,11 +11,11 @@ import PageHeader from '../../components/ui/PageHeader'
 import { CLIENT_COLORS } from '../../utils/constants'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-
-const DOC_MASK = {
-  cpf:  v => { v=v.replace(/\D/g,'').slice(0,11); if(v.length>9)return v.slice(0,3)+'.'+v.slice(3,6)+'.'+v.slice(6,9)+'-'+v.slice(9); if(v.length>6)return v.slice(0,3)+'.'+v.slice(3,6)+'.'+v.slice(6); if(v.length>3)return v.slice(0,3)+'.'+v.slice(3); return v },
-  cnpj: v => { v=v.replace(/\D/g,'').slice(0,14); if(v.length>12)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8,12)+'-'+v.slice(12); if(v.length>8)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5,8)+'/'+v.slice(8); if(v.length>5)return v.slice(0,2)+'.'+v.slice(2,5)+'.'+v.slice(5); if(v.length>2)return v.slice(0,2)+'.'+v.slice(2); return v },
-}
+import {
+  buildClientDocumentPayload,
+  formatClientDocument,
+  isOptionalClientDocumentValid,
+} from '../../utils/clientDocument'
 
 function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, onViewPosts, onViewDetails }) {
   const [actionsOpen, setActionsOpen] = useState(false)
@@ -121,6 +121,10 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
 
   async function handleSave() {
     if (!form.name || !form.email) { toast.error('Preencha nome e e-mail.'); return }
+    if (!isOptionalClientDocumentValid(form.documentType, form.document)) {
+      toast.error('CPF/CNPJ inválido.')
+      return
+    }
     setLoading(true)
     try { await onSave(form); onClose() }
     catch(e) { toast.error(e.message) }
@@ -140,10 +144,10 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
           <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 block mb-2">Documento</label>
           <div className="flex rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700 mb-2">
             {['cpf','cnpj'].map(t=>(
-              <button key={t} onClick={()=>set('documentType',t)} className={`flex-1 py-2.5 text-sm font-semibold transition-all ${form.documentType===t?'bg-mag-500 text-white':'bg-white dark:bg-neutral-800 text-neutral-500 hover:bg-neutral-50'}`}>{t.toUpperCase()}</button>
+              <button type="button" key={t} aria-pressed={form.documentType===t} onClick={()=>set('documentType',t)} className={`flex-1 py-2.5 text-sm font-semibold transition-all ${form.documentType===t?'bg-mag-500 text-white':'bg-white dark:bg-neutral-800 text-neutral-500 hover:bg-neutral-50'}`}>{t.toUpperCase()}</button>
             ))}
           </div>
-          <Input value={form.document||''} onChange={e=>set('document',DOC_MASK[form.documentType](e.target.value))} placeholder={form.documentType==='cpf'?'000.000.000-00':'00.000.000/0000-00'} />
+          <Input name="client-document" inputMode="numeric" aria-label={`Número do ${form.documentType.toUpperCase()}`} autoComplete="off" value={form.document||''} onChange={e=>set('document',formatClientDocument(e.target.value, form.documentType))} placeholder={form.documentType==='cpf'?'000.000.000-00':'00.000.000/0000-00'} />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input label="Segmento" value={form.segment||''} onChange={e=>set('segment',e.target.value)} placeholder="Ex: Restaurante" />
@@ -244,13 +248,30 @@ export default function ClientsPage() {
   }, [])
 
   async function handleCreate(form) {
-    const client = await createClient({ ...form, color: form.color || CLIENT_COLORS[clients.length % CLIENT_COLORS.length] })
+    const client = await createClient({
+      name: form.name,
+      email: form.email,
+      password: form.password,
+      whatsapp: form.whatsapp,
+      segment: form.segment,
+      deadline_days: form.deadlineDays,
+      color: form.color || CLIENT_COLORS[clients.length % CLIENT_COLORS.length],
+      ...buildClientDocumentPayload(form),
+    })
     setClients(c => [client, ...c])
     toast.success('Cliente criado!')
   }
 
   async function handleEdit(form) {
-    const updates = { name: form.name, email: form.email, whatsapp: form.whatsapp, segment: form.segment, deadline_days: form.deadlineDays, color: form.color }
+    const updates = {
+      name: form.name,
+      email: form.email,
+      whatsapp: form.whatsapp,
+      segment: form.segment,
+      deadline_days: form.deadlineDays,
+      color: form.color,
+      ...buildClientDocumentPayload(form),
+    }
     if (form.password) updates.password_hash = form.password
     const updated = await updateClient(editClient.id, updates)
     setClients(c => c.map(x => x.id === editClient.id ? { ...x, ...updated } : x))
@@ -260,7 +281,7 @@ export default function ClientsPage() {
   async function handleVCFImport(contacts) {
     const created = []
     for (const c of contacts) {
-      const client = await createClient({ name:c.name, email:c.email, password:c.password, whatsapp:c.phone, segment:c.segment, deadlineDays:7, color: CLIENT_COLORS[clients.length%CLIENT_COLORS.length] })
+      const client = await createClient({ name:c.name, email:c.email, password:c.password, whatsapp:c.phone, segment:c.segment, deadline_days:7, color: CLIENT_COLORS[clients.length%CLIENT_COLORS.length] })
       created.push(client)
     }
     setClients(c => [...created, ...c])
@@ -343,7 +364,8 @@ export default function ClientsPage() {
       <ClientFormModal title="Novo Cliente" open={showNew} onClose={()=>setShowNew(false)} onSave={handleCreate} />
       <ClientFormModal title="Editar Cliente" initial={editClient ? {
         name: editClient.name, email: editClient.email, password:'',
-        whatsapp: editClient.whatsapp||'', document: editClient.document||'',
+        whatsapp: editClient.whatsapp||'',
+        document: formatClientDocument(editClient.document_number, editClient.document_type||'cpf'),
         documentType: editClient.document_type||'cpf', segment: editClient.segment||'',
         deadlineDays: editClient.deadline_days||7, color: editClient.color
       } : null} open={!!editClient} onClose={()=>setEditClient(null)} onSave={handleEdit} />

@@ -10,6 +10,7 @@ import Card from '../../components/ui/Card'
 import EmptyState from '../../components/ui/EmptyState'
 import Skeleton from '../../components/ui/Skeleton'
 import toast from 'react-hot-toast'
+import { formatClientDocument } from '../../utils/clientDocument'
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
@@ -232,6 +233,12 @@ export default function ClientDetailsPage() {
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 {client.email && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><Mail size={13} />{client.email}</span>}
                 {client.whatsapp && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><MessageCircle size={13} />{client.whatsapp}</span>}
+                <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">
+                  <UserRound size={13} />
+                  {client.document_number
+                    ? `${String(client.document_type || 'documento').toUpperCase()}: ${formatClientDocument(client.document_number, client.document_type)}`
+                    : 'Documento: —'}
+                </span>
                 {client.segment && <span className="rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">{client.segment}</span>}
               </div>
             </div>

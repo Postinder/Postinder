@@ -2,6 +2,7 @@ import { pool, query } from '../../../../shared/database/pool'
 import { assertActiveEmailAvailable, isEmailConflict, normalizeEmail } from '../../../../shared/database/emailUniqueness'
 import { logger } from '../../../../shared/utils/Logger'
 import { removeStoredFile } from '../../../../shared/upload/storage'
+import type { ClientDocumentType } from '../../domain/clientInput'
 
 export interface CreateClientDTO {
   name: string
@@ -11,6 +12,8 @@ export interface CreateClientDTO {
   segment?: string
   color?: string
   deadline_days?: number
+  document_type?: ClientDocumentType | null
+  document_number?: string | null
   company_id?: string
 }
 
@@ -20,6 +23,8 @@ export interface UpdateClientDTO {
   segment?: string
   color?: string
   deadline_days?: number
+  document_type?: ClientDocumentType | null
+  document_number?: string | null
 }
 
 export class ClientRepository {
@@ -32,9 +37,13 @@ export class ClientRepository {
       transactionStarted = true
       await assertActiveEmailAvailable(client, email)
       const result = await client.query(
-        `INSERT INTO clients (name, email, password_hash, whatsapp, segment, color, deadline_days, company_id, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-         RETURNING id, name, email, whatsapp, segment, color, deadline_days, created_at`,
+        `INSERT INTO clients (
+           name, email, password_hash, whatsapp, segment, color, deadline_days,
+           document_type, document_number, company_id, is_active
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+         RETURNING id, name, email, whatsapp, segment, color, deadline_days,
+           document_type, document_number, created_at`,
         [
           dto.name,
           email,
@@ -42,7 +51,9 @@ export class ClientRepository {
           dto.whatsapp || null,
           dto.segment || null,
           dto.color || null,
-          dto.deadline_days || 7,
+          dto.deadline_days ?? 7,
+          dto.document_type ?? null,
+          dto.document_number ?? null,
           dto.company_id || null,
         ]
       )
@@ -53,7 +64,10 @@ export class ClientRepository {
       if (isEmailConflict(error)) {
         throw new Error('Email already exists')
       }
-      logger.error('Failed to create client', { error })
+      logger.error('Failed to create client', {
+        errorName: error?.name,
+        errorCode: error?.code,
+      })
       throw new Error('Failed to create client')
     } finally {
       client.release()
@@ -72,6 +86,8 @@ export class ClientRepository {
           c.segment,
           c.color,
           c.deadline_days,
+          c.document_type,
+          c.document_number,
           c.company_id,
           c.is_active,
           COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
@@ -127,7 +143,8 @@ export class ClientRepository {
   async findByEmail(email: string) {
     try {
       const result = await query(
-        `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, last_access_at, created_at, updated_at
+        `SELECT id, name, email, whatsapp, segment, color, deadline_days,
+           document_type, document_number, company_id, is_active, last_access_at, created_at, updated_at
          FROM clients WHERE LOWER(email) = $1 AND is_active = true`,
         [normalizeEmail(email)]
       )
@@ -149,6 +166,8 @@ export class ClientRepository {
           c.segment,
           c.color,
           c.deadline_days,
+          c.document_type,
+          c.document_number,
           c.company_id,
           c.is_active,
           COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
@@ -226,6 +245,14 @@ export class ClientRepository {
         values.push(dto.deadline_days)
         paramIndex++
       }
+      if (dto.document_type !== undefined || dto.document_number !== undefined) {
+        updates.push(`document_type = $${paramIndex}`)
+        values.push(dto.document_type ?? null)
+        paramIndex++
+        updates.push(`document_number = $${paramIndex}`)
+        values.push(dto.document_number ?? null)
+        paramIndex++
+      }
 
       if (updates.length === 0) return this.findById(id, companyId)
 
@@ -238,12 +265,17 @@ export class ClientRepository {
         conditions.push(`company_id = $${paramIndex}`)
       }
 
-      const sql = `UPDATE clients SET ${updates.join(', ')} WHERE ${conditions.join(' AND ')} RETURNING id, name, email, whatsapp, segment, color, deadline_days`
+      const sql = `UPDATE clients SET ${updates.join(', ')} WHERE ${conditions.join(' AND ')}
+        RETURNING id, name, email, whatsapp, segment, color, deadline_days,
+          document_type, document_number`
 
       const result = await query(sql, values)
       return result.rows[0] || null
-    } catch (error) {
-      logger.error('Failed to update client', { error })
+    } catch (error: any) {
+      logger.error('Failed to update client', {
+        errorName: error?.name,
+        errorCode: error?.code,
+      })
       throw new Error('Failed to update client')
     }
   }
@@ -394,7 +426,8 @@ export class ClientRepository {
          SET is_active = true,
              updated_at = NOW()
          WHERE ${conditions.join(' AND ')}
-         RETURNING id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, last_access_at, created_at, updated_at`,
+         RETURNING id, name, email, whatsapp, segment, color, deadline_days,
+           document_type, document_number, company_id, is_active, last_access_at, created_at, updated_at`,
         params,
       )
 

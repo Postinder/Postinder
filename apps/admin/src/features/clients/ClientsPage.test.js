@@ -18,3 +18,16 @@ test('client metric labels remain unchanged', () => {
   assert.match(clientsPageSource, />Pend</)
   assert.match(clientsPageSource, />Reprov</)
 })
+
+test('client creation and editing use the official document and deadline API fields', () => {
+  assert.match(clientsPageSource, /\.\.\.buildClientDocumentPayload\(form\)/)
+  assert.match(clientsPageSource, /deadline_days: form\.deadlineDays/)
+  assert.match(clientsPageSource, /deadline_days:7/)
+  assert.match(clientsPageSource, /editClient\.document_number/)
+  assert.match(clientsPageSource, /formatClientDocument\(editClient\.document_number/)
+})
+
+test('client form validates the optional document before submission', () => {
+  assert.match(clientsPageSource, /isOptionalClientDocumentValid\(form\.documentType, form\.document\)/)
+  assert.match(clientsPageSource, /CPF\/CNPJ inválido\./)
+})

@@ -3,10 +3,21 @@ import { ClientRepository } from '../../infrastructure/repositories/ClientReposi
 import bcryptjs from 'bcryptjs'
 import { env } from '../../../../config/environment'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
+import {
+  ClientInputValidationError,
+  normalizeClientDocument,
+  normalizeDeadlineDays,
+} from '../../domain/clientInput'
 
 interface AuthRequest extends Request {
   user?: any
   tenantId?: string
+}
+
+function preferredBodyValue(body: Record<string, any>, officialName: string, compatibilityName: string) {
+  return Object.prototype.hasOwnProperty.call(body, officialName)
+    ? body[officialName]
+    : body[compatibilityName]
 }
 
 export class ClientsController {
@@ -55,13 +66,21 @@ export class ClientsController {
   }
 
   async create(req: AuthRequest, res: Response) {
-    const { name, email, password, whatsapp, segment, color, deadline_days } = req.body
+    const body = req.body || {}
+    const { name, email, password, whatsapp, segment, color } = body
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
 
     try {
+      const document = normalizeClientDocument(
+        preferredBodyValue(body, 'document_type', 'documentType'),
+        preferredBodyValue(body, 'document_number', 'document'),
+      )
+      const deadlineDays = normalizeDeadlineDays(
+        preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
+      )
       const passwordHash = await bcryptjs.hash(password, 10)
 
       const client = await this.clientRepository.create({
@@ -71,7 +90,8 @@ export class ClientsController {
         whatsapp,
         segment,
         color,
-        deadline_days,
+        deadline_days: deadlineDays,
+        ...document,
         company_id: req.tenantId,
       })
 
@@ -85,6 +105,9 @@ export class ClientsController {
 
       res.status(201).json({ data: client })
     } catch (error: any) {
+      if (error instanceof ClientInputValidationError) {
+        return res.status(400).json({ error: error.message })
+      }
       const status = error.message === 'Email already exists' ? 400 : 500
       const message = error.message === 'Email already exists'
         ? 'Este e-mail ja esta em uso por um usuario ou cliente.'
@@ -139,14 +162,31 @@ export class ClientsController {
   async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params
-      const { name, whatsapp, segment, color, deadline_days } = req.body
+      const body = req.body || {}
+      const { name, whatsapp, segment, color } = body
+      const includesDocument = [
+        'document_type',
+        'document_number',
+        'documentType',
+        'document',
+      ].some(field => Object.prototype.hasOwnProperty.call(body, field))
+      const document = includesDocument
+        ? normalizeClientDocument(
+          preferredBodyValue(body, 'document_type', 'documentType'),
+          preferredBodyValue(body, 'document_number', 'document'),
+        )
+        : {}
+      const deadlineDays = normalizeDeadlineDays(
+        preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
+      )
 
       const client = await this.clientRepository.update(id, {
         name,
         whatsapp,
         segment,
         color,
-        deadline_days,
+        deadline_days: deadlineDays,
+        ...document,
       }, req.tenantId)
 
       if (!client) {
@@ -155,6 +195,9 @@ export class ClientsController {
 
       res.json({ data: client })
     } catch (error: any) {
+      if (error instanceof ClientInputValidationError) {
+        return res.status(400).json({ error: error.message })
+      }
       res.status(500).json({ error: error.message })
     }
   }

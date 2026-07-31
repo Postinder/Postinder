@@ -2,15 +2,17 @@
 
 Consulte [../DEPLOYMENT.md](../DEPLOYMENT.md) para configuracao de Render, Vercel, Supabase e migrations.
 
-O deploy permanece **nao autorizado** ate a conclusao desta checklist ou de uma
-versao equivalente aprovada posteriormente.
+O deploy da hotfix de Clientes permanece **nao autorizado** ate a conclusao
+desta checklist ou de uma versao equivalente aprovada posteriormente. A
+publicacao anterior de backend, frontend e migrations `012` a `015` foi
+concluida em 30/07/2026.
 
 ## Consolidacao e verificacao
 
 1. [x] Concluir os ajustes pontuais de layout definidos na rodada atual.
 2. [ ] Alinhar visualmente `admin`, `manager`, `editor` e `viewer`.
 3. [ ] Remover referencias visuais legadas a `gestor` e `equipe`.
-4. [x] Executar validacao local final, incluindo 139 testes de backend, 33 de
+4. [x] Executar validacao local final, incluindo 151 testes de backend, 40 de
    frontend, builds, bundle scan e `git diff --check`.
 5. [ ] Concluir a verificacao manual da Vercel: nomes, escopos, ambientes,
    commit ativo, deployments historicos e previews, sempre sem abrir valores.
@@ -25,14 +27,15 @@ versao equivalente aprovada posteriormente.
 11. [ ] Se habilitada, configurar a credencial e o modelo somente no backend.
 12. [ ] Criar novo backup logico do banco.
 13. [ ] Executar preflight final somente leitura.
-14. [ ] Reconfirmar o impacto da migration `012`.
+14. [ ] Reconfirmar o impacto da migration `016`.
 15. [ ] Configurar `npm run db:migrate` como Pre-Deploy Command/release step
     bloqueante anterior ao Start Command.
 
 ## Publicacao
 
 16. [ ] Publicar primeiro o backend.
-17. [ ] Confirmar aplicacao de `012` a `015`, ausencia de pendencias e startup.
+17. [ ] Confirmar que o migrador ignorou `001` a `015`, aplicou somente a `016`
+    e iniciou sem pendencias.
 18. [ ] Publicar o frontend.
 19. [ ] Confirmar commits e bundles ativos.
 
@@ -62,6 +65,7 @@ Validacoes da interface consolidada:
 - [ ] Dashboard inicia **Atividade recente** e **Postagens** recolhidas e permite expansao independente.
 - [ ] Portal mantem a aprovacao prioritaria e a **Visao geral** recolhida por padrao, sem perder aba ou filtros ao reabrir.
 - [ ] Identidade da 20Cinco, contraste, foco e cores semanticas permanecem corretos nos temas claro e escuro.
+- [ ] Cliente pode ser criado e editado com ou sem CPF/CNPJ; documento pode ser removido e prazo diferente de 7 dias persiste.
 
 O script `npm run lint` existe, mas ESLint e sua configuracao ainda nao estao
 disponiveis. Nenhum workflow de CI, configuracao versionada da Vercel ou

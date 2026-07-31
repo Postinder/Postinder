@@ -4,10 +4,10 @@
 
 - A auditoria tecnica pre-deploy foi concluida.
 - Os bloqueadores tecnicos C-01, C-02, H-02, H-03 e H-04 foram corrigidos e validados localmente.
-- Backend: 139/139 testes aprovados. Frontend: 33/33 testes aprovados. Os dois builds, o bundle scan e `git diff --check` foram aprovados.
-- As correcoes ainda nao foram publicadas. O frontend ativo em `postinder.vercel.app` e o backend ativo no Render continuam em versoes anteriores.
-- O deploy permanece **nao autorizado**. Nenhuma migration pendente foi aplicada no banco publicado.
-- A rodada atual de ajustes visuais e funcionais esta concluida localmente. O proximo passo e a preparacao operacional final, iniciando pela revisao das pendencias de publicacao; nenhuma etapa operacional foi executada nesta consolidacao.
+- Backend: 151/151 testes aprovados. Frontend: 40/40 testes aprovados. Os dois builds e `git diff --check` foram aprovados nesta hotfix; o bundle scan aprovado na auditoria permanece sem alteracao.
+- As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
+- As migrations `012`, `013`, `014` e `015` foram aplicadas em producao e confirmadas em `schema_migrations`. O banco publicado esta em `015`.
+- A hotfix de CPF/CNPJ e `deadline_days` permanece somente local, sem commit, push ou deploy. Apenas `016_client_documents.sql` esta pendente em producao, e sua publicacao permanece **nao autorizada** nesta etapa.
 
 ## Rodada visual e funcional concluida localmente
 
@@ -20,6 +20,8 @@
 - O cabecalho usa, nesta etapa, uma adaptacao vetorial SVG da marca aprovada visualmente. Ela nao e descrita como o asset oficial fornecido; a troca por asset vetorial oficial ou variante oficial para fundos escuros permanece melhoria futura. O PNG horizontal recebido esta preservado no repositorio, mas nao e o asset renderizado atualmente.
 - A barra lateral administrativa mantem magenta nos dois temas. Cards de Clientes, listagem administrativa de postagens, titulos, metadados, chips e acoes receberam ajustes de contraste no tema escuro.
 - A camada de tokens prepara uma futura parametrizacao por empresa sem implementar multiempresa ou white-label.
+- A hotfix de Clientes persiste CPF/CNPJ opcional em `document_type` e `document_number`, sempre com digitos no banco e mascara apenas na interface. Criacao, edicao, remocao, listagem, detalhe e busca usam o mesmo contrato; a validacao de digitos verificadores ocorre no frontend e no backend. Nao ha unicidade, consulta externa nem preenchimento retroativo.
+- O prazo de aprovacao passou a ser enviado oficialmente como `deadline_days` na criacao, edicao e importacao VCF. O backend aceita temporariamente `deadlineDays` apenas como compatibilidade de entrada e normaliza internamente para `deadline_days`.
 
 ## Visao do produto
 
@@ -90,24 +92,24 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 - Usuarios podem ter o papel alterado entre `admin`, `manager`, `editor` e `viewer`. O administrador principal de demonstracao nao pode ser excluido.
 - E-mails sao normalizados com `trim` e minusculas. Usuarios e Clientes ativos compartilham unicidade global, inclusive entre tabelas.
 - Criacao e reativacao usam transacao, consulta cruzada e `pg_advisory_xact_lock` por e-mail. Indices unicos parciais mantem a defesa dentro de cada tabela.
+- CPF/CNPJ e opcional, nao possui unicidade nesta etapa e e armazenado somente com digitos. Clientes anteriores continuam validos com `document_type` e `document_number` nulos.
 
 ## Banco de dados
 
 `database/migrations` e a unica fonte de verdade do schema. O migrador registra aplicacoes em `schema_migrations`; o startup nao cria nem repara tabelas, colunas, indices ou dados.
 
-Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais vigentes vao de `001` e `003` a `015`, cobrindo portal, ordenacao, execucao, retencao, e-mail, remocao do antigo estado `archived`, metadados de Storage e fundo sonoro versionado.
+Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais vigentes vao de `001` e `003` a `016`, cobrindo portal, ordenacao, execucao, retencao, e-mail, remocao do antigo estado `archived`, metadados de Storage, fundo sonoro versionado e documento opcional de Cliente.
 
-O backend publicado usa PostgreSQL da Supabase. No snapshot auditado:
+O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da publicacao de 30/07/2026 e:
 
-- `001`, a `002` historica e `003` a `011` estavam registradas;
-- `012`, `013`, `014` e `015` permaneciam pendentes;
-- havia 1 Cliente ativo, nenhum Cliente inativo, 0 posts e 0 files;
-- nao foram encontrados orfaos, duplicidades incompatíveis ou FKs invalidas;
-- a parte destrutiva da `012` atingiria zero linhas naquele snapshot.
+- `001`, a `002` historica e `003` a `015` estao registradas;
+- `012`, `013`, `014` e `015` foram aplicadas com sucesso e confirmadas em `schema_migrations`;
+- o banco publicado esta em `015`;
+- apenas `016_client_documents.sql` permanece pendente.
 
 O backup logico foi criado, preservado e validado. A restauracao foi comprovada em stack Supabase local compativel, em transacao unica, usando copia de `roles.sql` com somente a instrucao de `statement_timeout` de `supabase_admin` comentada; schema e dados permaneceram identicos. O backup e restauravel com esse procedimento documentado de compatibilidade, mas nao inclui objetos fisicos do Supabase Storage.
 
-Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Uma segunda execucao foi no-op, e o advisory lock foi adquirido e liberado sem residuos. O Render ainda precisa de um Pre-Deploy Command/release step bloqueante que execute esse comando antes do Start Command. Um novo backup e um novo preflight da `012` sao obrigatorios imediatamente antes do deploy, pois o banco pode mudar.
+Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026 e confirmadas em `schema_migrations`. A `016` foi adicionada depois: integra corretamente a cadeia estrutural e possui cobertura automatizada de contrato SQL, mas nao foi aplicada a banco local ou remoto nesta hotfix. Na futura publicacao, o migrador devera ignorar `001` a `015` e aplicar somente `016_client_documents.sql`.
 
 ## Seguranca e demonstracao
 
@@ -142,14 +144,13 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 
 ## Estado operacional e limitacoes
 
-- As correcoes e a rodada visual foram validadas localmente com 139/139 testes de backend, 33/33 de frontend, builds dos dois projetos, `git diff --check` e bundle scan sem marcadores sensiveis. O frontend inclui testes de branding, legibilidade, cores semanticas, swipe e paineis recolhiveis. Nenhum teste chamou provedor real, e as correcoes nao acessaram banco ou servico remoto.
+- As correcoes, a rodada visual e a hotfix de Clientes foram validadas localmente com 151/151 testes de backend, 40/40 de frontend, builds dos dois projetos e `git diff --check`. O bundle scan da auditoria permanece aprovado sem marcadores sensiveis. O frontend inclui testes de branding, legibilidade, cores semanticas, swipe, paineis recolhiveis e documentos de Cliente. Nenhum teste chamou provedor real, e a hotfix nao acessou banco ou servico remoto.
 - O script `npm run lint` do frontend existe, mas ESLint e sua configuracao nao estao disponiveis. O comando nao foi aprovado. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; por isso, a pendencia e tecnica e nao bloqueante para a publicacao atual. A verificacao administrativa da Vercel continua necessaria para confirmar que nao existe override remoto.
-- Nenhuma migration pendente foi executada em producao e nenhum deploy foi realizado.
-- O dominio ativo ainda serve o bundle anterior a H-04. Ele contem nomes legados `VITE_*`, mas nenhuma credencial funcional foi identificada: codigo vulneravel publicado sem credencial evidenciada e exposicao historica inconclusiva.
+- A publicacao de 30/07/2026 aplicou `012` a `015` e atualizou backend e frontend. A hotfix atual nao teve commit, push, migration ou deploy; somente a `016` permanece pendente.
 - A verificacao manual da Vercel continua pendente para nomes de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews. Eventual segredo historico exigira rotacao ou invalidacao em etapa separada.
-- A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend publicado e anterior as correcoes, e `DEPLOYMENT_MODE`, `ENABLE_DEMO_RESET` e a credencial server-side de IA ainda nao estao configurados.
+- A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend foi publicado em 30/07/2026 e os tres endpoints de health responderam com sucesso.
 - O ambiente publicado atual continua sendo uma demo. Antes da proxima publicacao, Render e frontend devem receber os marcadores de demo descritos no guia de deploy.
-- O backend ativo observado no Render correspondia ao commit abreviado `3552b8e` (`Correcao swipe`). Essa observacao nao prova que nenhum deployment intermediario tenha existido.
+- A observacao anterior do backend no Render foi superada pela publicacao confirmada de 30/07/2026.
 - A versao publicada nao deve receber dados reais sensiveis nem novas credenciais frontend.
 - O bucket continua publico no fluxo atual; bucket privado e signed URLs nao foram implementados.
 - Em producao, cada arquivo ainda passa pela memoria do backend antes do Supabase. Upload direto ou retomavel para o Storage nao foi implementado.
