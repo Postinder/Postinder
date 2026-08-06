@@ -540,11 +540,11 @@ export class SoundtrackRepository {
     }
   }
 
-  async recalculatePostStatus(postId: string) {
+  async recalculatePostStatus(postId: string, options: { includeSoundtrack?: boolean } = {}) {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await this.recalculatePostStatusWithClient(client, postId)
+      await this.recalculatePostStatusWithClient(client, postId, options)
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
@@ -554,7 +554,7 @@ export class SoundtrackRepository {
     }
   }
 
-  async recalculatePostStatusWithClient(client: PoolClient, postId: string) {
+  async recalculatePostStatusWithClient(client: PoolClient, postId: string, options: { includeSoundtrack?: boolean } = {}) {
     const state = await client.query(
       `SELECT
          COUNT(f.id) FILTER (WHERE LOWER(COALESCE(NULLIF(f.status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent')) AS pending_files,
@@ -574,7 +574,9 @@ export class SoundtrackRepository {
       pendingFiles: Number(row.pending_files || 0),
       rejectedFiles: Number(row.rejected_files || 0),
       totalFiles: Number(row.total_files || 0),
-      soundtrackStatus: row.soundtrack_status as SoundtrackApprovalStatus | null,
+      soundtrackStatus: options.includeSoundtrack === false
+        ? null
+        : row.soundtrack_status as SoundtrackApprovalStatus | null,
     })
     if (!status) return
     await client.query(

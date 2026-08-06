@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { createPostSchema } from '../../application/dtos/CreatePostDTO'
+import { ACTIVE_POST_CHANNELS, assertEmailPreviewRequirement, createPostSchema, updatePostSchema } from '../../application/dtos/CreatePostDTO'
 import { CreatePostService } from '../../application/services/CreatePostService'
 import { ListPostsService } from '../../application/services/ListPostsService'
 import { GetPostService } from '../../application/services/GetPostService'
@@ -85,7 +85,29 @@ export class PostsController {
 
   async update(req: AuthRequest, res: Response) {
     if (!await this.ensurePostMutable(req, res)) return
-    const post = await this.postRepository.updateFields(req.params.id, req.body, req.tenantId)
+    const current = await this.postRepository.findById(req.params.id, req.tenantId)
+    if (!current) return res.status(404).json({ error: 'Post not found' })
+    const updates = updatePostSchema.parse(req.body)
+    const unsupportedNewChannels = (updates.channels || []).filter(channel => (
+      !ACTIVE_POST_CHANNELS.includes(channel as any)
+      && !(current.channels || []).includes(channel)
+    ))
+    if (unsupportedNewChannels.length) {
+      return res.status(400).json({ error: 'Unsupported channel' })
+    }
+    try {
+      assertEmailPreviewRequirement({
+        channels: updates.channels ?? current.channels,
+        emailLink: Object.prototype.hasOwnProperty.call(updates, 'emailLink')
+          ? updates.emailLink
+          : Object.prototype.hasOwnProperty.call(updates, 'email_link')
+            ? updates.email_link
+            : current.emailLink,
+      })
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message })
+    }
+    const post = await this.postRepository.updateFields(req.params.id, updates, req.tenantId)
     if (!post) return res.status(404).json({ error: 'Post not found' })
     res.json(post)
   }

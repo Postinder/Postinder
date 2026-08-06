@@ -25,6 +25,7 @@ export interface UpdateClientDTO {
   deadline_days?: number
   document_type?: ClientDocumentType | null
   document_number?: string | null
+  portal_detailed_view?: boolean
 }
 
 export class ClientRepository {
@@ -43,7 +44,7 @@ export class ClientRepository {
          )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
          RETURNING id, name, email, whatsapp, segment, color, deadline_days,
-           document_type, document_number, created_at`,
+           document_type, document_number, portal_detailed_view, created_at`,
         [
           dto.name,
           email,
@@ -88,6 +89,7 @@ export class ClientRepository {
           c.deadline_days,
           c.document_type,
           c.document_number,
+          c.portal_detailed_view,
           c.company_id,
           c.is_active,
           COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
@@ -144,7 +146,7 @@ export class ClientRepository {
     try {
       const result = await query(
         `SELECT id, name, email, whatsapp, segment, color, deadline_days,
-           document_type, document_number, company_id, is_active, last_access_at, created_at, updated_at
+           document_type, document_number, portal_detailed_view, company_id, is_active, last_access_at, created_at, updated_at
          FROM clients WHERE LOWER(email) = $1 AND is_active = true`,
         [normalizeEmail(email)]
       )
@@ -168,6 +170,7 @@ export class ClientRepository {
           c.deadline_days,
           c.document_type,
           c.document_number,
+          c.portal_detailed_view,
           c.company_id,
           c.is_active,
           COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
@@ -253,6 +256,11 @@ export class ClientRepository {
         values.push(dto.document_number ?? null)
         paramIndex++
       }
+      if (dto.portal_detailed_view !== undefined) {
+        updates.push(`portal_detailed_view = $${paramIndex}`)
+        values.push(dto.portal_detailed_view)
+        paramIndex++
+      }
 
       if (updates.length === 0) return this.findById(id, companyId)
 
@@ -267,7 +275,7 @@ export class ClientRepository {
 
       const sql = `UPDATE clients SET ${updates.join(', ')} WHERE ${conditions.join(' AND ')}
         RETURNING id, name, email, whatsapp, segment, color, deadline_days,
-          document_type, document_number`
+          document_type, document_number, portal_detailed_view`
 
       const result = await query(sql, values)
       return result.rows[0] || null
@@ -427,7 +435,7 @@ export class ClientRepository {
              updated_at = NOW()
          WHERE ${conditions.join(' AND ')}
          RETURNING id, name, email, whatsapp, segment, color, deadline_days,
-           document_type, document_number, company_id, is_active, last_access_at, created_at, updated_at`,
+           document_type, document_number, portal_detailed_view, company_id, is_active, last_access_at, created_at, updated_at`,
         params,
       )
 

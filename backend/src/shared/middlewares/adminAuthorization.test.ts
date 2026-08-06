@@ -314,7 +314,7 @@ before(async () => {
   }
 
   patch(ClientsController.prototype, ['create', 'list', 'getById', 'notify', 'activate', 'update', 'deletePermanently', 'delete'])
-  patch(PortalController.prototype, ['createClientLink'])
+  patch(PortalController.prototype, ['createClientLink', 'getClientLink', 'replaceClientLink'])
   ;(UsersRepository.prototype as any).findAll = async () => {
     handlerCalls += 1
     return []

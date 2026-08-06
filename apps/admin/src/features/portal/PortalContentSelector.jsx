@@ -1,6 +1,6 @@
 import { CalendarDays, CheckCircle, RefreshCw } from 'lucide-react'
 import PortalChannelChips from './PortalChannelChips'
-import { formatDate, isCorrectionPost, isPendingFile } from './portalStatus'
+import { formatDate, hasSafeEmailPreview, isCorrectionPost, isPendingFile } from './portalStatus'
 
 function scheduledDate(content) {
   return content?.scheduledDate || content?.scheduled_date
@@ -8,7 +8,7 @@ function scheduledDate(content) {
 
 function ContentOption({ content, active, interactive, onSelect }) {
   const pendingCount = (content.files || []).filter(isPendingFile).length
-    + ((content.soundtrack?.approvalStatus || content.soundtrack?.approval_status) === 'pending' ? 1 : 0)
+    + (!(content.files || []).length && hasSafeEmailPreview(content) ? 1 : 0)
   const correction = isCorrectionPost(content)
   const sharedClassName = `w-full min-w-[16rem] rounded-xl border p-3 text-left transition xl:min-w-0 xl:px-3 xl:py-2.5 ${
     active

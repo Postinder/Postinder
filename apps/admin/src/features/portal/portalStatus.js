@@ -1,3 +1,5 @@
+import { normalizeEmailPreviewUrl } from '../../utils/emailPreview.js'
+
 export const CLIENT_VISIBLE_POST_STATUSES = new Set([
   'sent',
   'pending_approval',
@@ -38,6 +40,23 @@ export function getPostStatus(post) {
 export function isPendingFile(file) {
   const status = String(file?.status || 'pending').toLowerCase()
   return ['pending', 'pending_approval', 'sent'].includes(status)
+}
+
+export function hasSafeEmailPreview(post) {
+  return Boolean(normalizeEmailPreviewUrl(post?.emailLink || post?.email_link))
+}
+
+export function isPendingEmailPreviewPost(post) {
+  return !(post?.files || []).length
+    && hasSafeEmailPreview(post)
+    && ['sent', 'pending_approval'].includes(String(post?.status || '').toLowerCase())
+}
+
+export function getPendingPortalProjects(posts = []) {
+  return posts.filter(post => (
+    (post.files || []).some(isPendingFile)
+    || isPendingEmailPreviewPost(post)
+  ))
 }
 
 export function isCorrectionPost(post) {

@@ -513,6 +513,10 @@ export class PostRepository implements IPostRepository {
            updated_at = NOW()
        WHERE ${conditions.join(' AND ')}
          AND status IN ('draft', 'ready', 'rejected')
+         AND (
+           EXISTS (SELECT 1 FROM files f WHERE f.post_id = posts.id)
+           OR (channels = ARRAY['E-mail Marketing']::text[] AND email_link IS NOT NULL)
+         )
        RETURNING id`,
       params,
     )
@@ -656,6 +660,8 @@ export class PostRepository implements IPostRepository {
       'id = ANY($1::uuid[])',
       'deleted_at IS NULL',
       "status IN ('draft', 'ready', 'rejected')",
+      `(EXISTS (SELECT 1 FROM files f WHERE f.post_id = posts.id)
+        OR (channels = ARRAY['E-mail Marketing']::text[] AND email_link IS NOT NULL))`,
     ]
     if (companyId) {
       params.push(companyId)

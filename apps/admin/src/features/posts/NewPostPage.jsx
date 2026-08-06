@@ -11,10 +11,9 @@ import Input, { Textarea, Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
-import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
-import { getMediaKind } from '../../components/media/MediaPreview'
+import ChannelIcon from '../../components/posts/ChannelIcon'
 import { prepareUploadFiles } from '../../utils/uploadValidation'
-import { emptySoundtrackDraft, validateSoundtrackDraft } from '../../utils/soundtrack'
+import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import toast from 'react-hot-toast'
 
 function Section({ number, title, description, children }) {
@@ -48,8 +47,6 @@ export default function NewPostPage() {
   const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
   const [loading, setLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
-  const [soundtrack, setSoundtrack] = useState(emptySoundtrackDraft)
-  const [soundtrackUploadProgress, setSoundtrackUploadProgress] = useState(null)
   const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft' })
 
   useEffect(() => {
@@ -57,6 +54,8 @@ export default function NewPostPage() {
   }, [])
 
   const isEmail = Boolean(selChannels['E-mail Marketing'])
+  const isEmailOnly = isEmail && Object.keys(selChannels).length === 1
+  const emailPreviewUrl = normalizeEmailPreviewUrl(emailLink)
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
 
   function toggleChannel(channel) {
@@ -73,8 +72,6 @@ export default function NewPostPage() {
       }
       return
     }
-
-    if (selChannels['E-mail Marketing']) return
 
     const nextChannels = { ...selChannels }
     if (nextChannels[channel]) {
@@ -120,17 +117,13 @@ export default function NewPostPage() {
       toast.error('Preencha cliente, título e ao menos um canal.')
       return
     }
-    if (isEmail && !emailLink) {
-      toast.error('Adicione o link do e-mail marketing.')
+    const normalizedEmailLink = emailPreviewUrl
+    if (isEmail && !normalizedEmailLink) {
+      toast.error('Informe um Link de pre-visualizacao do e-mail valido, iniciado por http:// ou https://.')
       return
     }
-    if (!isEmail && !files.length) {
+    if (!isEmailOnly && !files.length) {
       toast.error('Adicione ao menos um arquivo.')
-      return
-    }
-    const soundtrackError = validateSoundtrackDraft(soundtrack, files.filter(file => getMediaKind(file) === 'video'))
-    if (soundtrackError) {
-      toast.error(soundtrackError)
       return
     }
 
@@ -150,13 +143,11 @@ export default function NewPostPage() {
         caption: form.caption,
         scheduledDate: form.scheduledDate || null,
         funnelTag: funnelTag || null,
-        emailLink: isEmail ? emailLink : null,
+        emailLink: isEmail ? normalizedEmailLink : null,
         clientId: form.clientId,
         createdById: user?.id,
-      }, isEmail ? [] : files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
+      }, files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
         onUploadProgress: setUploadProgress,
-        soundtrack,
-        onSoundtrackUploadProgress: setSoundtrackUploadProgress,
       })
 
       toast.success(status === 'ready' ? 'Postagem salva como pronta para envio.' : 'Rascunho salvo.')
@@ -170,7 +161,6 @@ export default function NewPostPage() {
     } finally {
       setLoading(false)
       setUploadProgress(null)
-      setSoundtrackUploadProgress(null)
     }
   }
 
@@ -182,8 +172,6 @@ export default function NewPostPage() {
     setFunnelTag('')
     setEmailLink('')
     setUploadProgress(null)
-    setSoundtrack(emptySoundtrackDraft())
-    setSoundtrackUploadProgress(null)
   }
 
   return (
@@ -250,15 +238,15 @@ export default function NewPostPage() {
                   : 'border-neutral-200 text-neutral-600 hover:border-mag-300 dark:border-neutral-700 dark:text-neutral-400'
               }`}
             >
-              <span>{data.icon}</span>
+              <ChannelIcon channel={channel} />
               {channel}
             </button>
           ))}
         </div>
 
-        {Object.keys(selChannels).filter(channel => !CHANNELS[channel]?.exclusive).map(channel => (
+        {Object.keys(selChannels).filter(channel => CHANNELS[channel]?.formats?.length).map(channel => (
           <div key={channel} className="mb-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-            <span className="mb-2 block text-xs font-semibold text-mag-500">{CHANNELS[channel]?.icon} {channel} - Formato</span>
+            <span className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-mag-500"><ChannelIcon channel={channel} size={14} /> {channel} - Formato</span>
             <div className="flex flex-wrap gap-1.5">
               {(CHANNELS[channel]?.formats || []).map(format => (
                 <button
@@ -281,24 +269,26 @@ export default function NewPostPage() {
       {isEmail ? (
         <Card className="border-blue-200 bg-blue-50 p-5 dark:border-blue-800 dark:bg-blue-950/30">
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
-            Link do E-mail Marketing
+            Link de pré-visualização do e-mail
           </label>
           <div className="flex gap-2">
             <input
               value={emailLink}
               onChange={event => setEmailLink(event.target.value)}
+              type="url"
               placeholder="https://backend.leadconnectorhq.com/..."
               className="flex-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-blue-700 dark:bg-neutral-800"
             />
-            {emailLink && (
-              <button onClick={() => window.open(emailLink, '_blank')} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">
+            {emailPreviewUrl && (
+              <button onClick={() => window.open(emailPreviewUrl, '_blank', 'noopener,noreferrer')} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">
                 Preview
               </button>
             )}
           </div>
         </Card>
-      ) : (
-        <Section number="4" title="Arquivos" description="Anexe as pecas que o cliente precisa aprovar.">
+      ) : null}
+
+        <Section number="4" title="Arquivos" description={isEmailOnly ? 'Anexos opcionais para complementar a pré-visualização do e-mail.' : 'Anexe as pecas que o cliente precisa aprovar.'}>
           <div
             onDrop={handleDrop}
             onDragOver={event => event.preventDefault()}
@@ -342,17 +332,6 @@ export default function NewPostPage() {
               </div>
             </div>
           ) : null}
-        </Section>
-      )}
-
-      <Section number={isEmail ? '4' : '5'} title="Fundo sonoro" description="Configure a trilha sem inclui-la na ordenacao dos arquivos da publicacao.">
-        <SoundtrackEditor value={soundtrack} onChange={setSoundtrack} attachments={files} />
-        {soundtrackUploadProgress ? (
-          <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs font-bold text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300">
-            <div className="flex justify-between gap-3"><span className="truncate">Enviando fundo sonoro: {soundtrackUploadProgress.fileName}</span><span>{soundtrackUploadProgress.percent}%</span></div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-violet-100 dark:bg-violet-900"><div className="h-full bg-violet-600" style={{ width: `${soundtrackUploadProgress.percent}%` }} /></div>
-          </div>
-        ) : null}
       </Section>
 
       <div className="sticky bottom-0 z-10 -mx-4 border-t border-neutral-200 bg-neutral-100/95 px-4 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 md:-mx-6 md:px-6">

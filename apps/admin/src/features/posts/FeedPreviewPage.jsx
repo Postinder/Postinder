@@ -10,8 +10,6 @@ import { Select } from '../../components/ui/Input'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
-import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
-import { soundtrackDraftFromPost } from '../../utils/soundtrack'
 import toast from 'react-hot-toast'
 
 const STATUS_DOT = {
@@ -24,7 +22,7 @@ const STATUS_DOT = {
 }
 
 const STATUS_FILTERS = [
-  { value: '', label: 'Todos os estados' },
+  { value: '', label: 'Todos status' },
   { value: 'approved', label: 'Aprovado' },
   { value: 'rejected', label: 'Recusado' },
   { value: 'pending_approval', label: 'Aguardando' },
@@ -184,15 +182,6 @@ function PostDetailsModal({ post, client, open, onClose }) {
             </div>
           </div>
         )}
-
-        {post.soundtrack ? (
-          <SoundtrackEditor
-            value={soundtrackDraftFromPost(post)}
-            attachments={files}
-            onChange={() => {}}
-            readOnly
-          />
-        ) : null}
 
         {files.length ? (
           <div>
@@ -390,7 +379,7 @@ export default function FeedPreviewPage() {
     })
   const activeClient = clients.find(c => c.id === filter)
   const selectedInactiveClient = activeClient && !isClientActive(activeClient)
-  const activeStatusLabel = STATUS_FILTERS.find(item => item.value === statusFilter)?.label || 'Todos os estados'
+  const activeStatusLabel = STATUS_FILTERS.find(item => item.value === statusFilter)?.label || 'Todos status'
   const activeScopeLabel = FEED_SCOPE_OPTIONS.find(item => item.value === feedScope)?.label || 'Clientes ativos'
   const selectedClient = selectedPost ? clients.find(c => c.id === getPostClientId(selectedPost)) : null
 

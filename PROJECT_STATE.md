@@ -4,11 +4,23 @@
 
 - A auditoria tecnica pre-deploy foi concluida.
 - Os bloqueadores tecnicos C-01, C-02, H-02, H-03 e H-04 foram corrigidos e validados localmente.
-- Backend: 151/151 testes aprovados. Frontend: 40/40 testes aprovados. Os dois builds e `git diff --check` foram aprovados nesta hotfix; o bundle scan aprovado na auditoria permanece sem alteracao.
+- O pacote local pos-branding possui 170 testes de backend, 52 testes frontend unitarios e 22 testes React reais aprovados. Os dois builds tambem foram aprovados; a validacao final do diff e repetida antes da entrega.
 - As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; em relacao ao codigo local atual, a `017_platform_branding.sql` permanece pendente para uma futura publicacao.
+- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; em relacao ao codigo local atual, `017_platform_branding.sql` e `018_client_portal_preferences_and_recoverable_links.sql` permanecem pendentes para uma futura publicacao.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
+
+## Rodada local para novos testes com Clientes
+
+- O portal usa por padrao uma fila guiada: data prevista crescente, depois criacao e ID; itens sem data ficam por ultimo. No modo simplificado somente a primeira postagem pendente pode ser revisada, e a decisao faz a fila avancar ate **Tudo em dia**.
+- `clients.portal_detailed_view` permite restaurar por Cliente o seletor de postagens e a visao geral. O default explicito e `false`, inclusive para Clientes antigos, e a mesma configuracao vale no portal por token e no portal autenticado sem exigir novo link.
+- O link principal do portal pode ser consultado, copiado e aberto novamente. Tokens novos continuam validados pelo hash e recebem copia cifrada AES-256-GCM somente para recuperacao administrativa autorizada. Criacao nao substitui link ativo; substituicao e explicita, confirmada e transacional. Links antigos baseados apenas em hash continuam validos, embora nao recuperaveis.
+- E-mail Marketing exige preview `http://` ou `https://`. Quando for o unico canal, anexos sao opcionais e a decisao ocorre pela postagem; combinacoes com outros canais mantem a exigencia normal de arquivos. O portal abre a previa em nova aba, sem iframe nem fetch backend.
+- A criacao de Cliente deixou de exibir, validar ou enviar CPF/CNPJ; leitura e edicao de registros antigos continuam compativeis e nenhuma coluna ou dado historico foi removido.
+- Canais usam icones vetoriais; `3A3R` nao e oferecido nem aceito em novas postagens, mas valores historicos podem ser preservados em edicao. Fundo sonoro ficou oculto nos fluxos operacionais, mantendo tabelas, services e historico dormentes.
+- O viewer preserva swipe e botoes de decisao e adiciona anterior/proximo entre anexos pendentes, com indicador, estados desabilitados e bloqueio de propagacao. A Previa do Feed usa o texto **Todos status**.
+- Instagram oferece Card, Carrossel, Stories, Reels e Foto para novas selecoes; valores historicos continuam legiveis. Drag-and-drop foi adiado porque nao ha infraestrutura leve reutilizavel; as setas de ordenacao e `sort_order` permanecem.
+- A migration aditiva `018_client_portal_preferences_and_recoverable_links.sql` foi aplicada em PostgreSQL 18.4 local temporario pelo migrador oficial e a segunda execucao foi no-op. Nenhuma publicacao ou acesso a producao foi realizado.
 
 ## Correcao local de branding ainda nao publicada
 
@@ -25,7 +37,7 @@
 
 - A Previa do Feed reconhece videos pelo mecanismo compartilhado de midia e usa `MediaPreview`, sem enviar URL de video para `<img>`. Imagens preservam o comportamento anterior, a primeira midia continua seguindo a ordenacao oficial dos arquivos e nao houve alteracao de Storage, API ou backend para gerar thumbnails.
 - No Dashboard, **Atividade recente** e **Postagens** iniciam recolhidas, expandem de forma independente e mantem seus conteudos montados. O estado e local a cada carregamento, e os controles expõem `aria-expanded`, `aria-controls` e regioes associadas.
-- No portal do Cliente, a area principal de aprovacao permanece prioritaria. **Visao geral / Acompanhamento do conteudo** inicia recolhida; metricas, abas e conteudos complementares permanecem montados com `hidden`, preservando aba ativa, filtros e dados ao recolher e reabrir. O `localStorage` existente continua reservado ao desfazer da ultima decisao.
+- No portal do Cliente, a area principal de aprovacao permanece prioritaria. No modo detalhado, **Visao geral / Acompanhamento do conteudo** inicia recolhida e preserva aba ativa, filtros e dados; no modo simplificado default, esse conjunto periferico fica oculto. O `localStorage` existente continua reservado ao desfazer da ultima decisao de arquivo.
 - Imagens e videos compartilham o fluxo de swipe: esquerda solicita ajuste e direita aprova. O video reconhece a intencao horizontal antes da captura, preserva rolagem vertical, protege clique residual, controles nativos e fullscreen padrao/WebKit, e nao e remontado durante o gesto. Os botoes explicitos continuam disponiveis.
 - A tela principal do portal ganhou coluna lateral responsiva mais estreita, cards compactos, cabecalho e resumo centralizados e mais espaco para a midia principal. `object-contain`, videos verticais, breakpoints e experiencia movel foram preservados.
 - O portal do Cliente adotou a identidade visual da 20Cinco em temas claro e escuro, com tokens restritos ao portal, magenta em navegacao, selecao, foco e destaques nao semanticos, e contraste reforcado. Verde, vermelho e amarelo/laranja continuam reservados a aprovacao, ajuste/recusa e pendencia.
@@ -68,10 +80,10 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 - A area administrativa concentra dashboard, Clientes, usuarios, postagens, aprovacoes, feed, insights, reset e configuracoes disponiveis.
 - O portal por token esta em `/portal/:token`; o portal para Cliente autenticado esta em `/aprovar`.
-- Tokens de portal sao aleatorios, armazenados como hash, expiram, podem ser regenerados e sao revogados quando o Cliente e desativado.
+- Tokens de portal sao aleatorios, validados por hash, expiram, podem ser recuperados quando possuem ciphertext e sao substituidos somente por acao explicita; tambem sao revogados quando o Cliente e desativado.
 - Identidades administrativas, identidades de Cliente, refresh tokens e tokens privados de portal sao contextos distintos. Access tokens administrativos exigem `type: "admin"`; tokens de Cliente exigem `type: "client"` em seus fluxos proprios.
 - Todas as rotas administrativas passam pela cadeia central de autenticacao, validacao do contexto administrativo e autorizacao por capacidade. Tokens ambiguos, mistos, legados ou de refresh usados como access token sao rejeitados antes dos controllers.
-- A autorizacao administrativa e tipada, nega por padrao e possui 37 capacidades aplicadas explicitamente a 45 rotas. Uma rota administrativa sem politica declarada recebe `403`.
+- A autorizacao administrativa e tipada, nega por padrao e possui 37 capacidades aplicadas explicitamente a 48 rotas. Uma rota administrativa sem politica declarada recebe `403`.
 - Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`: admin possui todas as capacidades; manager opera sem administrar usuarios, executar exclusoes destrutivas ou reset; editor atua no fluxo editorial sem mutacoes de Clientes, execucao, exclusoes, usuarios ou reset; viewer possui somente leituras aprovadas.
 - Criacao e alteracao de usuarios ou papeis exigem capacidades exclusivas de admin. Perfis desconhecidos, legados ou identidades nao administrativas recebem zero capacidades.
 - O frontend ainda possui referencias visuais legadas a `gestor` e `equipe`; elas podem exibir acoes que o backend recusara, mas nao contornam a barreira autoritativa.
@@ -91,11 +103,11 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 ## Fundo sonoro
 
-- Criacao e edicao administrativas possuem uma secao separada dos anexos, com as modalidades sem fundo, incorporado a um video, arquivo de audio enviado e referencia externa. A trilha nunca participa de `files.sort_order`.
+- A infraestrutura de fundo sonoro preserva as modalidades sem fundo, incorporado a um video, arquivo de audio enviado e referencia externa, mas seus controles estao ocultos na criacao, edicao e aprovacao desta rodada. A trilha nunca participa de `files.sort_order`.
 - Postagens anteriores a esta capacidade carregam normalmente como `none`, sem migracao retroativa de conteudo ou historico.
 - O modo incorporado vincula um video ativo da propria postagem. O modo enviado aceita um unico audio ativo e metadados de faixa, origem, ponto inicial e observacoes. Referencias externas exibem somente seus dados e link quando nao ha audio local.
-- No portal por token e no portal autenticado, a decisao sobre o fundo sonoro e exclusiva do Cliente. `pending` e `adjustment_requested` bloqueiam a aprovacao integral; `approved` satisfaz o requisito. Controles de reproducao e mute nao alteram status nem registram decisao.
-- A trilha enviada continua tocando durante a navegacao entre cards da mesma postagem e e interrompida ao trocar de postagem ou sair da tela. Som original do video e fundo sonoro possuem controles distintos; audio incorporado usa o proprio video, sem player ficticio separado.
+- Enquanto o recurso esta dormente, decisoes de arquivo realizadas no portal recalculam a postagem sem exigir estado da trilha. O estado e o historico do fundo sonoro nao sao apagados nem convertidos.
+- Os players e controles de fundo sonoro nao sao montados nesta rodada. O som original e os controles nativos dos videos permanecem intactos.
 - Cada alteracao material gera nova revisao pendente. Versoes e decisoes anteriores permanecem nas tabelas de auditoria, e `activity_events` registra configuracao, aprovacao, ajuste, substituicao e reenvio. Postagens `executed` permanecem somente leitura.
 
 ## Clientes, usuarios e e-mail
@@ -105,7 +117,7 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 - Usuarios podem ter o papel alterado entre `admin`, `manager`, `editor` e `viewer`. O administrador principal de demonstracao nao pode ser excluido.
 - E-mails sao normalizados com `trim` e minusculas. Usuarios e Clientes ativos compartilham unicidade global, inclusive entre tabelas.
 - Criacao e reativacao usam transacao, consulta cruzada e `pg_advisory_xact_lock` por e-mail. Indices unicos parciais mantem a defesa dentro de cada tabela.
-- CPF/CNPJ e opcional, nao possui unicidade nesta etapa e e armazenado somente com digitos. Clientes anteriores continuam validos com `document_type` e `document_number` nulos.
+- CPF/CNPJ historico nao possui unicidade e continua armazenado somente com digitos. Novos cadastros nao coletam documento; leitura e edicao de Clientes anteriores permanecem compativeis, inclusive com valores nulos.
 
 ## Banco de dados
 

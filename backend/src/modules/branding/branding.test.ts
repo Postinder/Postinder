@@ -126,7 +126,8 @@ function record(overrides: Record<string, unknown> = {}) {
 test('the official migrator discovers the additive branding migration without touching business records', async () => {
   const { listStructuralMigrationFiles } = await import('../../shared/database/migrationCatalog')
   const files = await listStructuralMigrationFiles()
-  assert.equal(files[files.length - 1], '017_platform_branding.sql')
+  assert.ok(files.includes('017_platform_branding.sql'))
+  assert.equal(files[files.length - 1], '018_client_portal_preferences_and_recoverable_links.sql')
   const sql = readFileSync(path.resolve(process.cwd(), '..', 'database', 'migrations', '017_platform_branding.sql'), 'utf8')
   assert.match(sql, /CREATE TABLE IF NOT EXISTS platform_branding/)
   assert.match(sql, /logo_bucket TEXT/)

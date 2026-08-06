@@ -4,6 +4,8 @@ import {
   CalendarDays,
   CheckCircle,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   ExternalLink,
   FileText,
@@ -11,6 +13,7 @@ import {
   History,
   LayoutGrid,
   Loader2,
+  Mail,
   MessageSquare,
   Send,
   XCircle,
@@ -18,28 +21,27 @@ import {
 import toast from 'react-hot-toast'
 import {
   approvePortalFile,
+  approvePortalPost,
   fetchPortal,
   rejectPortalFile,
+  rejectPortalPost,
   resetPortalFile,
   sendPortalFeedback,
   updatePortalFileFeedback,
-  approvePortalSoundtrack,
-  adjustPortalSoundtrack,
-  resetPortalSoundtrack,
 } from '../../services/portal.service'
 import {
   approveAuthenticatedPortalFile,
+  approveAuthenticatedPortalPost,
   fetchAuthenticatedPortal,
   rejectAuthenticatedPortalFile,
+  rejectAuthenticatedPortalPost,
   resetAuthenticatedPortalFile,
   sendAuthenticatedPortalFeedback,
   updateAuthenticatedPortalFileFeedback,
-  approveAuthenticatedPortalSoundtrack,
-  adjustAuthenticatedPortalSoundtrack,
-  resetAuthenticatedPortalSoundtrack,
 } from '../../services/clientPortal.service'
 import { useAuthStore } from '../../store/authStore'
 import { REJECTION_TAGS } from '../../utils/constants'
+import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
 import { PORTAL_OVERVIEW_INITIAL_STATE, togglePortalOverview } from '../../utils/collapsiblePanels'
@@ -50,11 +52,13 @@ import PortalMetricsBar from './PortalMetricsBar'
 import PortalReviewActions from './PortalReviewActions'
 import PortalReviewHeader from './PortalReviewHeader'
 import PortalStatusBadge from './PortalStatusBadge'
-import SoundtrackReviewCard from './SoundtrackReviewCard'
 import {
   formatDate,
+  getPendingPortalProjects,
   getPostDate,
   getPostStatus,
+  hasSafeEmailPreview,
+  isPendingEmailPreviewPost,
   isPendingFile,
 } from './portalStatus'
 import {
@@ -84,7 +88,11 @@ function FilePreview({ file }) {
   return <MediaPreview file={file} src={url} className="h-40 w-full overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800" mediaClassName="h-full w-full object-contain" />
 }
 
-function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
+function getSafeEmailPreviewUrl(post) {
+  return normalizeEmailPreviewUrl(post?.emailLink || post?.email_link)
+}
+
+function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, canPrevious, canNext, busy }) {
   const [dragX, setDragX] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [descriptionExpanded, setDescriptionExpanded] = useState(false)
@@ -278,9 +286,44 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
           ) : (
             <div className="flex h-[min(500px,56vh)] items-center justify-center text-neutral-400 dark:text-neutral-300/80 md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]">Arquivo indisponível</div>
           )}
+          {canPrevious || canNext ? (
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 flex -translate-y-1/2 justify-between px-2 sm:px-4">
+              <button
+                type="button"
+                onClick={event => { event.stopPropagation(); onPrevious() }}
+                onPointerDown={event => event.stopPropagation()}
+                disabled={!canPrevious || busy}
+                aria-label="Anexo anterior"
+                className="pointer-events-auto rounded-full border border-white/70 bg-neutral-950/65 p-2.5 text-white shadow-lg backdrop-blur transition hover:bg-neutral-950/80 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <ChevronLeft size={22} />
+              </button>
+              <button
+                type="button"
+                onClick={event => { event.stopPropagation(); onNext() }}
+                onPointerDown={event => event.stopPropagation()}
+                disabled={!canNext || busy}
+                aria-label="Próximo anexo"
+                className="pointer-events-auto rounded-full border border-white/70 bg-neutral-950/65 p-2.5 text-white shadow-lg backdrop-blur transition hover:bg-neutral-950/80 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <ChevronRight size={22} />
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="px-3 py-2.5 sm:px-4 sm:py-3">
+          {getSafeEmailPreviewUrl(post) ? (
+            <a
+              href={getSafeEmailPreviewUrl(post)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onPointerDown={event => event.stopPropagation()}
+              className="mb-2 inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"
+            >
+              <ExternalLink size={15} /> Abrir prévia do e-mail
+            </a>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex min-w-0 items-center gap-2 md:max-w-[14rem] xl:max-w-xs">
               <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-300/80">Arquivo</span>
@@ -337,13 +380,39 @@ function SwipeReviewCard({ post, file, onApprove, onReject, busy }) {
   )
 }
 
-function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onApproveFile, onRejectFile, onApproveSoundtrack, onAdjustSoundtrack, onUndo, canUndoLastAction, busy }) {
-  const selectedProject = projects.find(post => post.id === selectedProjectId) || projects[0]
+function EmailPreviewReviewCard({ post, onApprove, onReject, busy }) {
+  const previewUrl = getSafeEmailPreviewUrl(post)
+  return (
+    <div className="mx-auto max-w-2xl rounded-2xl border border-blue-200 bg-white p-6 text-center shadow-xl dark:border-blue-900 dark:bg-neutral-900">
+      <Mail size={42} className="mx-auto text-blue-600" aria-hidden="true" />
+      <h3 className="mt-4 text-xl font-black text-neutral-950 dark:text-white">Prévia do E-mail Marketing</h3>
+      <p className="mt-2 text-sm leading-6 text-neutral-600 dark:text-neutral-300">Abra a versão publicada do e-mail em uma nova aba antes de decidir.</p>
+      <a
+        href={previewUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-5 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+      >
+        <ExternalLink size={16} /> Abrir prévia do e-mail
+      </a>
+      {post?.description ? <p className="mx-auto mt-5 max-w-xl whitespace-pre-wrap text-left text-sm leading-6 text-neutral-600 dark:text-neutral-300">{post.description}</p> : null}
+      <PortalReviewActions fileName="prévia do e-mail" onReject={onReject} onApprove={onApprove} busy={busy} className="mt-6 justify-center" />
+    </div>
+  )
+}
+
+function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onApproveFile, onRejectFile, onApprovePost, onRejectPost, onUndo, canUndoLastAction, detailedView, busy }) {
+  const selectedProject = detailedView
+    ? projects.find(post => post.id === selectedProjectId) || projects[0]
+    : projects[0]
   const pendingFiles = selectedProject ? (selectedProject.files || []).filter(isPendingFile) : []
-  const currentFile = pendingFiles[0]
-  const pendingSoundtrack = selectedProject?.soundtrack && (selectedProject.soundtrack.approvalStatus || selectedProject.soundtrack.approval_status) === 'pending'
-    ? selectedProject.soundtrack
-    : null
+  const [activeFileId, setActiveFileId] = useState('')
+  const pendingFileIndex = Math.max(pendingFiles.findIndex(file => file.id === activeFileId), 0)
+  const currentFile = pendingFiles[pendingFileIndex]
+  const emailPreviewOnly = Boolean(
+    selectedProject
+    && isPendingEmailPreviewPost(selectedProject),
+  )
   const [rejectOpen, setRejectOpen] = useState(false)
   const [comment, setComment] = useState('')
   const [selectedTags, setSelectedTags] = useState([])
@@ -353,12 +422,23 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
     if (!selectedProject && projects[0]) onSelectProject(projects[0].id)
   }, [selectedProject, projects, onSelectProject])
 
+  useEffect(() => {
+    if (!pendingFiles.length) {
+      setActiveFileId('')
+      return
+    }
+    if (!pendingFiles.some(file => file.id === activeFileId)) setActiveFileId(pendingFiles[0].id)
+  }, [selectedProject?.id, pendingFiles, activeFileId])
+
   function submitReject() {
     if (!comment.trim()) {
       toast.error('Escreva o ajuste solicitado para este item.')
       return
     }
-    onRejectFile(selectedProject.id, currentFile.id, comment.trim(), selectedTags).then(() => {
+    const decision = currentFile
+      ? onRejectFile(selectedProject.id, currentFile.id, comment.trim(), selectedTags)
+      : onRejectPost(selectedProject.id, comment.trim())
+    decision.then(() => {
       setComment('')
       setSelectedTags([])
       setRejectOpen(false)
@@ -375,7 +455,7 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
     return (
       <div className="mx-auto max-w-2xl rounded-2xl border border-green-200 bg-green-50 p-7 text-center shadow-sm dark:border-green-900 dark:bg-green-950/30 sm:p-10">
         <CheckCircle size={42} className="mx-auto text-green-600 dark:text-green-400" aria-hidden="true" />
-        <h2 className="mt-4 text-xl font-black text-green-900 dark:text-green-100">Tudo revisado por enquanto</h2>
+        <h2 className="mt-4 text-xl font-black text-green-900 dark:text-green-100">Tudo em dia</h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-green-800/80 dark:text-green-300/80">
           Não há conteúdos aguardando sua decisão. Novos itens aparecerão aqui quando forem enviados para aprovação.
         </p>
@@ -394,24 +474,26 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
     )
   }
 
-  const currentFileIndex = currentFile
+  const currentFilePosition = currentFile
     ? (selectedProject.files || []).findIndex(file => file.id === currentFile.id)
     : -1
 
   return (
     <div className="min-w-0 space-y-3 xl:flex xl:items-start xl:gap-4 xl:space-y-0">
-      <PortalContentSelector
-        contents={projects}
-        totalPendingItems={pendingItemsCount}
-        selectedContentId={selectedProject.id}
-        onSelectContent={onSelectProject}
-      />
+      {detailedView ? (
+        <PortalContentSelector
+          contents={projects}
+          totalPendingItems={pendingItemsCount}
+          selectedContentId={selectedProject.id}
+          onSelectContent={onSelectProject}
+        />
+      ) : null}
 
       <section className="min-w-0 flex-1">
         <PortalReviewHeader
           content={selectedProject}
-          currentPosition={currentFile ? Math.max(currentFileIndex + 1, 1) : (selectedProject.files || []).length + 1}
-          totalFiles={(selectedProject.files || []).length + (selectedProject.soundtrack ? 1 : 0)}
+          currentPosition={currentFile ? currentFilePosition + 1 : 1}
+          totalFiles={Math.max((selectedProject.files || []).length, emailPreviewOnly ? 1 : 0)}
           onUndo={onUndo}
           canUndo={canUndoLastAction}
           busy={busy}
@@ -424,24 +506,25 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             busy={busy}
             onApprove={() => onApproveFile(selectedProject.id, currentFile.id)}
             onReject={() => setRejectOpen(true)}
+            onPrevious={() => setActiveFileId(pendingFiles[pendingFileIndex - 1]?.id || currentFile.id)}
+            onNext={() => setActiveFileId(pendingFiles[pendingFileIndex + 1]?.id || currentFile.id)}
+            canPrevious={pendingFileIndex > 0}
+            canNext={pendingFileIndex < pendingFiles.length - 1}
           />
-        ) : !pendingSoundtrack ? (
+        ) : emailPreviewOnly ? (
+          <EmailPreviewReviewCard
+            post={selectedProject}
+            busy={busy}
+            onApprove={() => onApprovePost(selectedProject.id)}
+            onReject={() => setRejectOpen(true)}
+          />
+        ) : (
           <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center dark:border-green-800 dark:bg-green-950/30">
             <CheckCircle size={38} className="mx-auto text-green-600" />
             <h3 className="mt-3 text-lg font-black text-green-800 dark:text-green-200">Conteúdo revisado</h3>
             <p className="mt-1 text-sm text-green-700/80 dark:text-green-300/80">Todos os arquivos deste conteúdo foram analisados.</p>
           </div>
-        ) : null}
-
-        {pendingSoundtrack ? (
-          <SoundtrackReviewCard
-            post={selectedProject}
-            soundtrack={pendingSoundtrack}
-            busy={busy}
-            onApprove={() => onApproveSoundtrack(selectedProject.id)}
-            onAdjust={comment => onAdjustSoundtrack(selectedProject.id, comment)}
-          />
-        ) : null}
+        )}
 
         {rejectOpen ? (
           <PortalDialog
@@ -541,23 +624,21 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
   const posts = payload?.posts || []
   const client = payload?.client
+  const detailedView = client?.portalDetailedView === true || client?.portal_detailed_view === true
   const lastActionKey = useMemo(
     () => `postinder.portal.lastAction.${isAuthenticatedMode ? client?.id || 'auth' : token || 'token'}`,
     [client?.id, isAuthenticatedMode, token],
   )
 
   const pendingProjects = useMemo(
-    () => posts.filter(post => (
-      (post.files || []).some(isPendingFile)
-      || (post.soundtrack && (post.soundtrack.approvalStatus || post.soundtrack.approval_status) === 'pending')
-    )),
+    () => getPendingPortalProjects(posts),
     [posts],
   )
 
   const pendingItemsCount = useMemo(
     () => pendingProjects.reduce((total, post) => total
       + (post.files || []).filter(isPendingFile).length
-      + ((post.soundtrack?.approvalStatus || post.soundtrack?.approval_status) === 'pending' ? 1 : 0), 0),
+      + (!(post.files || []).length && hasSafeEmailPreview(post) ? 1 : 0), 0),
     [pendingProjects],
   )
 
@@ -567,10 +648,10 @@ export default function ClientPortalPage({ mode = 'token' }) {
       return
     }
 
-    if (!selectedProjectId || !pendingProjects.some(post => post.id === selectedProjectId)) {
+    if (!detailedView || !selectedProjectId || !pendingProjects.some(post => post.id === selectedProjectId)) {
       setSelectedProjectId(pendingProjects[0].id)
     }
-  }, [pendingProjects, selectedProjectId])
+  }, [detailedView, pendingProjects, selectedProjectId])
 
   const historyPosts = useMemo(
     () => posts.filter(post => ['approved', 'rejected', 'executed'].includes(getPostStatus(post))),
@@ -605,11 +686,6 @@ export default function ClientPortalPage({ mode = 'token' }) {
     [files],
   )
 
-  const rejectedSoundtracks = useMemo(
-    () => posts.filter(post => (post.soundtrack?.approvalStatus || post.soundtrack?.approval_status) === 'adjustment_requested'),
-    [posts],
-  )
-
   const canUndoLastAction = useMemo(() => {
     if (!lastAction) return false
     const project = posts.find(post => post.id === lastAction.projectId)
@@ -628,21 +704,13 @@ export default function ClientPortalPage({ mode = 'token' }) {
         created_at: file.updated_at || file.created_at,
       }))
 
-    const soundtrackFeedbacks = rejectedSoundtracks.map(post => ({
-      id: `soundtrack-${post.soundtrack.id}`,
-      post_title: post.title || 'Conteudo sem titulo',
-      text: post.soundtrack.adjustmentComment || post.soundtrack.adjustment_comment || 'Ajuste solicitado no fundo sonoro.',
-      tags: ['Fundo sonoro'],
-      created_at: post.soundtrack.adjustmentRequestedAt || post.soundtrack.adjustment_requested_at || post.soundtrack.updatedAt,
-    }))
-
     const generalFeedbacks = (payload?.feedbacks || []).map(item => ({
       ...item,
       tags: item.tags || [],
     }))
 
-    return [...fileFeedbacks, ...soundtrackFeedbacks, ...generalFeedbacks].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-  }, [files, payload?.feedbacks, rejectedSoundtracks])
+    return [...fileFeedbacks, ...generalFeedbacks].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+  }, [files, payload?.feedbacks])
 
   useEffect(() => {
     if (!payload) return
@@ -697,16 +765,13 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleApproveSoundtrack(projectId) {
+  async function handleApprovePost(projectId) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await approveAuthenticatedPortalSoundtrack(projectId)
-      else await approvePortalSoundtrack(token, projectId)
-      const action = { projectId, kind: 'soundtrack', type: 'approved' }
-      setLastAction(action)
-      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId)
+      else await approvePortalPost(token, projectId)
       await reload()
-      toast.success('Fundo sonoro aprovado.')
+      toast.success('E-mail aprovado.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
     } finally {
@@ -714,16 +779,13 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleAdjustSoundtrack(projectId, comment) {
+  async function handleRejectPost(projectId, comment) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await adjustAuthenticatedPortalSoundtrack(projectId, comment)
-      else await adjustPortalSoundtrack(token, projectId, comment)
-      const action = { projectId, kind: 'soundtrack', type: 'adjustment_requested' }
-      setLastAction(action)
-      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      if (isAuthenticatedMode) await rejectAuthenticatedPortalPost(projectId, comment)
+      else await rejectPortalPost(token, projectId, comment)
       await reload()
-      toast.success('Ajuste do fundo sonoro enviado.')
+      toast.success('Ajuste do e-mail enviado.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
     } finally {
@@ -735,10 +797,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
     if (!lastAction || !canUndoLastAction) return
     setBusy(true)
     try {
-      if (lastAction.kind === 'soundtrack') {
-        if (isAuthenticatedMode) await resetAuthenticatedPortalSoundtrack(lastAction.projectId)
-        else await resetPortalSoundtrack(token, lastAction.projectId)
-      } else if (isAuthenticatedMode) await resetAuthenticatedPortalFile(lastAction.fileId)
+      if (isAuthenticatedMode) await resetAuthenticatedPortalFile(lastAction.fileId)
       else await resetPortalFile(token, lastAction.fileId)
       setSelectedProjectId(lastAction.projectId)
       setLastAction(null)
@@ -862,15 +921,16 @@ export default function ClientPortalPage({ mode = 'token' }) {
             onSelectProject={setSelectedProjectId}
             onApproveFile={handleApproveFile}
             onRejectFile={handleRejectFile}
-            onApproveSoundtrack={handleApproveSoundtrack}
-            onAdjustSoundtrack={handleAdjustSoundtrack}
+            onApprovePost={handleApprovePost}
+            onRejectPost={handleRejectPost}
             onUndo={handleUndoLastAction}
             canUndoLastAction={canUndoLastAction}
+            detailedView={detailedView}
             busy={busy}
           />
         </section>
 
-        <section className="space-y-5 border-t border-neutral-200 pt-6 dark:border-neutral-800" aria-labelledby="portal-overview-title">
+        {detailedView ? <section className="space-y-5 border-t border-neutral-200 pt-6 dark:border-neutral-800" aria-labelledby="portal-overview-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-400 dark:text-neutral-300/80">Visão geral</div>
@@ -956,7 +1016,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
           {activeTab === 'rejected' && (
           <section id="portal-panel-rejected" role="tabpanel" aria-labelledby="portal-tab-rejected" tabIndex={0} className="space-y-4 focus:outline-none">
-            {rejectedFiles.length || rejectedSoundtracks.length ? rejectedFiles.map(file => (
+            {rejectedFiles.length ? rejectedFiles.map(file => (
               <article key={file.id} className="grid gap-4 rounded-lg border border-red-200 bg-white p-4 shadow-sm dark:border-red-900 dark:bg-neutral-900 lg:grid-cols-[220px_minmax(0,1fr)]">
                 <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="block">
                   <FilePreview file={file} />
@@ -1004,16 +1064,6 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 </div>
               </article>
             )) : <EmptyPanel title="Nenhum item recusado" description="Itens recusados ficarão aqui caso você queira revisar e aprovar depois." />}
-            {rejectedSoundtracks.map(post => (
-              <SoundtrackReviewCard
-                key={`soundtrack-${post.id}`}
-                post={post}
-                soundtrack={post.soundtrack}
-                busy={busy}
-                onApprove={() => handleApproveSoundtrack(post.id)}
-                onAdjust={comment => handleAdjustSoundtrack(post.id, comment)}
-              />
-            ))}
           </section>
           )}
 
@@ -1041,11 +1091,6 @@ export default function ClientPortalPage({ mode = 'token' }) {
                   <PortalStatusBadge status={getPostStatus(post)} />
                 </div>
                 {post.description && <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-300">{post.description}</p>}
-                {post.soundtrack ? (
-                  <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200">
-                    <strong>Fundo sonoro:</strong> {post.soundtrack.trackName || post.soundtrack.track_name || (post.soundtrack.mode === 'embedded' ? 'incluido no video' : post.soundtrack.mode === 'uploaded' ? 'arquivo enviado' : 'referencia externa')} · {post.soundtrack.approvalStatus || post.soundtrack.approval_status}
-                  </div>
-                ) : null}
               </div>
             )) : <EmptyPanel title="Sem histórico" description="Conteúdos aprovados, recusados ou concluídos aparecerão aqui." />}
           </section>
@@ -1103,7 +1148,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
           </section>
           )}
           </div>
-        </section>
+        </section> : null}
 
         {editingFeedback ? (
           <PortalDialog

@@ -114,14 +114,14 @@ function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, on
 }
 
 function ClientFormModal({ title, initial, open, onClose, onSave }) {
-  const [form, setForm] = useState(initial || { name:'', email:'', password:'', whatsapp:'', document:'', documentType:'cpf', segment:'', deadlineDays:7, color: CLIENT_COLORS[0] })
+  const [form, setForm] = useState(initial || { name:'', email:'', password:'', whatsapp:'', segment:'', deadlineDays:7, color: CLIENT_COLORS[0] })
   const [loading, setLoading] = useState(false)
   useEffect(() => { if (initial) setForm(initial) }, [initial])
   const set = (k,v) => setForm(f => ({...f,[k]:v}))
 
   async function handleSave() {
     if (!form.name || !form.email) { toast.error('Preencha nome e e-mail.'); return }
-    if (!isOptionalClientDocumentValid(form.documentType, form.document)) {
+    if (initial && !isOptionalClientDocumentValid(form.documentType, form.document)) {
       toast.error('CPF/CNPJ inválido.')
       return
     }
@@ -140,7 +140,7 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
           <Input label={initial ? 'Nova Senha (deixe vazio p/ manter)' : 'Senha *'} name="client-new-password" type="password" autoComplete="new-password" value={form.password||''} onChange={e=>set('password',e.target.value)} />
           <Input label="WhatsApp" name="client-whatsapp" autoComplete="off" value={form.whatsapp||''} onChange={e=>set('whatsapp',e.target.value)} placeholder="(51) 9 9999-9999" />
         </div>
-        <div>
+        {initial ? <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 block mb-2">Documento</label>
           <div className="flex rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700 mb-2">
             {['cpf','cnpj'].map(t=>(
@@ -148,7 +148,7 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
             ))}
           </div>
           <Input name="client-document" inputMode="numeric" aria-label={`Número do ${form.documentType.toUpperCase()}`} autoComplete="off" value={form.document||''} onChange={e=>set('document',formatClientDocument(e.target.value, form.documentType))} placeholder={form.documentType==='cpf'?'000.000.000-00':'00.000.000/0000-00'} />
-        </div>
+        </div> : null}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input label="Segmento" value={form.segment||''} onChange={e=>set('segment',e.target.value)} placeholder="Ex: Restaurante" />
           <Input label="Prazo de aceite (dias)" type="number" min="1" max="30" value={form.deadlineDays||7} onChange={e=>set('deadlineDays',parseInt(e.target.value)||7)} />
@@ -256,7 +256,6 @@ export default function ClientsPage() {
       segment: form.segment,
       deadline_days: form.deadlineDays,
       color: form.color || CLIENT_COLORS[clients.length % CLIENT_COLORS.length],
-      ...buildClientDocumentPayload(form),
     })
     setClients(c => [client, ...c])
     toast.success('Cliente criado!')

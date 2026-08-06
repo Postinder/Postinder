@@ -22,6 +22,17 @@ export class PortalController {
     return `${baseUrl.replace(/\/$/, '')}/portal/${token}`
   }
 
+  private serializeActiveLink(result: { record: any; token?: string | null } | null) {
+    if (!result) return { hasActiveLink: false }
+    return {
+      hasActiveLink: true,
+      recoverable: Boolean(result.token),
+      portalUrl: result.token ? this.buildPortalUrl(result.token) : null,
+      expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
+    }
+  }
+
   private async getSession(req: Request, res: Response) {
     const session = await this.portalRepository.validateToken(req.params.token)
     if (!session) {
@@ -45,10 +56,45 @@ export class PortalController {
     })
 
     if (!result) return res.status(404).json({ error: 'Client not found' })
+    if (result.existing) {
+      return res.status(409).json({
+        error: 'An active portal link already exists. Use the replace action explicitly.',
+        ...this.serializeActiveLink({ record: result.record, token: null }),
+      })
+    }
 
     res.status(201).json({
+      hasActiveLink: true,
+      recoverable: true,
       portalUrl: this.buildPortalUrl(result.token),
       expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
+    })
+  }
+
+  async getClientLink(req: AuthRequest, res: Response) {
+    const result = await this.portalRepository.getActiveToken({
+      clientId: req.params.id,
+      companyId: req.tenantId,
+    })
+    res.json(this.serializeActiveLink(result))
+  }
+
+  async replaceClientLink(req: AuthRequest, res: Response) {
+    const days = Number(req.body?.days) || 15
+    const result = await this.portalRepository.replaceToken({
+      clientId: req.params.id,
+      companyId: req.tenantId,
+      createdBy: req.user?.userId,
+      days,
+    })
+    if (!result || result.existing) return res.status(404).json({ error: 'Client not found' })
+    res.status(201).json({
+      hasActiveLink: true,
+      recoverable: true,
+      portalUrl: this.buildPortalUrl(result.token),
+      expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
     })
   }
 

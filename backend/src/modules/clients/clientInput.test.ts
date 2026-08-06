@@ -15,6 +15,7 @@ import {
   normalizeClientDocument,
   normalizeDeadlineDays,
 } from './domain/clientInput'
+import { createPostSchema, updatePostSchema } from '../posts/application/dtos/CreatePostDTO'
 
 function createResponse() {
   const state: { status: number; body: any } = { status: 200, body: undefined }
@@ -116,7 +117,7 @@ test('client creation accepts no document and persists an official custom deadli
   assert.equal(state.body.data.document_number, null)
 })
 
-test('client creation persists valid formatted CPF and CNPJ as digits', async t => {
+test('client creation ignores CPF/CNPJ even when a caller still sends legacy fields', async t => {
   for (const item of [
     { type: 'cpf', formatted: '529.982.247-25', digits: '52998224725' },
     { type: 'cnpj', formatted: '04.252.011/0001-10', digits: '04252011000110' },
@@ -142,17 +143,18 @@ test('client creation persists valid formatted CPF and CNPJ as digits', async t 
       } as any, response as any)
 
       assert.equal(state.status, 201)
-      assert.equal(received.document_type, item.type)
-      assert.equal(received.document_number, item.digits)
+      assert.equal(received.document_type, null)
+      assert.equal(received.document_number, null)
     })
   }
 })
 
-test('client creation rejects an invalid document before repository access', async () => {
+test('client creation does not validate or collect a legacy document', async () => {
   let calls = 0
   const controller = await createController({
     async create() {
       calls += 1
+      return { id: 'client-1' }
     },
   })
   const { response, state } = createResponse()
@@ -167,9 +169,8 @@ test('client creation rejects an invalid document before repository access', asy
     },
   } as any, response as any)
 
-  assert.equal(state.status, 400)
-  assert.deepEqual(state.body, { error: 'Invalid client document' })
-  assert.equal(calls, 0)
+  assert.equal(state.status, 201)
+  assert.equal(calls, 1)
 })
 
 test('client update changes and explicitly removes a document and accepts legacy deadlineDays', async () => {
@@ -205,6 +206,144 @@ test('client update changes and explicitly removes a document and accepts legacy
   assert.equal(result.state.status, 200)
   assert.equal(updates[1].document_type, null)
   assert.equal(updates[1].document_number, null)
+})
+
+test('client update accepts the portal detailed view only as a boolean', async () => {
+  const updates: any[] = []
+  const controller = await createController({
+    async update(_id: string, dto: any) {
+      updates.push(dto)
+      return { id: 'client-1', ...dto }
+    },
+  })
+
+  let result = createResponse()
+  await controller.update({ params: { id: 'client-1' }, body: { portal_detailed_view: true } } as any, result.response as any)
+  assert.equal(result.state.status, 200)
+  assert.equal(updates[0].portal_detailed_view, true)
+
+  result = createResponse()
+  await controller.update({ params: { id: 'client-1' }, body: { portal_detailed_view: 'true' } } as any, result.response as any)
+  assert.equal(result.state.status, 400)
+  assert.equal(updates.length, 1)
+})
+
+test('E-mail Marketing accepts a trimmed HTTP preview without files and rejects unsafe protocols', () => {
+  const valid = createPostSchema.parse({
+    title: 'Email',
+    clientId: '00000000-0000-4000-8000-000000000001',
+    channels: ['E-mail Marketing'],
+    emailLink: '  https://example.test/preview  ',
+  })
+  assert.equal(valid.emailLink, 'https://example.test/preview')
+  for (const emailLink of ['', 'javascript:alert(1)', 'data:text/html,test', 'file:///tmp/test']) {
+    assert.equal(createPostSchema.safeParse({
+      title: 'Email',
+      clientId: '00000000-0000-4000-8000-000000000001',
+      channels: ['E-mail Marketing'],
+      emailLink,
+    }).success, false)
+  }
+})
+
+test('new posts reject 3A3R while partial updates can preserve an unread legacy channel', () => {
+  assert.equal(createPostSchema.safeParse({
+    title: 'Legacy',
+    clientId: '00000000-0000-4000-8000-000000000001',
+    channels: ['3A3R'],
+  }).success, false)
+  assert.equal(updatePostSchema.safeParse({ channels: ['3A3R'] }).success, true)
+})
+
+test('portal queue orders scheduled dates first, then creation and stable id, with undated posts last', async () => {
+  const { comparePortalQueueItems, normalizePortalEmailLink } = await import('../portal/infrastructure/repositories/PortalRepository')
+  const posts = [
+    { id: 'd', scheduledDate: null, createdAt: '2026-01-01T00:00:00Z' },
+    { id: 'c', scheduledDate: '2026-08-09', createdAt: '2026-01-01T00:00:00Z' },
+    { id: 'b', scheduledDate: '2026-08-08', createdAt: '2026-01-02T00:00:00Z' },
+    { id: 'a', scheduledDate: '2026-08-08', createdAt: '2026-01-02T00:00:00Z' },
+    { id: 'e', scheduledDate: null, createdAt: '2026-01-02T00:00:00Z' },
+  ]
+  assert.deepEqual(posts.sort(comparePortalQueueItems).map(post => post.id), ['a', 'b', 'c', 'd', 'e'])
+  assert.equal(normalizePortalEmailLink(' https://example.test/email '), 'https://example.test/email')
+  assert.equal(normalizePortalEmailLink('javascript:alert(1)'), null)
+})
+
+test('recoverable portal tokens are encrypted and authenticated', async () => {
+  const { encryptPortalToken, decryptPortalToken } = await import('../portal/infrastructure/portalTokenCipher')
+  const token = 'private-portal-token-value'
+  const encrypted = encryptPortalToken(token)
+  assert.notEqual(encrypted.includes(token), true)
+  assert.equal(decryptPortalToken(encrypted), token)
+  assert.equal(decryptPortalToken(`${encrypted.slice(0, -1)}x`), null)
+})
+
+test('initial portal link is issued once and administrative recovery returns the same token', async () => {
+  const poolModule = await import('../../shared/database/pool')
+  const { PortalRepository } = await import('../portal/infrastructure/repositories/PortalRepository')
+  const originalConnect = poolModule.pool.connect.bind(poolModule.pool)
+  let insertedCiphertext = ''
+  let insertions = 0
+  ;(poolModule.pool as any).connect = async () => ({
+    async query(sql: string, params?: any[]) {
+      if (sql.includes('SELECT id, company_id FROM clients')) return { rows: [{ id: 'client-1', company_id: 'company-1' }] }
+      if (sql.includes('SELECT id, expires_at')) return { rows: [] }
+      if (sql.includes('INSERT INTO client_portal_tokens')) {
+        insertions += 1
+        insertedCiphertext = params?.[3]
+        return { rows: [{ id: 'token-1', created_at: '2026-08-06', expires_at: '2026-08-21' }] }
+      }
+      return { rows: [] }
+    },
+    release() {},
+  })
+  try {
+    const repository = new PortalRepository()
+    const issued = await repository.createToken({ clientId: 'client-1', companyId: 'company-1' })
+    assert.equal(issued?.existing, false)
+    assert.ok(issued && 'token' in issued)
+    const originalToken = issued && 'token' in issued ? issued.token : ''
+
+    ;(poolModule.pool as any).connect = async () => ({
+      async query(sql: string) {
+        if (sql.includes('SELECT t.id, t.expires_at')) {
+          return { rows: [{ id: 'token-1', created_at: '2026-08-06', expires_at: '2026-08-21', token_ciphertext: insertedCiphertext }] }
+        }
+        return { rows: [] }
+      },
+      release() {},
+    })
+    const recovered = await repository.getActiveToken({ clientId: 'client-1', companyId: 'company-1' })
+    assert.equal(recovered?.token, originalToken)
+    assert.equal(insertions, 1)
+  } finally {
+    ;(poolModule.pool as any).connect = originalConnect
+  }
+})
+
+test('portal link replacement rolls back revocation when insertion fails', async () => {
+  const poolModule = await import('../../shared/database/pool')
+  const { PortalRepository } = await import('../portal/infrastructure/repositories/PortalRepository')
+  const originalConnect = poolModule.pool.connect.bind(poolModule.pool)
+  const statements: string[] = []
+  ;(poolModule.pool as any).connect = async () => ({
+    async query(sql: string) {
+      statements.push(sql)
+      if (sql.includes('SELECT id, company_id FROM clients')) return { rows: [{ id: 'client-1', company_id: 'company-1' }] }
+      if (sql.includes('SELECT id, expires_at')) return { rows: [{ id: 'old-token' }] }
+      if (sql.includes('INSERT INTO client_portal_tokens')) throw new Error('simulated insertion failure')
+      return { rows: [] }
+    },
+    release() {},
+  })
+  try {
+    await assert.rejects(() => new PortalRepository().replaceToken({ clientId: 'client-1', companyId: 'company-1' }))
+    assert.ok(statements.some(sql => sql === 'ROLLBACK'))
+    assert.ok(statements.some(sql => sql.includes('SET revoked_at = NOW()')))
+    assert.equal(statements.some(sql => sql === 'COMMIT'), false)
+  } finally {
+    ;(poolModule.pool as any).connect = originalConnect
+  }
 })
 
 test('client list and detail preserve official document fields for legacy and current clients', async () => {
@@ -257,4 +396,29 @@ test('repository and idempotent migration cover persistence without document uni
   assert.match(migration, /document_number ~ '\^\[0-9\]\{14\}\$'/)
   assert.doesNotMatch(migration, /UNIQUE/i)
   assert.doesNotMatch(repository, /snapshot/i)
+})
+
+test('migration 018 is additive and defaults old clients to the simplified portal', () => {
+  const migration = readFileSync(
+    path.resolve(process.cwd(), '../database/migrations/018_client_portal_preferences_and_recoverable_links.sql'),
+    'utf8',
+  )
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS portal_detailed_view BOOLEAN NOT NULL DEFAULT FALSE/)
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS token_ciphertext TEXT/)
+  assert.doesNotMatch(migration, /\b(?:DROP|DELETE|TRUNCATE)\b/i)
+})
+
+test('portal decisions ignore dormant soundtrack state without removing its infrastructure', () => {
+  const portalRepository = readFileSync(
+    path.resolve(process.cwd(), 'src/modules/portal/infrastructure/repositories/PortalRepository.ts'),
+    'utf8',
+  )
+  const soundtrackRepository = readFileSync(
+    path.resolve(process.cwd(), 'src/modules/soundtracks/infrastructure/repositories/SoundtrackRepository.ts'),
+    'utf8',
+  )
+  assert.match(portalRepository, /recalculatePostStatus\(postId, \{ includeSoundtrack: false \}\)/)
+  assert.match(soundtrackRepository, /options\.includeSoundtrack === false/)
+  assert.match(soundtrackRepository, /post_soundtrack_versions/)
+  assert.match(soundtrackRepository, /post_soundtrack_decisions/)
 })

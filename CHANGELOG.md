@@ -2,6 +2,16 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
+## Nao publicado - portal guiado e preparacao para testes com Clientes
+
+- O portal simplificado passou a ser o default, com fila ordenada no backend por data prevista, criacao e ID, itens sem data por ultimo, primeira pendencia em foco e estado final **Tudo em dia**. A preferencia `portal_detailed_view` restaura seletor e visao geral por Cliente nos dois tipos de acesso.
+- O link principal do portal tornou-se recuperavel por endpoint administrativo autorizado. Tokens novos mantem hash de validacao e copia AES-256-GCM; criacao recusa substituicao silenciosa e a troca explicita revoga o anterior na mesma transacao que cria o novo. Links antigos continuam validos, mas os que possuem somente hash nao podem ser reexibidos.
+- E-mail Marketing ganhou preview HTTP(S) obrigatorio, persistido e editavel. O canal isolado pode ser enviado sem anexos e e decidido no nivel da postagem; o portal abre a previa externamente com `noopener noreferrer` e dupla defesa contra protocolos inseguros.
+- Canais passaram a usar icones vetoriais, `3A3R` saiu das novas selecoes e os formatos novos de Instagram passaram a Card, Carrossel, Stories, Reels e Foto sem converter historico.
+- Fundo sonoro foi ocultado das interfaces operacionais sem remover infraestrutura; enquanto dormente, seu estado nao bloqueia a conclusao das decisoes de arquivo no portal. CPF/CNPJ saiu somente da criacao de Cliente, preservando edicao e dados antigos.
+- O viewer ganhou anterior/proximo entre anexos pendentes sem propagar o gesto de decisao, e a Previa do Feed passou a exibir **Todos status**.
+- Drag-and-drop foi adiado por nao existir infraestrutura leve reutilizavel; `sort_order` e as setas atuais permanecem. A migration aditiva `018_client_portal_preferences_and_recoverable_links.sql` foi aplicada localmente e comprovada como no-op na segunda execucao. Nenhum deploy foi realizado.
+
 ## Nao publicado - identidade institucional global
 
 - Foi corrigida a tentativa estatica de branding: os SVGs duplicados foram substituidos por configuracao global persistente e componente compartilhado no menu administrativo e no portal do Cliente. A entrada e as telas publicas de autenticacao permanecem com a marca Postinder.

@@ -27,6 +27,7 @@ import PageHeader from '../../components/ui/PageHeader'
 import Skeleton from '../../components/ui/Skeleton'
 import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
 import { prepareUploadFiles } from '../../utils/uploadValidation'
+import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import {
   computePostStatus,
   duplicatePost,
@@ -40,14 +41,11 @@ import {
   reorderPostFiles,
   removePostFile,
   markPostExecuted,
-  savePostSoundtrack,
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
+import ChannelIcon from '../../components/posts/ChannelIcon'
 import MediaPreview, { getMediaName } from '../../components/media/MediaPreview'
-import { getMediaKind } from '../../components/media/MediaPreview'
-import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
-import { soundtrackDraftFromPost, validateSoundtrackDraft } from '../../utils/soundtrack'
 import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
 import { useAuthStore } from '../../store/authStore'
 
@@ -102,16 +100,6 @@ function getPostChannels(post) {
 
 function getAttachmentName(file) {
   return getMediaName(file)
-}
-
-function getSoundtrackLabel(post) {
-  const soundtrack = post?.soundtrack
-  const mode = soundtrack?.mode || 'none'
-  const suffix = (soundtrack?.approvalStatus || soundtrack?.approval_status) === 'adjustment_requested' ? ' · ajuste solicitado' : ''
-  if (mode === 'embedded') return `Audio no video${suffix}`
-  if (mode === 'uploaded') return `Audio enviado${suffix}`
-  if (mode === 'external_reference') return `Musica indicada${suffix}`
-  return 'Sem fundo sonoro'
 }
 
 function CompactFeedPreview({ channels, files }) {
@@ -191,7 +179,7 @@ function CompactFeedPreview({ channels, files }) {
           <div className="flex flex-wrap justify-end gap-1.5">
             {activeChannels.length ? activeChannels.map(channel => (
               <span key={channel} className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
-                {CHANNELS[channel]?.icon} {channel}
+                <ChannelIcon channel={channel} size={14} /> {channel}
               </span>
             )) : (
               <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-400 dark:bg-neutral-800">
@@ -206,16 +194,13 @@ function CompactFeedPreview({ channels, files }) {
 }
 
 function EditPostModal({ post, clients, open, onClose, onSaved }) {
-  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', funnelTag: '' })
+  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', funnelTag: '', emailLink: '' })
   const [channels, setChannels] = useState({})
   const [existingFiles, setExistingFiles] = useState([])
   const [removedExistingFiles, setRemovedExistingFiles] = useState([])
   const [files, setFiles] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
-  const [soundtrack, setSoundtrack] = useState(soundtrackDraftFromPost(null))
-  const [soundtrackDirty, setSoundtrackDirty] = useState(false)
-  const [soundtrackUploadProgress, setSoundtrackUploadProgress] = useState(null)
 
   useEffect(() => {
     if (!post) return
@@ -228,15 +213,13 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
     setRemovedExistingFiles([])
     setFiles([])
     setUploadProgress(null)
-    setSoundtrack(soundtrackDraftFromPost(post))
-    setSoundtrackDirty(false)
-    setSoundtrackUploadProgress(null)
     setForm({
       clientId: getPostClientId(post) || '',
       title: post.title || '',
       caption: post.description || '',
       scheduledDate: toDateInput(getScheduledDate(post)),
       funnelTag: post.funnelTag || post.funnel_tag || '',
+      emailLink: post.emailLink || post.email_link || '',
     })
   }, [post])
 
@@ -250,9 +233,15 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
   async function handleSave() {
     if (isApproved && !confirm('Este post ja foi aprovado. Deseja alterar mesmo assim?')) return
     if (isSent && !confirm('Este post ja foi enviado ao cliente. Alterar pode afetar uma aprovacao em andamento. Continuar?')) return
-    const soundtrackError = validateSoundtrackDraft(soundtrack, previewFiles.filter(file => getMediaKind(file) === 'video'))
-    if (soundtrackError) {
-      toast.error(soundtrackError)
+    const selectedChannels = Object.keys(channels)
+    const hasEmail = selectedChannels.includes('E-mail Marketing')
+    const normalizedEmailLink = normalizeEmailPreviewUrl(form.emailLink)
+    if (hasEmail && !normalizedEmailLink) {
+      toast.error('Informe um Link de pre-visualizacao do e-mail valido, iniciado por http:// ou https://.')
+      return
+    }
+    if (!(hasEmail && selectedChannels.length === 1) && !previewFiles.length) {
+      toast.error('Mantenha ou adicione ao menos um arquivo para os canais selecionados.')
       return
     }
 
@@ -264,28 +253,14 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
         description: form.caption,
         scheduledDate: form.scheduledDate || null,
         funnelTag: form.funnelTag || null,
-        channels: Object.keys(channels),
+        channels: selectedChannels,
+        emailLink: hasEmail ? normalizedEmailLink : null,
       })
-      let uploadedNewFiles = []
       if (files.length) {
-        uploadedNewFiles = await uploadPostFiles(post.id, files.map((item, index) => ({
+        await uploadPostFiles(post.id, files.map((item, index) => ({
           ...item,
           sortOrder: existingFiles.length + index + 1,
         })), { onUploadProgress: setUploadProgress })
-      }
-      if (soundtrackDirty) {
-        let sourceMediaId = null
-        if (soundtrack.mode === 'embedded') {
-          sourceMediaId = existingFiles.find(file => file.id === soundtrack.sourceMediaKey)?.id || null
-          if (!sourceMediaId) {
-            const newIndex = files.findIndex(file => file.localId === soundtrack.sourceMediaKey)
-            sourceMediaId = uploadedNewFiles[newIndex]?.id || null
-          }
-        }
-        await savePostSoundtrack(post.id, soundtrack, {
-          sourceMediaId,
-          onUploadProgress: setSoundtrackUploadProgress,
-        })
       }
       if (removedExistingFiles.length) {
         await Promise.all(removedExistingFiles.map(file => removePostFile(post.id, file.id)))
@@ -301,7 +276,6 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
     } finally {
       setSaving(false)
       setUploadProgress(null)
-      setSoundtrackUploadProgress(null)
     }
   }
 
@@ -336,6 +310,16 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
           <Textarea label="Legenda / texto" value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} />
         </div>
 
+        {channels['E-mail Marketing'] ? (
+          <Input
+            label="Link de pré-visualização do e-mail"
+            type="url"
+            value={form.emailLink}
+            onChange={event => setForm(current => ({ ...current, emailLink: event.target.value }))}
+            placeholder="https://exemplo.com/preview"
+          />
+        ) : null}
+
         <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Tag de funil</label>
           <div className="flex flex-wrap gap-2">
@@ -362,7 +346,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
                 onClick={() => toggleChannel(channel)}
                 className={`rounded-full border px-3 py-2 text-sm font-semibold ${channels[channel] ? 'border-mag-500 bg-mag-50 text-mag-600 dark:bg-mag-950 dark:text-mag-300' : 'border-neutral-200 text-neutral-500 dark:border-neutral-700'}`}
               >
-                {data.icon} {channel}
+                <ChannelIcon channel={channel} size={15} /> {channel}
               </button>
             ))}
           </div>
@@ -385,21 +369,6 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
         {removedExistingFiles.length ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
             {removedExistingFiles.length} arquivo(s) atual(is) marcado(s) para remoção ao salvar.
-          </div>
-        ) : null}
-
-        <SoundtrackEditor
-          value={soundtrack}
-          attachments={previewFiles}
-          onChange={next => {
-            setSoundtrack(next)
-            setSoundtrackDirty(true)
-          }}
-        />
-
-        {soundtrackUploadProgress ? (
-          <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs font-bold text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300">
-            Enviando fundo sonoro: {soundtrackUploadProgress.percent}%
           </div>
         ) : null}
 
@@ -807,7 +776,6 @@ export default function ManagePostsPage() {
                   <div className="flex flex-wrap items-center gap-3 lg:justify-center">
                     <StatusBadge status={status} />
                     <span className="text-xs font-semibold text-neutral-400 dark:text-neutral-300">{(post.files || []).length} arquivo(s)</span>
-                    <span className="text-xs font-semibold text-violet-500 dark:text-violet-300">{getSoundtrackLabel(post)}</span>
                     <span className="text-xs text-neutral-400 dark:text-neutral-300/80">Atualizado {formatDate(getUpdatedDate(post))}</span>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1.5">

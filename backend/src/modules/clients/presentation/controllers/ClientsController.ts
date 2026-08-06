@@ -74,10 +74,6 @@ export class ClientsController {
     }
 
     try {
-      const document = normalizeClientDocument(
-        preferredBodyValue(body, 'document_type', 'documentType'),
-        preferredBodyValue(body, 'document_number', 'document'),
-      )
       const deadlineDays = normalizeDeadlineDays(
         preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
       )
@@ -91,7 +87,8 @@ export class ClientsController {
         segment,
         color,
         deadline_days: deadlineDays,
-        ...document,
+        document_type: null,
+        document_number: null,
         company_id: req.tenantId,
       })
 
@@ -179,6 +176,10 @@ export class ClientsController {
       const deadlineDays = normalizeDeadlineDays(
         preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
       )
+      const detailedViewValue = preferredBodyValue(body, 'portal_detailed_view', 'portalDetailedView')
+      if (detailedViewValue !== undefined && typeof detailedViewValue !== 'boolean') {
+        return res.status(400).json({ error: 'Invalid portal detailed view setting' })
+      }
 
       const client = await this.clientRepository.update(id, {
         name,
@@ -186,6 +187,7 @@ export class ClientsController {
         segment,
         color,
         deadline_days: deadlineDays,
+        portal_detailed_view: detailedViewValue,
         ...document,
       }, req.tenantId)
 

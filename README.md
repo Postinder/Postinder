@@ -4,16 +4,18 @@ Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e 
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface foram publicadas em 30/07/2026. A hotfix de CPF/CNPJ e prazo de Clientes foi publicada e validada em 31/07/2026; o banco publicado continua em `016`. O branding e sua microcorrecao pos-auditoria permanecem locais e nao publicados: a `017_platform_branding.sql` deve ser aplicada pelo migrador oficial antes de uma futura publicacao. A validacao local atual possui 161/161 testes de backend, 45 testes frontend legados, 22 testes React reais e os dois builds aprovados.
+A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. Branding e a rodada de simplificacao do portal permanecem locais e nao publicados: `017_platform_branding.sql` e `018_client_portal_preferences_and_recoverable_links.sql` devem ser aplicadas pelo migrador oficial antes de uma futura publicacao. A validacao local atual possui 170 testes de backend, 52 testes frontend unitarios, 22 testes React reais e os dois builds aprovados.
 
 ## Interface atual
 
 - A Previa do Feed usa o componente compartilhado de midia para imagens e videos, com player e fallback neutro quando necessario.
 - **Atividade recente** e **Postagens** iniciam recolhidas no Dashboard e podem ser expandidas independentemente.
-- O portal prioriza a aprovacao; metricas, calendario, historico, arquivos e feedbacks ficam disponiveis na **Visao geral** recolhivel.
+- O portal simplificado mostra uma fila guiada ordenada pela data prevista e avanca automaticamente depois de cada decisao. A configuracao por Cliente **Visualizacao detalhada do portal** restaura o seletor e a visao geral quando necessario.
 - O layout do portal reserva mais espaco para a midia principal, preserva videos verticais com `object-contain`, responsividade e botoes acessiveis.
 - Login e recuperacao permanecem identificados como Postinder e nao montam nem consultam o branding configuravel. Um administrador pode configurar em **Identidade visual** o logo institucional exibido dinamicamente na area interna da empresa e no portal do Cliente, sem rebuild; na ausencia ou falha da imagem, o fallback Postinder permanece funcional.
-- CPF/CNPJ permanece opcional e sem unicidade. Documentos cadastrados antes da correcao nao foram recuperados retroativamente.
+- Novos Clientes sao cadastrados sem CPF/CNPJ. Documentos antigos continuam preservados e editaveis, sem limpeza retroativa nem remocao de colunas.
+- O link ativo do portal e recuperavel pelo administrador autorizado; copiar ou abrir nao gera outro token, e substituir exige confirmacao. E-mail Marketing aceita aprovacao por preview web seguro e dispensa anexo quando for o unico canal.
+- `3A3R` foi removido das novas selecoes, o fundo sonoro ficou oculto sem remover sua infraestrutura e os anexos ganharam navegacao anterior/proximo no viewer.
 
 ## Arquitetura
 
@@ -96,7 +98,7 @@ cd backend
 npm run db:migrate
 ```
 
-O startup nao cria nem corrige schema. A migration `002_development_seed.sql` e historica e nao faz parte do migrador estrutural.
+O startup nao cria nem corrige schema. A migration `002_development_seed.sql` e historica e nao faz parte do migrador estrutural. A `018` adiciona somente a preferencia de portal do Cliente, a copia cifrada recuperavel do token e um indice de consulta; nao altera dados historicos.
 
 Em deploy, `npm run db:migrate` deve ser um Pre-Deploy Command/release step bloqueante anterior ao Start Command. Backup logico e preflight do banco sao obrigatorios antes de migrations em producao.
 

@@ -1,5 +1,16 @@
 # Decisoes de Produto do Postinder
 
+## Rodada de testes com Clientes
+
+- O portal simplificado e o default. A ordem autoritativa e data prevista crescente, criacao crescente e ID crescente, com itens sem data por ultimo. O Cliente nao escolhe outra postagem nesse modo; apos aprovar ou solicitar ajuste, recebe o proximo item.
+- Um unico booleano por Cliente restaura conjuntamente seletor de postagens e informacoes perifericas. A preferencia vale para acesso por token e autenticado e nao altera o link ativo.
+- Cada Cliente possui um link principal ativo. Consulta e copia reutilizam o mesmo segredo; substituicao e acao separada, confirmada e atomica. Hash continua autoritativo para autenticacao, e a copia recuperavel fica cifrada para o endpoint administrativo autorizado.
+- E-mail Marketing sempre exige URL HTTP(S) validada. Como canal unico, a URL substitui a obrigatoriedade de anexo; em combinacoes, as regras de arquivo dos outros canais permanecem. A previa abre externamente e nunca e carregada ou buscada pelo Postinder.
+- Novos cadastros de Cliente nao coletam CPF/CNPJ. Campos e valores historicos permanecem para compatibilidade de leitura e edicao.
+- `3A3R` nao integra novas selecoes. Fundo sonoro permanece implementado no dominio, mas oculto de criacao, edicao e aprovacao nesta rodada.
+- Setas anterior/proximo navegam pelos anexos pendentes sem disparar decisoes e preservam swipe, controles de video e botoes de aprovacao.
+- Novos formatos de Instagram sao Card, Carrossel, Stories, Reels e Foto; valores antigos nao sao convertidos. Drag-and-drop fica adiado e as setas de ordenacao continuam como mecanismo oficial.
+
 ## Fluxo e responsabilidade
 
 - A agencia cria, revisa, corrige, envia e marca a postagem como Executada.
@@ -25,7 +36,7 @@
 
 ## Portal e aprovacao
 
-- Cada arquivo e revisado individualmente; swipe e a interacao principal, com botoes como alternativa acessivel.
+- Cada arquivo e revisado individualmente; swipe e a interacao principal, com botoes como alternativa acessivel. E-mail Marketing sem anexos e a excecao deliberada: a decisao ocorre na postagem depois da abertura opcional do preview externo.
 - O portal deve priorizar o conteudo que exige decisao do Cliente. Metricas, calendario, historico, arquivos e feedbacks sao informacoes complementares e iniciam recolhidos, permanecendo disponiveis sob demanda.
 - Swipe deve oferecer experiencia equivalente em imagens e videos sem substituir os botoes explicitos.
 - O gesto horizontal nao deve bloquear rolagem vertical nem acionar arraste nativo da imagem.
@@ -54,6 +65,7 @@
 
 ## Fundo sonoro
 
+- Nesta rodada o recurso esta dormente: nenhuma interface cria, edita, reproduz ou decide trilha, e a decisao de arquivos no portal nao fica bloqueada por estado de fundo sonoro. As regras abaixo permanecem preservadas no dominio para uma futura reativacao deliberada.
 - O fundo sonoro e uma parte independente da postagem e nao pertence a lista ordenavel de anexos. Suas modalidades sao `none`, `embedded`, `uploaded` e `external_reference`; nenhuma modalidade e inferida automaticamente a partir dos anexos.
 - `none` nao cria requisito adicional. Nos demais modos, somente o Cliente pode aprovar ou solicitar ajuste do fundo sonoro, com comentario obrigatorio no ajuste. Reproduzir, pausar, silenciar ou reativar audio serve apenas para a previa e nunca representa uma decisao.
 - A aprovacao integral exige todos os anexos obrigatorios e, quando houver fundo sonoro, a decisao `approved` da revisao vigente. Fundo sonoro `pending` ou `adjustment_requested` impede que a postagem seja considerada aprovada.
