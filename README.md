@@ -4,7 +4,7 @@ Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e 
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface foram publicadas em 30/07/2026. Backend, frontend e os endpoints `/health`, `/health/db` e `/health/storage` foram validados; o banco publicado esta em `015`. A hotfix local de Clientes foi validada com 151/151 testes de backend, 40/40 de frontend, os dois builds e `git diff --check`, mas permanece sem commit, push ou deploy. Somente `016_client_documents.sql` esta pendente em producao.
+A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface foram publicadas em 30/07/2026. A hotfix de CPF/CNPJ e prazo de Clientes foi commitada, enviada ao Git, publicada e validada em 31/07/2026, com 151/151 testes de backend, 40/40 de frontend, os dois builds e `git diff --check`. A migration `016_client_documents.sql` foi aplicada; o banco publicado esta em `016`, sem migration pendente. O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Interface atual
 
@@ -12,7 +12,8 @@ A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface fo
 - **Atividade recente** e **Postagens** iniciam recolhidas no Dashboard e podem ser expandidas independentemente.
 - O portal prioriza a aprovacao; metricas, calendario, historico, arquivos e feedbacks ficam disponiveis na **Visao geral** recolhivel.
 - O layout do portal reserva mais espaco para a midia principal, preserva videos verticais com `object-contain`, responsividade e botoes acessiveis.
-- A identidade visual atual do portal e da 20Cinco, com tokens restritos ao portal, temas claro/escuro e cores semanticas preservadas. O cabecalho usa temporariamente uma adaptacao vetorial SVG aprovada; um asset vetorial oficial permanece como evolucao futura.
+- A entrada e as telas publicas de autenticacao permanecem identificadas como Postinder. Um administrador pode configurar em **Identidade visual** o logo institucional exibido dinamicamente na area interna da empresa e no portal do Cliente, sem rebuild; na ausencia ou falha da imagem, o fallback Postinder permanece funcional.
+- CPF/CNPJ permanece opcional e sem unicidade. Documentos cadastrados antes da correcao nao foram recuperados retroativamente.
 
 ## Arquitetura
 

@@ -87,6 +87,44 @@ export const soundtrackUpload = multer({
   limits: { fileSize: MAX_SOUNDTRACK_SIZE, files: 1 },
 })
 
+export const MAX_BRANDING_LOGO_SIZE = 2 * 1024 * 1024
+const BRANDING_LOGO_EXTENSIONS = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+])
+
+function validateBrandingLogoMetadata(file: Express.Multer.File) {
+  const extension = path.extname(file.originalname).toLowerCase()
+  const mimeType = String(file.mimetype || '').toLowerCase()
+  if (BRANDING_LOGO_EXTENSIONS.get(extension) !== mimeType) {
+    throw new AppException(
+      'Use uma imagem PNG, JPEG ou WebP com extensao correspondente.',
+      415,
+      'UNSUPPORTED_BRANDING_TYPE',
+    )
+  }
+  if (file.size > MAX_BRANDING_LOGO_SIZE) {
+    throw new AppException('O logo excede o limite de 2 MB.', 413, 'BRANDING_FILE_TOO_LARGE')
+  }
+}
+
+function brandingLogoFileFilter(_req: Request, file: Express.Multer.File, cb: FileFilterCallback) {
+  try {
+    validateBrandingLogoMetadata(file)
+    cb(null, true)
+  } catch (error) {
+    cb(error as Error)
+  }
+}
+
+export const brandingLogoUpload = multer({
+  storage,
+  fileFilter: brandingLogoFileFilter,
+  limits: { fileSize: MAX_BRANDING_LOGO_SIZE, files: 1 },
+})
+
 async function readFileHeader(file: Express.Multer.File) {
   if (file.buffer?.length) return file.buffer.subarray(0, 16)
   if (!file.path) return Buffer.alloc(0)
@@ -103,6 +141,50 @@ async function readFileHeader(file: Express.Multer.File) {
 async function discardTemporaryUpload(file: Express.Multer.File) {
   if (!file.path) return
   await fsPromises.unlink(file.path).catch(() => {})
+}
+
+async function readUploadedFile(file: Express.Multer.File) {
+  if (file.buffer) return file.buffer
+  if (!file.path) return Buffer.alloc(0)
+  return fsPromises.readFile(file.path)
+}
+
+export async function assertBrandingLogoFile(file: Express.Multer.File) {
+  try {
+    validateBrandingLogoMetadata(file)
+    const content = await readUploadedFile(file)
+    if (!content.length) {
+      throw new AppException('O arquivo de logo esta vazio.', 400, 'EMPTY_BRANDING_FILE')
+    }
+    if (content.length > MAX_BRANDING_LOGO_SIZE) {
+      throw new AppException('O logo excede o limite de 2 MB.', 413, 'BRANDING_FILE_TOO_LARGE')
+    }
+
+    const extension = path.extname(file.originalname).toLowerCase()
+    const isPng = content.length >= 24
+      && content.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      && content.subarray(12, 16).toString('ascii') === 'IHDR'
+      && content.readUInt32BE(16) > 0
+      && content.readUInt32BE(20) > 0
+    const isJpeg = content.length >= 4
+      && content[0] === 0xff && content[1] === 0xd8
+      && content[content.length - 2] === 0xff && content[content.length - 1] === 0xd9
+    const isWebp = content.length >= 16
+      && content.subarray(0, 4).toString('ascii') === 'RIFF'
+      && content.subarray(8, 12).toString('ascii') === 'WEBP'
+      && ['VP8 ', 'VP8L', 'VP8X'].includes(content.subarray(12, 16).toString('ascii'))
+    const valid = extension === '.png' ? isPng : ['.jpg', '.jpeg'].includes(extension) ? isJpeg : isWebp
+    if (!valid) {
+      throw new AppException(
+        'O conteudo do arquivo nao corresponde a uma imagem PNG, JPEG ou WebP valida.',
+        415,
+        'INVALID_BRANDING_CONTENT',
+      )
+    }
+  } catch (error) {
+    await discardTemporaryUpload(file)
+    throw error
+  }
 }
 
 export async function assertSoundtrackAudioFile(file: Express.Multer.File) {

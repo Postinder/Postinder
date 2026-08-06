@@ -41,8 +41,8 @@ Base local: `http://localhost:3001/api/v1`.
   tokens ambiguos e tokens privados de portal nao sao access tokens
   administrativos.
 - Todas as rotas administrativas passam pela cadeia central de autenticacao,
-  contexto administrativo e capacidade. Existem 36 capacidades declaradas em
-  43 rotas, com negacao por padrao.
+  contexto administrativo e capacidade. Existem 37 capacidades declaradas em
+  45 rotas, com negacao por padrao.
 - Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`; `viewer` e
   estritamente somente leitura.
 - Aprovacao e reprovacao pertencem ao portal do Cliente.
@@ -59,5 +59,7 @@ Base local: `http://localhost:3001/api/v1`.
 - Em producao, cada arquivo ainda e recebido em memoria antes do envio ao Supabase; upload direto ou retomavel esta no roadmap.
 - Fundo sonoro usa entidade e aprovacao separadas dos anexos. Audio enviado aceita um arquivo ativo de ate 50 MB em MP3, WAV, OGG, AAC ou M4A e reutiliza o Storage existente.
 - Alteracoes de fundo sonoro em postagens `executed` sao recusadas. Decisoes pertencem somente ao Cliente e ficam versionadas para auditoria.
+- `GET /api/v1/branding` fornece somente a identidade institucional publica. `POST /api/v1/branding/logo` e `DELETE /api/v1/branding/logo` exigem contexto administrativo e a capacidade `branding:update`, exclusiva de `admin`.
+- Logos usam o Storage existente em `branding/logo/{uuid}.{ext}`, aceitam PNG, JPEG ou WebP de ate 2 MB e sao validados por MIME, extensao e assinatura. A URL nao e persistida; ausencia ou falha usa o fallback Postinder.
 
 Consulte [../PROJECT_STATE.md](../PROJECT_STATE.md), [../docs/STORAGE_ARCHITECTURE.md](../docs/STORAGE_ARCHITECTURE.md) e [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) para a documentacao consolidada.

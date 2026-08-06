@@ -38,6 +38,7 @@ export const ADMIN_CAPABILITIES = Object.freeze([
   'soundtracks:update',
   'soundtracks:upload',
   'ai-insights:generate',
+  'branding:update',
   'demo-reset:execute',
 ] as const)
 

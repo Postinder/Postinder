@@ -43,8 +43,13 @@ export function errorHandler(
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       const isSoundtrack = req.path.includes('/soundtrack')
+      const isBranding = req.path.includes('/branding')
       return res.status(413).json({
-        error: isSoundtrack ? 'O arquivo de audio excede o limite de 50 MB.' : 'O arquivo excede o limite de 200 MB.',
+        error: isBranding
+          ? 'O logo excede o limite de 2 MB.'
+          : isSoundtrack
+            ? 'O arquivo de audio excede o limite de 50 MB.'
+            : 'O arquivo excede o limite de 200 MB.',
         code: 'FILE_TOO_LARGE',
       })
     }

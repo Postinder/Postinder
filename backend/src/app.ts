@@ -26,12 +26,15 @@ import { logger } from './shared/utils/Logger'
 import { PortalController } from './modules/portal/presentation/controllers/PortalController'
 import { AIInsightsController } from './modules/integrations/presentation/controllers/AIInsightsController'
 import { createIntegrationsRoutes } from './modules/integrations/presentation/routes/integrations.routes'
+import { BrandingController } from './modules/branding/presentation/controllers/BrandingController'
+import { createAdminBrandingRoutes, createPublicBrandingRoutes } from './modules/branding/presentation/routes/branding.routes'
 
 export interface AppOptions {
   runtimeEnvironment?: Environment
   maintenanceController?: MaintenanceController
   portalController?: PortalController
   aiInsightsController?: AIInsightsController
+  brandingController?: BrandingController
 }
 
 function parseCorsOrigins(runtimeEnvironment: Environment) {
@@ -90,6 +93,7 @@ export function createApp(options: AppOptions = {}): Express {
   })
 
   app.use('/api/v1/auth', createAuthRoutes())
+  app.use('/api/v1/branding', createPublicBrandingRoutes(options.brandingController))
   app.use('/api/v1/portal', createPortalRoutes(options.portalController))
   app.all('/api/v1/portal/*', (_req, res) => {
     res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' })
@@ -117,6 +121,7 @@ export function createApp(options: AppOptions = {}): Express {
   adminRoutes.use('/files', createFilesRoutes())
   adminRoutes.use('/feedback', createFeedbackRoutes())
   adminRoutes.use('/activities', createActivitiesRoutes())
+  adminRoutes.use('/branding', createAdminBrandingRoutes(options.brandingController))
   adminRoutes.use(
     '/integrations',
     createIntegrationsRoutes(runtimeEnvironment, options.aiInsightsController),

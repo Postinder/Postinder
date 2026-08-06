@@ -6,10 +6,20 @@
 - Os bloqueadores tecnicos C-01, C-02, H-02, H-03 e H-04 foram corrigidos e validados localmente.
 - Backend: 151/151 testes aprovados. Frontend: 40/40 testes aprovados. Os dois builds e `git diff --check` foram aprovados nesta hotfix; o bundle scan aprovado na auditoria permanece sem alteracao.
 - As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
-- As migrations `012`, `013`, `014` e `015` foram aplicadas em producao e confirmadas em `schema_migrations`. O banco publicado esta em `015`.
-- A hotfix de CPF/CNPJ e `deadline_days` permanece somente local, sem commit, push ou deploy. Apenas `016_client_documents.sql` esta pendente em producao, e sua publicacao permanece **nao autorizada** nesta etapa.
+- A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
+- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O banco publicado esta em `016`, sem migration pendente.
+- O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
-## Rodada visual e funcional concluida localmente
+## Correcao local de branding ainda nao publicada
+
+- A tentativa anterior consistia em SVGs hardcoded e duplicados na barra lateral e no portal; o PNG versionado nao era renderizado e nao existiam banco, API, upload ou persistencia.
+- A entrada e as telas publicas de autenticacao permanecem Postinder. A identidade institucional configuravel atua na area administrativa da empresa e no portal do Cliente, com interface de previa e confirmacao explicita, componente visual compartilhado e fallback Postinder. Nenhuma variavel `VITE_*` foi adicionada.
+- A migration aditiva `017_platform_branding.sql` persiste somente identidade de Storage, MIME, tamanho e versao. Ela esta local e nao foi aplicada em producao.
+- A leitura publica e `GET /api/v1/branding`; upload e remocao usam `/api/v1/branding/logo` e a capacidade `branding:update`, exclusiva de `admin`.
+- PNG, JPEG e WebP de ate 2 MB sao validados no frontend e no backend. A substituicao confirma a nova referencia antes de remover a anterior, e paths UUID mais `logo_version` evitam cache obsoleto.
+- A rodada local foi validada com 158/158 testes de backend, 44/44 de frontend, builds dos dois projetos e `git diff --check`. O migrador oficial aplicou `016` e `017` no PostgreSQL local e a segunda execucao foi idempotente; nenhuma migration foi aplicada em producao.
+
+## Rodada visual e funcional publicada
 
 - A Previa do Feed reconhece videos pelo mecanismo compartilhado de midia e usa `MediaPreview`, sem enviar URL de video para `<img>`. Imagens preservam o comportamento anterior, a primeira midia continua seguindo a ordenacao oficial dos arquivos e nao houve alteracao de Storage, API ou backend para gerar thumbnails.
 - No Dashboard, **Atividade recente** e **Postagens** iniciam recolhidas, expandem de forma independente e mantem seus conteudos montados. O estado e local a cada carregamento, e os controles expõem `aria-expanded`, `aria-controls` e regioes associadas.
@@ -22,6 +32,7 @@
 - A camada de tokens prepara uma futura parametrizacao por empresa sem implementar multiempresa ou white-label.
 - A hotfix de Clientes persiste CPF/CNPJ opcional em `document_type` e `document_number`, sempre com digitos no banco e mascara apenas na interface. Criacao, edicao, remocao, listagem, detalhe e busca usam o mesmo contrato; a validacao de digitos verificadores ocorre no frontend e no backend. Nao ha unicidade, consulta externa nem preenchimento retroativo.
 - O prazo de aprovacao passou a ser enviado oficialmente como `deadline_days` na criacao, edicao e importacao VCF. O backend aceita temporariamente `deadlineDays` apenas como compatibilidade de entrada e normaliza internamente para `deadline_days`.
+- Em producao, foram validados criacao com CPF, criacao e edicao com CNPJ, remocao do documento, compatibilidade de Cliente antigo sem documento e persistencia/recuperacao de prazo diferente de 7 dias. Documentos cadastrados antes da correcao nao foram recuperados retroativamente.
 
 ## Visao do produto
 
@@ -58,7 +69,7 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 - Tokens de portal sao aleatorios, armazenados como hash, expiram, podem ser regenerados e sao revogados quando o Cliente e desativado.
 - Identidades administrativas, identidades de Cliente, refresh tokens e tokens privados de portal sao contextos distintos. Access tokens administrativos exigem `type: "admin"`; tokens de Cliente exigem `type: "client"` em seus fluxos proprios.
 - Todas as rotas administrativas passam pela cadeia central de autenticacao, validacao do contexto administrativo e autorizacao por capacidade. Tokens ambiguos, mistos, legados ou de refresh usados como access token sao rejeitados antes dos controllers.
-- A autorizacao administrativa e tipada, nega por padrao e possui 36 capacidades aplicadas explicitamente a 43 rotas. Uma rota administrativa sem politica declarada recebe `403`.
+- A autorizacao administrativa e tipada, nega por padrao e possui 37 capacidades aplicadas explicitamente a 45 rotas. Uma rota administrativa sem politica declarada recebe `403`.
 - Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`: admin possui todas as capacidades; manager opera sem administrar usuarios, executar exclusoes destrutivas ou reset; editor atua no fluxo editorial sem mutacoes de Clientes, execucao, exclusoes, usuarios ou reset; viewer possui somente leituras aprovadas.
 - Criacao e alteracao de usuarios ou papeis exigem capacidades exclusivas de admin. Perfis desconhecidos, legados ou identidades nao administrativas recebem zero capacidades.
 - O frontend ainda possui referencias visuais legadas a `gestor` e `equipe`; elas podem exibir acoes que o backend recusara, mas nao contornam a barreira autoritativa.
@@ -100,16 +111,16 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais vigentes vao de `001` e `003` a `016`, cobrindo portal, ordenacao, execucao, retencao, e-mail, remocao do antigo estado `archived`, metadados de Storage, fundo sonoro versionado e documento opcional de Cliente.
 
-O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da publicacao de 30/07/2026 e:
+O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da publicacao da hotfix em 31/07/2026 e:
 
-- `001`, a `002` historica e `003` a `015` estao registradas;
-- `012`, `013`, `014` e `015` foram aplicadas com sucesso e confirmadas em `schema_migrations`;
-- o banco publicado esta em `015`;
-- apenas `016_client_documents.sql` permanece pendente.
+- `001`, a `002` historica e `003` a `016` estao registradas;
+- `016_client_documents.sql` foi aplicada com sucesso;
+- o banco publicado esta em `016`;
+- nao existe migration pendente em producao.
 
 O backup logico foi criado, preservado e validado. A restauracao foi comprovada em stack Supabase local compativel, em transacao unica, usando copia de `roles.sql` com somente a instrucao de `statement_timeout` de `supabase_admin` comentada; schema e dados permaneceram identicos. O backup e restauravel com esse procedimento documentado de compatibilidade, mas nao inclui objetos fisicos do Supabase Storage.
 
-Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026 e confirmadas em `schema_migrations`. A `016` foi adicionada depois: integra corretamente a cadeia estrutural e possui cobertura automatizada de contrato SQL, mas nao foi aplicada a banco local ou remoto nesta hotfix. Na futura publicacao, o migrador devera ignorar `001` a `015` e aplicar somente `016_client_documents.sql`.
+Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Nao ha pendencia estrutural no banco publicado.
 
 ## Seguranca e demonstracao
 
@@ -144,13 +155,13 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 
 ## Estado operacional e limitacoes
 
-- As correcoes, a rodada visual e a hotfix de Clientes foram validadas localmente com 151/151 testes de backend, 40/40 de frontend, builds dos dois projetos e `git diff --check`. O bundle scan da auditoria permanece aprovado sem marcadores sensiveis. O frontend inclui testes de branding, legibilidade, cores semanticas, swipe, paineis recolhiveis e documentos de Cliente. Nenhum teste chamou provedor real, e a hotfix nao acessou banco ou servico remoto.
+- As correcoes, a rodada visual e a hotfix de Clientes foram validadas com 151/151 testes de backend, 40/40 de frontend, builds dos dois projetos e `git diff --check`. Depois da publicacao, os tres health checks e os cenarios especificos de CPF/CNPJ, remocao, compatibilidade legada e prazo personalizado foram aprovados.
 - O script `npm run lint` do frontend existe, mas ESLint e sua configuracao nao estao disponiveis. O comando nao foi aprovado. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; por isso, a pendencia e tecnica e nao bloqueante para a publicacao atual. A verificacao administrativa da Vercel continua necessaria para confirmar que nao existe override remoto.
-- A publicacao de 30/07/2026 aplicou `012` a `015` e atualizou backend e frontend. A hotfix atual nao teve commit, push, migration ou deploy; somente a `016` permanece pendente.
+- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado esta em `016`, sem migration pendente.
 - A verificacao manual da Vercel continua pendente para nomes de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews. Eventual segredo historico exigira rotacao ou invalidacao em etapa separada.
-- A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend foi publicado em 30/07/2026 e os tres endpoints de health responderam com sucesso.
-- O ambiente publicado atual continua sendo uma demo. Antes da proxima publicacao, Render e frontend devem receber os marcadores de demo descritos no guia de deploy.
-- A observacao anterior do backend no Render foi superada pela publicacao confirmada de 30/07/2026.
+- A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend da hotfix foi publicado em 31/07/2026 e os tres endpoints de health responderam com sucesso.
+- O ambiente publicado continua em modo demo, disponivel em `https://portal-20cinco.vercel.app` e preparado para testes pela 20Cinco.
+- As observacoes anteriores do backend no Render foram superadas pela publicacao confirmada de 31/07/2026.
 - A versao publicada nao deve receber dados reais sensiveis nem novas credenciais frontend.
 - O bucket continua publico no fluxo atual; bucket privado e signed URLs nao foram implementados.
 - Em producao, cada arquivo ainda passa pela memoria do backend antes do Supabase. Upload direto ou retomavel para o Storage nao foi implementado.

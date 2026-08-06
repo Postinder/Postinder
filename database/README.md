@@ -17,23 +17,25 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 
 `002_development_seed.sql` e uma migration historica preservada para compatibilidade de bancos antigos, mas nao e executada pela cadeia estrutural.
 
-No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `015`
-estao registradas. As migrations `012`, `013`, `014` e `015` foram aplicadas
-com sucesso em 30/07/2026 e confirmadas em `schema_migrations`. O banco
-publicado esta em `015`; somente `016_client_documents.sql` permanece pendente.
+No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `016`
+estao registradas. As migrations `012` a `015` foram aplicadas em 30/07/2026,
+e `016_client_documents.sql` foi aplicada em 31/07/2026. O banco publicado
+esta em `016`, sem migration pendente.
 
 O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
-e posteriormente aplicou `012` a `015` em producao. Na futura publicacao da
-hotfix, ele devera ignorar `001` a `015` e aplicar somente a `016`, em release
-step bloqueante anterior ao Start Command.
+e posteriormente aplicou `012` a `015` em producao. Na publicacao da hotfix,
+ignorou as migrations ja registradas e aplicou somente a `016`.
+
+A migration aditiva `017_platform_branding.sql`, ainda nao publicada, cria a configuracao institucional global com uma unica linha opcional, referencia `bucket + storage_path`, MIME, tamanho e versao de cache. Ela nao altera Clientes, postagens, anexos nem historicos; instalacoes sem registro usam o fallback Postinder. O migrador oficial aplicou a `017` no PostgreSQL local e confirmou idempotencia em uma segunda execucao.
 
 A migration `015_post_soundtracks.sql` cria o estado atual do fundo sonoro, suas revisoes imutaveis e decisoes do Cliente. O vinculo e opcional: postagens anteriores continuam semanticamente no modo `none`, sem backfill de registros nem reescrita de historico.
 
 A migration `016_client_documents.sql` adiciona `document_type` e
 `document_number` anulaveis a `clients`, com constraint de coerencia para CPF
 de 11 digitos ou CNPJ de 14 digitos. Ela nao cria unicidade nem altera
-registros existentes. A migration integra a cadeia estrutural, mas ainda nao
-foi aplicada em producao.
+registros existentes. CPF/CNPJ permanece opcional e sem unicidade; documentos
+cadastrados antes da correcao nao foram recuperados. A migration foi aplicada
+com sucesso em producao em 31/07/2026.
 
 ## Backup e recuperacao
 

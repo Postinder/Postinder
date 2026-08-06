@@ -2,10 +2,9 @@
 
 Consulte [../DEPLOYMENT.md](../DEPLOYMENT.md) para configuracao de Render, Vercel, Supabase e migrations.
 
-O deploy da hotfix de Clientes permanece **nao autorizado** ate a conclusao
-desta checklist ou de uma versao equivalente aprovada posteriormente. A
-publicacao anterior de backend, frontend e migrations `012` a `015` foi
-concluida em 30/07/2026.
+A hotfix de Clientes foi publicada e validada em 31/07/2026. O banco esta em
+`016`, sem migration pendente, e o ambiente demo esta disponivel para avaliacao
+da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Consolidacao e verificacao
 
@@ -20,26 +19,33 @@ concluida em 30/07/2026.
    confirmada ou presumida.
 7. [ ] Revisar as variaveis finais da Vercel; manter no frontend apenas
    `VITE_API_URL`, `VITE_DEPLOYMENT_MODE` e `VITE_GA_MEASUREMENT_ID`.
-8. [ ] Configurar no Render `DEPLOYMENT_MODE=demo` e
+8. [x] Configurar no Render `DEPLOYMENT_MODE=demo` e
    `ENABLE_DEMO_RESET=true`.
-9. [ ] Configurar no frontend `VITE_DEPLOYMENT_MODE=demo`.
+9. [x] Configurar no frontend `VITE_DEPLOYMENT_MODE=demo`.
 10. [ ] Decidir se a IA sera habilitada.
 11. [ ] Se habilitada, configurar a credencial e o modelo somente no backend.
 12. [ ] Criar novo backup logico do banco.
 13. [ ] Executar preflight final somente leitura.
-14. [ ] Reconfirmar o impacto da migration `016`.
+14. [x] Reconfirmar o impacto da migration `016`.
 15. [ ] Configurar `npm run db:migrate` como Pre-Deploy Command/release step
     bloqueante anterior ao Start Command.
 
 ## Publicacao
 
-16. [ ] Publicar primeiro o backend.
-17. [ ] Confirmar que o migrador ignorou `001` a `015`, aplicou somente a `016`
+16. [x] Publicar primeiro o backend.
+17. [x] Confirmar que o migrador ignorou `001` a `015`, aplicou somente a `016`
     e iniciou sem pendencias.
-18. [ ] Publicar o frontend.
-19. [ ] Confirmar commits e bundles ativos.
+18. [x] Publicar o frontend.
+19. [x] Confirmar commits e bundles ativos.
 
 ## Depois do deploy
+
+Validacoes especificas da hotfix:
+
+- [x] `/health`, `/health/db` e `/health/storage` aprovados.
+- [x] Criacao com CPF e criacao/edicao com CNPJ aprovadas.
+- [x] Remocao do documento e compatibilidade de Cliente antigo sem documento aprovadas.
+- [x] Prazo diferente de 7 dias persistido e recuperado corretamente.
 
 20. [ ] Executar smoke tests: health checks, autenticacao, perfis, criacao,
     upload, ordenacao, envio, portais, decisao, correcao, execucao, exclusao
@@ -65,7 +71,7 @@ Validacoes da interface consolidada:
 - [ ] Dashboard inicia **Atividade recente** e **Postagens** recolhidas e permite expansao independente.
 - [ ] Portal mantem a aprovacao prioritaria e a **Visao geral** recolhida por padrao, sem perder aba ou filtros ao reabrir.
 - [ ] Identidade da 20Cinco, contraste, foco e cores semanticas permanecem corretos nos temas claro e escuro.
-- [ ] Cliente pode ser criado e editado com ou sem CPF/CNPJ; documento pode ser removido e prazo diferente de 7 dias persiste.
+- [x] Cliente pode ser criado e editado com ou sem CPF/CNPJ; documento pode ser removido e prazo diferente de 7 dias persiste.
 
 O script `npm run lint` existe, mas ESLint e sua configuracao ainda nao estao
 disponiveis. Nenhum workflow de CI, configuracao versionada da Vercel ou

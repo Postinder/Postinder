@@ -121,6 +121,54 @@ export async function storeUploadedFile(
   }
 }
 
+export async function storeBrandingLogo(file: Express.Multer.File): Promise<StoredFile> {
+  const extension = path.extname(file.originalname).toLowerCase()
+  const storagePath = `branding/logo/${uuidv4()}${extension}`
+
+  if (env.NODE_ENV !== 'production') {
+    const destinationFile = getLocalStoragePath(storagePath)
+    await fs.mkdir(path.dirname(destinationFile), { recursive: true })
+    await fs.rename(file.path, destinationFile)
+    return {
+      bucket: LOCAL_STORAGE_BUCKET,
+      storagePath,
+      publicUrl: `/uploads/${storagePath}`,
+      mimeType: file.mimetype,
+      sizeBytes: file.size,
+    }
+  }
+
+  const supabase = getStorageClient()
+  if (!supabase) throw new Error('Supabase storage is not configured')
+
+  const bucket = env.SUPABASE_STORAGE_BUCKET
+  const { error } = await supabase.storage.from(bucket).upload(storagePath, file.buffer, {
+    contentType: file.mimetype,
+    upsert: false,
+  })
+  if (error) throw new Error(`Failed to upload file: ${error.message}`)
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath)
+  return {
+    bucket,
+    storagePath,
+    publicUrl: data.publicUrl,
+    mimeType: file.mimetype,
+    sizeBytes: file.size,
+  }
+}
+
+export function getStoredFilePublicUrl(reference: StorageObjectReference): string | null {
+  const bucket = reference.bucket || null
+  const storagePath = reference.storagePath || null
+  if (!bucket || !storagePath) return null
+  if (bucket === LOCAL_STORAGE_BUCKET) return `/uploads/${storagePath}`
+
+  const supabase = getStorageClient()
+  if (!supabase) throw new Error('Supabase storage is not configured')
+  return supabase.storage.from(bucket).getPublicUrl(storagePath).data.publicUrl
+}
+
 export async function copyStoredFile(
   source: StorageObjectReference,
   target: StorageCopyTarget,

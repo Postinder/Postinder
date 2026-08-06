@@ -2,6 +2,12 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
+## Nao publicado - identidade institucional global
+
+- Foi corrigida a tentativa estatica de branding: os SVGs duplicados foram substituidos por configuracao global persistente e componente compartilhado no menu administrativo e no portal do Cliente. A entrada e as telas publicas de autenticacao permanecem com a marca Postinder.
+- A area **Identidade visual**, exclusiva de `admin`, permite visualizar, selecionar, previsualizar, confirmar, substituir e remover PNG, JPEG ou WebP de ate 2 MB.
+- A migration aditiva `017_platform_branding.sql` armazena somente referencia de Storage e metadados. O endpoint publico nao expoe bucket/path; substituicao e compensacao preservam o logo anterior em falhas intermediarias.
+
 ## Publicado em 30/07/2026 - consolidacao pre-deploy
 
 Estas alteracoes foram publicadas em backend e frontend em 30/07/2026:
@@ -13,19 +19,21 @@ Estas alteracoes foram publicadas em backend e frontend em 30/07/2026:
 - Credenciais e chamadas de integracoes foram removidas do frontend. Anthropic e Z-API sao server-side; Twilio, GoHighLevel, Canva e Resend permanecem desabilitados.
 - A IA passou a usar endpoint proprio do backend, autorizacao `ai-insights:generate`, URL fixa, modelo allowlisted, timeout/abort e payload agregado e pseudonimizado.
 - A estrutura de fundo sonoro foi concluida com estado atual, revisoes, decisoes, Storage e Retencao auditaveis.
-- As migrations `012`, `013`, `014` e `015` foram aplicadas com sucesso em producao e confirmadas em `schema_migrations`; o banco publicado esta em `015`.
+- As migrations `012`, `013`, `014` e `015` foram aplicadas com sucesso em producao e confirmadas em `schema_migrations` na publicacao de 30/07/2026.
 - O backup logico foi criado e sua restauracao foi validada em stack Supabase local com uma adaptacao minima e documentada na copia de `roles.sql`.
 - O migrador real aplicou `012` a `015` em clone restaurado, na ordem correta; a segunda execucao foi no-op e o advisory lock foi liberado corretamente.
 - Depois da publicacao, `/health`, `/health/db` e `/health/storage` responderam com sucesso.
 
-## Hotfix local de Clientes
+## Publicado em 31/07/2026 - hotfix de Clientes
 
 - Backend: 151/151 testes. Frontend: 40/40 testes. Builds e `git diff --check` aprovados nesta hotfix; o bundle scan aprovado na auditoria permanece valido.
 - CPF/CNPJ opcional passou a ser persistido em `document_type` e `document_number`, com digitos no banco, mascara na interface e validacao de digitos verificadores no frontend e no backend.
-- Criacao, edicao, remocao, listagem, detalhe e busca passaram a usar o contrato oficial `document_type`/`document_number`; documentos ausentes permanecem nulos e Clientes existentes nao receberam preenchimento retroativo.
+- Criacao, edicao, remocao, listagem, detalhe e busca passaram a usar o contrato oficial `document_type`/`document_number`; documentos ausentes permanecem nulos e documentos cadastrados antes da correcao nao foram recuperados retroativamente.
 - O frontend passou a enviar `deadline_days` na criacao, edicao e importacao VCF. O backend preserva compatibilidade temporaria de entrada com `deadlineDays`.
 - A migration `016_client_documents.sql` adiciona as duas colunas anulaveis e uma constraint de coerencia entre tipo, quantidade e somente digitos. Nao ha indice unico.
-- A `016` ainda nao foi aplicada em producao e e a unica migration pendente. A hotfix permanece sem commit, push ou deploy.
+- A hotfix foi commitada, enviada ao Git e publicada em backend e frontend. A `016` foi aplicada com sucesso, o banco publicado esta em `016` e nao existe migration pendente.
+- Os health checks foram aprovados, assim como criacao com CPF, criacao e edicao com CNPJ, remocao do documento, Cliente antigo sem documento e prazo diferente de 7 dias.
+- O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Rodada local de interface e identidade
 
@@ -115,4 +123,4 @@ Estas alteracoes foram publicadas em backend e frontend em 30/07/2026:
 - A auditoria pre-deploy foi concluida e os bloqueadores tecnicos foram corrigidos localmente.
 - O Render foi conferido manualmente sem valores: nenhuma variavel `VITE_*`, credencial de integracao ou Environment Group foi evidenciado; as variaveis da demo e a credencial server-side da IA ainda nao estao configuradas.
 - A Vercel ainda exige inventario manual de variaveis, ambientes e deployments historicos.
-- A consolidacao anterior foi publicada em 30/07/2026 com as migrations `012` a `015`. A hotfix de Clientes e a migration `016` continuam somente locais.
+- A consolidacao anterior foi publicada em 30/07/2026 com as migrations `012` a `015`. A hotfix de Clientes e a migration `016` foram publicadas e validadas em 31/07/2026.

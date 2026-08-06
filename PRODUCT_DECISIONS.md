@@ -44,10 +44,12 @@
 
 ## Identidade visual
 
-- A identidade visual adotada no portal do Cliente nesta fase e a da 20Cinco. A area administrativa continua identificada internamente como Postinder.
+- Existe uma unica identidade institucional global da empresa de marketing responsavel pela plataforma. Ela nao representa o logo individual de cada Cliente.
+- Somente `admin`, por meio da capacidade `branding:update`, pode enviar, substituir ou remover o logo. A leitura publica contem apenas nome institucional, URL utilizavel, versao e data de atualizacao.
+- A entrada da plataforma e as telas publicas de autenticacao preservam a marca Postinder. O logo configuravel e carregado dinamicamente apenas na area administrativa da empresa e no portal do Cliente, sem depender de variavel `VITE_*` ou rebuild do frontend. Ausencia, registro antigo, indisponibilidade ou falha da imagem usam o fallback Postinder.
 - O magenta da marca pertence a navegacao, selecao, foco e destaques nao semanticos. Verde para aprovacao, vermelho para recusa ou ajuste e amarelo/laranja para pendencia nao devem ser substituidos pela cor da marca.
 - Tokens de marca devem permanecer centralizados e restritos ao portal para permitir futura parametrizacao sem reescrever componentes.
-- O cabecalho usa temporariamente uma adaptacao vetorial SVG aprovada. Ela nao e o asset oficial fornecido e deve ser substituida quando houver asset vetorial oficial ou variante oficial adequada para fundos escuros.
+- O logo configurado aceita PNG, JPEG ou WebP de ate 2 MB. SVG permanece recusado ate existir sanitizacao especifica.
 - Multiempresa e white-label permanecem possibilidades futuras; nao sao funcionalidades atuais.
 
 ## Fundo sonoro

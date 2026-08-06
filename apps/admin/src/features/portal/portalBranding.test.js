@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import test from 'node:test'
 
@@ -11,34 +10,35 @@ const portalReviewActionsSource = readFileSync(new URL('./PortalReviewActions.js
 const portalContentSelectorSource = readFileSync(new URL('./PortalContentSelector.jsx', import.meta.url), 'utf8')
 const portalStatusSource = readFileSync(new URL('./portalStatus.js', import.meta.url), 'utf8')
 const adminLayoutSource = readFileSync(new URL('../../components/layout/AdminLayout.jsx', import.meta.url), 'utf8')
-const logoBytes = readFileSync(new URL('../../assets/20cinco-logo-horizontal.png', import.meta.url))
+const institutionalBrandSource = readFileSync(new URL('../../components/branding/InstitutionalBrand.jsx', import.meta.url), 'utf8')
+const brandingProviderSource = readFileSync(new URL('../../components/branding/BrandingProvider.jsx', import.meta.url), 'utf8')
 const portalComponentSource = readdirSync(portalDirectory)
   .filter(fileName => fileName.endsWith('.jsx'))
   .map(fileName => readFileSync(new URL(fileName, portalDirectory), 'utf8'))
   .join('\n')
 
-test('portal header uses the high-contrast 20Cinco mark without the previous visible brand', () => {
+test('portal and admin use the shared dynamic institutional brand', () => {
   assert.match(portalHeaderSource, />Portal de revisão</)
-  assert.match(portalHeaderSource, /role="img"/)
-  assert.match(portalHeaderSource, /aria-label="20Cinco Comunicação"/)
-  assert.match(portalHeaderSource, /viewBox="0 0 220 72"/)
-  assert.match(portalHeaderSource, /fill="white"/)
+  assert.match(portalHeaderSource, /<InstitutionalBrand/)
+  assert.match(adminLayoutSource, /<InstitutionalBrand/)
+  assert.doesNotMatch(portalHeaderSource, /<svg/)
+  assert.doesNotMatch(adminLayoutSource, /Logo20Cinco/)
   assert.match(portalHeaderSource, /text-white\/70/)
   assert.match(portalHeaderSource, /portal-theme-toggle/)
-  assert.doesNotMatch(portalHeaderSource, /portal-brand-logo-surface/)
-  assert.doesNotMatch(portalHeaderSource, /\b(filter|invert|brightness|grayscale|mix-blend|opacity)-/)
-  assert.equal(portalHeaderSource.includes('>Postinder<'), false)
-  assert.equal(portalHeaderSource.includes('>P</div>'), false)
 })
 
-test('provided official PNG remains intact and admin identity remains present', () => {
-  assert.deepEqual([...logoBytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10])
-  assert.equal(createHash('sha256').update(logoBytes).digest('hex'), '8db01bb2c8c9ab8f5ff01b619bbee99bdb3f070b8ec2dd9155ba24f23338f05f')
+test('shared brand preserves layout and falls back when configuration or image loading fails', () => {
+  assert.match(institutionalBrandSource, /object-contain/)
+  assert.match(institutionalBrandSource, /onError=\{\(\) => setImageFailed\(true\)\}/)
+  assert.match(institutionalBrandSource, /Post<span className="text-mag-500">inder/)
+  assert.match(institutionalBrandSource, /alt=\{`Logo institucional/)
+  assert.match(brandingProviderSource, /fetchBranding/)
+  assert.match(brandingProviderSource, /catch\(\(\) => setBranding\(FALLBACK_BRANDING\)\)/)
   assert.match(adminLayoutSource, /Postinder v2\.0/)
   assert.doesNotMatch(adminLayoutSource, /portal-brand/)
 })
 
-test('20Cinco admin sidebar preserves the magenta identity in both themes', () => {
+test('admin sidebar preserves the magenta identity in both themes', () => {
   assert.match(adminLayoutSource, /bg-mag-600 dark:bg-mag-700/)
   assert.doesNotMatch(adminLayoutSource, /bg-mag-600 dark:bg-neutral-950/)
   assert.match(adminLayoutSource, /bg-white\/15 text-white/)

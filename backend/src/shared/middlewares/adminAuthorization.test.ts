@@ -208,6 +208,7 @@ test('every mounted administrative route has exactly one explicit capability pol
     ['activities', 'src/modules/activities/presentation/routes/activities.routes.ts'],
     ['integrations', 'src/modules/integrations/presentation/routes/integrations.routes.ts'],
     ['maintenance', 'src/modules/maintenance/presentation/routes/maintenance.routes.ts'],
+    ['branding', 'src/modules/branding/presentation/routes/branding.routes.ts', 'createAdminBrandingRoutes'],
   ] as const
 
   const mounted = new Set<string>()
@@ -278,6 +279,7 @@ before(async () => {
     { NotificationsController },
     { MaintenanceController },
     { AIInsightsController },
+    { BrandingController },
     poolModule,
   ] = await Promise.all([
     import('../../modules/clients/presentation/controllers/ClientsController'),
@@ -290,6 +292,7 @@ before(async () => {
     import('../../modules/notifications/presentation/controllers/NotificationsController'),
     import('../../modules/maintenance/presentation/controllers/MaintenanceController'),
     import('../../modules/integrations/presentation/controllers/AIInsightsController'),
+    import('../../modules/branding/presentation/controllers/BrandingController'),
     import('../database/pool'),
   ])
 
@@ -339,6 +342,7 @@ before(async () => {
   patch(NotificationsController.prototype, ['list', 'markAsRead', 'markAllAsRead'])
   patch(MaintenanceController.prototype, ['resetDemoData'])
   patch(AIInsightsController.prototype, ['generate'])
+  patch(BrandingController.prototype, ['uploadLogo', 'removeLogo'])
 
   const [
     { createApp },
@@ -503,6 +507,18 @@ test('C-01 identities and deny-by-default remain ahead of every privileged handl
     })
     assert.equal(response.status, 403)
     assert.equal(handlerCalls, beforeCalls)
+  })
+
+  await t.test('branding mutation rejects unauthenticated, client and viewer identities before upload', async () => {
+    for (const [token, expectedStatus] of [[undefined, 401], [clientToken, 403], [viewerToken, 403]] as const) {
+      const beforeCalls = handlerCalls
+      const response = await request('/api/v1/branding/logo', token, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      assert.equal(response.status, expectedStatus)
+      assert.equal(handlerCalls, beforeCalls)
+    }
   })
 })
 

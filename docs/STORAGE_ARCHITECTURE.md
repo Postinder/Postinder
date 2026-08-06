@@ -29,6 +29,12 @@ Os metadados de MIME e tamanho acompanham os arquivos nas consultas administrati
 
 Videos usam o elemento nativo `video` com controles, `playsInline` e `preload="metadata"`. O sistema nao transcodifica conteiner ou codec; MP4 com H.264/AAC e a recomendacao de compatibilidade. Quando o navegador nao reproduz o arquivo, a interface explica a limitacao e oferece acesso ao original.
 
+## Logo institucional
+
+O logo global reutiliza o mesmo adaptador local/Supabase. A identidade persistida em `platform_branding` e `logo_bucket + logo_storage_path`; URL publica nao e armazenada no banco. O servidor controla paths versionados no formato `branding/logo/{uuid}.{ext}` e aceita apenas PNG, JPEG ou WebP de ate 2 MB, confrontando MIME, extensao e assinatura basica do conteudo.
+
+Na substituicao, o novo objeto e enviado e a nova referencia e confirmada em transacao antes da remocao do anterior. Falha de persistencia tenta compensar o objeto novo; falha posterior ao remover o anterior nao invalida a configuracao salva. Cada alteracao incrementa `logo_version`, e o frontend usa essa versao estavel no cache. O endpoint publico nao retorna bucket, path ou credenciais.
+
 ## Duplicacao
 
 Duplicar uma postagem cria um objeto fisico novo para cada arquivo identificado, em path associado a nova postagem. Os registros de `files` tambem sao novos e independentes; status de aprovacao e decisao de rejeicao nao sao compartilhados com a origem.

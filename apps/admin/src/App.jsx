@@ -17,6 +17,7 @@ import UsersPage from './features/users/UsersPage'
 import EmailPage from './features/settings/EmailPage'
 import IntegrationsPage from './features/settings/IntegrationsPage'
 import ResetDataPage from './features/settings/ResetDataPage'
+import BrandingPage from './features/settings/BrandingPage'
 import ClientPortalPage from './features/portal/ClientPortalPage'
 import { ROLE_PERMISSIONS } from './utils/constants'
 import { isDemoDeploymentMode } from './config/deploymentMode'
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="users" element={<RequirePermission permission="users"><UsersPage /></RequirePermission>} />
         <Route path="email" element={<RequirePermission permission="email"><EmailPage /></RequirePermission>} />
         <Route path="integrations" element={<RequirePermission permission="integrations"><IntegrationsPage /></RequirePermission>} />
+        <Route path="branding" element={<RequirePermission permission="branding"><BrandingPage /></RequirePermission>} />
         <Route
           path="reset"
           element={demoResetVisible
