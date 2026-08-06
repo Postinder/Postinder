@@ -4,7 +4,7 @@ Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e 
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface foram publicadas em 30/07/2026. A hotfix de CPF/CNPJ e prazo de Clientes foi commitada, enviada ao Git, publicada e validada em 31/07/2026, com 151/151 testes de backend, 40/40 de frontend, os dois builds e `git diff --check`. A migration `016_client_documents.sql` foi aplicada; o banco publicado esta em `016`, sem migration pendente. O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
+A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface foram publicadas em 30/07/2026. A hotfix de CPF/CNPJ e prazo de Clientes foi publicada e validada em 31/07/2026; o banco publicado continua em `016`. O branding e sua microcorrecao pos-auditoria permanecem locais e nao publicados: a `017_platform_branding.sql` deve ser aplicada pelo migrador oficial antes de uma futura publicacao. A validacao local atual possui 161/161 testes de backend, 45 testes frontend legados, 22 testes React reais e os dois builds aprovados.
 
 ## Interface atual
 
@@ -12,7 +12,7 @@ A auditoria tecnica pre-deploy, as correcoes criticas e a rodada de interface fo
 - **Atividade recente** e **Postagens** iniciam recolhidas no Dashboard e podem ser expandidas independentemente.
 - O portal prioriza a aprovacao; metricas, calendario, historico, arquivos e feedbacks ficam disponiveis na **Visao geral** recolhivel.
 - O layout do portal reserva mais espaco para a midia principal, preserva videos verticais com `object-contain`, responsividade e botoes acessiveis.
-- A entrada e as telas publicas de autenticacao permanecem identificadas como Postinder. Um administrador pode configurar em **Identidade visual** o logo institucional exibido dinamicamente na area interna da empresa e no portal do Cliente, sem rebuild; na ausencia ou falha da imagem, o fallback Postinder permanece funcional.
+- Login e recuperacao permanecem identificados como Postinder e nao montam nem consultam o branding configuravel. Um administrador pode configurar em **Identidade visual** o logo institucional exibido dinamicamente na area interna da empresa e no portal do Cliente, sem rebuild; na ausencia ou falha da imagem, o fallback Postinder permanece funcional.
 - CPF/CNPJ permanece opcional e sem unicidade. Documentos cadastrados antes da correcao nao foram recuperados retroativamente.
 
 ## Arquitetura
@@ -28,9 +28,9 @@ Em desenvolvimento, arquivos ficam em `uploads`. Em producao, o backend usa Supa
 
 ## Requisitos
 
-- Node.js 18 ou superior
+- Node.js 24.x (o arquivo `.node-version` fixa 24.16.0 para desenvolvimento e validacao)
 - Docker Desktop para PostgreSQL local
-- npm
+- npm 11.13.0
 
 ## Inicio rapido
 
@@ -44,15 +44,17 @@ npm run dev
 Para o fluxo manual:
 
 ```bash
-npm install
-npm install --prefix backend
-npm install --prefix apps/admin
+npm ci
+npm ci --prefix backend
+npm ci --prefix apps/admin
 docker compose up -d
 cd backend
 npm run db:migrate
 cd ..
 npm run dev
 ```
+
+A raiz e os dois aplicativos versionam lockfiles v3 e usam `npm ci` em desenvolvimento, validacao e deploy. `npm install` fica reservado exclusivamente a mudancas deliberadas de dependencias. Cada artefato implantavel possui `.npmrc` proprio para aplicar `engine-strict=true` mesmo quando npm inicia diretamente em `backend` ou `apps/admin`.
 
 Para incluir dados de demonstracao depois das migrations:
 

@@ -20,13 +20,13 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `016`
 estao registradas. As migrations `012` a `015` foram aplicadas em 30/07/2026,
 e `016_client_documents.sql` foi aplicada em 31/07/2026. O banco publicado
-esta em `016`, sem migration pendente.
+esta em `016`. Em relacao ao codigo local atual, a `017` permanece pendente para uma futura publicacao.
 
 O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
 e posteriormente aplicou `012` a `015` em producao. Na publicacao da hotfix,
 ignorou as migrations ja registradas e aplicou somente a `016`.
 
-A migration aditiva `017_platform_branding.sql`, ainda nao publicada, cria a configuracao institucional global com uma unica linha opcional, referencia `bucket + storage_path`, MIME, tamanho e versao de cache. Ela nao altera Clientes, postagens, anexos nem historicos; instalacoes sem registro usam o fallback Postinder. O migrador oficial aplicou a `017` no PostgreSQL local e confirmou idempotencia em uma segunda execucao.
+A migration aditiva `017_platform_branding.sql`, ainda nao publicada, cria a configuracao institucional global com uma unica linha opcional, referencia `bucket + storage_path`, MIME, tamanho e versao de cache. Ela nao altera Clientes, postagens, anexos nem historicos; instalacoes sem registro usam o fallback Postinder. O migrador oficial aplicou a `017` somente no PostgreSQL local e confirmou idempotencia em uma segunda execucao; ela deve integrar o pre-deploy da futura publicacao.
 
 A migration `015_post_soundtracks.sql` cria o estado atual do fundo sonoro, suas revisoes imutaveis e decisoes do Cliente. O vinculo e opcional: postagens anteriores continuam semanticamente no modo `none`, sem backfill de registros nem reescrita de historico.
 

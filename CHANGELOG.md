@@ -7,6 +7,10 @@ Este changelog registra os principais marcos funcionais e arquiteturais do proje
 - Foi corrigida a tentativa estatica de branding: os SVGs duplicados foram substituidos por configuracao global persistente e componente compartilhado no menu administrativo e no portal do Cliente. A entrada e as telas publicas de autenticacao permanecem com a marca Postinder.
 - A area **Identidade visual**, exclusiva de `admin`, permite visualizar, selecionar, previsualizar, confirmar, substituir e remover PNG, JPEG ou WebP de ate 2 MB.
 - A migration aditiva `017_platform_branding.sql` armazena somente referencia de Storage e metadados. O endpoint publico nao expoe bucket/path; substituicao e compensacao preservam o logo anterior em falhas intermediarias.
+- A microcorrecao pos-auditoria retirou login e recuperacao da arvore do `BrandingProvider`; somente as areas administrativa e do Cliente consultam a identidade configuravel.
+- A validacao backend aceita somente imagens estaticas: analisa os containers WebP/PNG com leituras limitadas, rejeita WebP animado, APNG e multipagina, valida comprimentos e CRC de todos os chunks PNG com `pngjs` como decoder estrutural adicional e conclui a decodificacao da unica imagem com Sharp 0.35.0. O limite permanece em 2 MB e 16 milhoes de pixels, com no maximo duas decodificacoes simultaneas.
+- Multer foi atualizado de 2.1.1 para 2.2.0, corrigindo os advisories de nomes multipart profundamente aninhados e limpeza em requests abortadas. Raiz, `backend` e `apps/admin` agora possuem lockfiles v3 e usam `npm ci`; cada artefato implantavel possui `.npmrc` proprio com `engine-strict=true`. O runtime permanece controlado em Node 24.x/npm 11.13.0 (`.node-version` 24.16.0).
+- O DTO publico informa `logo_configured`; o frontend prioriza o booleano novo e deriva de `logo_url` quando conversa com backend antigo, preservando rollback e ordem de publicacao. A validacao local atual possui 161/161 testes de backend, 45 testes frontend legados e 22 testes React reais, alem dos builds dos dois projetos. A correcao e a migration `017` continuam nao publicadas.
 
 ## Publicado em 30/07/2026 - consolidacao pre-deploy
 
@@ -31,7 +35,7 @@ Estas alteracoes foram publicadas em backend e frontend em 30/07/2026:
 - Criacao, edicao, remocao, listagem, detalhe e busca passaram a usar o contrato oficial `document_type`/`document_number`; documentos ausentes permanecem nulos e documentos cadastrados antes da correcao nao foram recuperados retroativamente.
 - O frontend passou a enviar `deadline_days` na criacao, edicao e importacao VCF. O backend preserva compatibilidade temporaria de entrada com `deadlineDays`.
 - A migration `016_client_documents.sql` adiciona as duas colunas anulaveis e uma constraint de coerencia entre tipo, quantidade e somente digitos. Nao ha indice unico.
-- A hotfix foi commitada, enviada ao Git e publicada em backend e frontend. A `016` foi aplicada com sucesso, o banco publicado esta em `016` e nao existe migration pendente.
+- A hotfix foi commitada, enviada ao Git e publicada em backend e frontend. A `016` foi aplicada com sucesso e aquele deploy terminou sem migration pendente; a `017` de branding foi criada posteriormente e continua nao publicada.
 - Os health checks foram aprovados, assim como criacao com CPF, criacao e edicao com CNPJ, remocao do documento, Cliente antigo sem documento e prazo diferente de 7 dias.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 

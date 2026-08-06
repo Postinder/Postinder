@@ -27,15 +27,14 @@ export default function BrandingPage() {
 
   function selectFile(event) {
     const selected = event.target.files?.[0] || null
-    if (previewUrl) URL.revokeObjectURL(previewUrl)
-    setPreviewUrl('')
-    setFile(null)
     const validationError = validateBrandingLogo(selected)
     setError(validationError || '')
-    if (!validationError) {
-      setFile(selected)
-      setPreviewUrl(URL.createObjectURL(selected))
+    if (validationError) {
+      event.target.value = ''
+      return
     }
+    setFile(selected)
+    setPreviewUrl(URL.createObjectURL(selected))
   }
 
   async function saveLogo() {
@@ -48,7 +47,6 @@ export default function BrandingPage() {
     setError('')
     try {
       applyBranding(await uploadBrandingLogo(file))
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
       setPreviewUrl('')
       setFile(null)
       if (inputRef.current) inputRef.current.value = ''
@@ -67,7 +65,6 @@ export default function BrandingPage() {
     setError('')
     try {
       applyBranding(await removeBrandingLogo())
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
       setPreviewUrl('')
       setFile(null)
       if (inputRef.current) inputRef.current.value = ''
@@ -124,7 +121,7 @@ export default function BrandingPage() {
           <Button type="button" onClick={saveLogo} disabled={!file || busy} loading={busy} className="inline-flex items-center justify-center gap-2">
             <Upload size={16} /> Salvar novo logo
           </Button>
-          <Button type="button" variant="secondary" onClick={removeLogo} disabled={!branding.logoUrl || busy} className="inline-flex items-center justify-center gap-2">
+          <Button type="button" variant="secondary" onClick={removeLogo} disabled={!branding.logoConfigured || busy} className="inline-flex items-center justify-center gap-2">
             <Trash2 size={16} /> Remover logo
           </Button>
         </div>

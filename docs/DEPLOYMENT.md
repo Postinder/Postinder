@@ -13,7 +13,7 @@ O estado efetivamente publicado deve ser confirmado no painel de cada provedor. 
 
 - Backend e frontend das correcoes anteriores foram publicados em 30/07/2026.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`, sem migration pendente.
+- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`; a `017_platform_branding.sql` do codigo local ainda nao foi publicada e deve ser aplicada antes do futuro deploy do branding.
 - `/health`, `/health/db` e `/health/storage` responderam com sucesso depois da publicacao.
 - Criacao com CPF, criacao e edicao com CNPJ, remocao do documento, Cliente antigo sem documento e prazo diferente de 7 dias foram validados.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
@@ -30,9 +30,9 @@ npm run db:migrate
 
 O migrador registra cada migration em `schema_migrations`. A migration `002_development_seed.sql` e historica e nao deve ser executada como parte da cadeia estrutural. O startup valida migrations pendentes e nao corrige schema automaticamente.
 
-O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. CPF/CNPJ permanece opcional e sem unicidade.
+O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. A `017_platform_branding.sql` existe somente no codigo/local e deve ser a proxima migration estrutural aplicada no pre-deploy da futura publicacao.
 
-O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Nao existe migration pendente em producao.
+O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Aquele deploy terminou sem pendencias; em relacao ao repositorio atual, a `017` permanece deliberadamente pendente e nao deve ser omitida na proxima publicacao.
 
 No Render, configure um Pre-Deploy Command/release step separado e bloqueante:
 
@@ -106,8 +106,10 @@ local protegido.
 
 Diretorio raiz: `backend`.
 
+Runtime: Node.js 24.x, conforme `engines` do `backend/package.json`; a versao validada localmente e 24.16.0 com npm 11.13.0. O Sharp 0.35.0 fornece binarios pre-compilados compativeis para Linux nesse runtime; o build nao deve compilar libvips manualmente. Como o painel nao foi alterado nesta microcorrecao, conferir e, se necessario, definir `NODE_VERSION=24.16.0` no Render e um major Node 24 no Vercel e gate manual obrigatorio.
+
 ```text
-Build Command: npm install --include=dev && npm run build
+Build Command: npm ci --include=dev && npm run build
 Pre-Deploy Command: npm run db:migrate
 Start Command: npm run start
 ```
@@ -132,7 +134,7 @@ Diretorio raiz: `apps/admin`.
 
 ```text
 Framework: Vite
-Install Command: npm install
+Install Command: npm ci
 Build Command: npm run build
 Output Directory: dist
 ```
@@ -144,6 +146,8 @@ inventarie manualmente os nomes e escopos das variaveis em Production, Preview,
 Development e ambientes customizados, o commit ativo, deployments anteriores e
 previews acessiveis. Nao abra valores. Se for confirmada configuracao historica
 de segredo `VITE_*`, autorize uma microetapa separada de rotacao ou invalidacao.
+
+Os lockfiles v3 da raiz, `backend` e `apps/admin` devem acompanhar toda mudanca deliberada de dependencias. Sharp e Multer permanecem declarados por faixa compativel, coerente com as demais dependencias; `npm ci` usa as versoes exatas 0.35.0 e 2.2.0 registradas no lockfile. `backend/.npmrc` e `apps/admin/.npmrc` aplicam `engine-strict=true` mesmo quando cada plataforma usa o subdiretorio como raiz. Nao substituir `npm ci` por `npm install` no Render/Vercel.
 
 ## Publicacao da hotfix concluida
 
@@ -172,6 +176,8 @@ ambiente demo esta preparado para avaliacao da 20Cinco.
 - Executar limpeza de Retencao e reset demo somente com dados descartaveis.
 
 ## Rollback operacional
+
+Para o primeiro rollout do branding: (1) criar backup e executar preflight; (2) aplicar a migration aditiva `017`; (3) publicar o backend; (4) concluir smoke tests; (5) publicar o frontend. Em rollback, retornar primeiro o frontend, depois o backend; a migration `017` permanece, pois e aditiva. Frontend novo tolera backend antigo derivando `logo_configured` de `logo_url`, e backend novo preserva o contrato consumido pelo frontend anterior.
 
 Nao existem down migrations. Se o release step falhar:
 

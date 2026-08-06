@@ -7,17 +7,19 @@
 - Backend: 151/151 testes aprovados. Frontend: 40/40 testes aprovados. Os dois builds e `git diff --check` foram aprovados nesta hotfix; o bundle scan aprovado na auditoria permanece sem alteracao.
 - As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O banco publicado esta em `016`, sem migration pendente.
+- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; em relacao ao codigo local atual, a `017_platform_branding.sql` permanece pendente para uma futura publicacao.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Correcao local de branding ainda nao publicada
 
 - A tentativa anterior consistia em SVGs hardcoded e duplicados na barra lateral e no portal; o PNG versionado nao era renderizado e nao existiam banco, API, upload ou persistencia.
-- A entrada e as telas publicas de autenticacao permanecem Postinder. A identidade institucional configuravel atua na area administrativa da empresa e no portal do Cliente, com interface de previa e confirmacao explicita, componente visual compartilhado e fallback Postinder. Nenhuma variavel `VITE_*` foi adicionada.
+- Login e recuperacao permanecem Postinder e ficam estruturalmente fora do `BrandingProvider`, sem consulta a `GET /api/v1/branding`. A identidade configuravel atua somente na area administrativa, no portal por token e na area autenticada do Cliente, com previa, confirmacao explicita e fallback Postinder. Nenhuma variavel `VITE_*` foi adicionada.
 - A migration aditiva `017_platform_branding.sql` persiste somente identidade de Storage, MIME, tamanho e versao. Ela esta local e nao foi aplicada em producao.
 - A leitura publica e `GET /api/v1/branding`; upload e remocao usam `/api/v1/branding/logo` e a capacidade `branding:update`, exclusiva de `admin`.
-- PNG, JPEG e WebP de ate 2 MB sao validados no frontend e no backend. A substituicao confirma a nova referencia antes de remover a anterior, e paths UUID mais `logo_version` evitam cache obsoleto.
-- A rodada local foi validada com 158/158 testes de backend, 44/44 de frontend, builds dos dois projetos e `git diff --check`. O migrador oficial aplicou `016` e `017` no PostgreSQL local e a segunda execucao foi idempotente; nenhuma migration foi aplicada em producao.
+- PNG, JPEG e WebP estaticos de ate 2 MB e 16 milhoes de pixels sao confrontados por MIME/extensao/formato. WebP animado, APNG, multipagina, truncamentos e PNG com chunks ou CRC invalidos sao recusados antes do Storage; a unica imagem estatica e decodificada com Sharp. A substituicao confirma a nova referencia antes de remover a anterior, e paths UUID mais `logo_version` evitam cache obsoleto.
+- `logo_configured` deriva da referencia persistida e permite ao admin remover configuracao cuja URL esteja temporariamente indisponivel, sem expor bucket ou path. Frontend novo usa `logo_url` somente como fallback para backend antigo sem o booleano. O logo da empresa usa texto alternativo proprio; o fallback continua identificado como Postinder.
+- Multer 2.2.0, limite de um arquivo/nenhum campo e semaforo local de duas decodificacoes reduzem os riscos do endpoint administrativo. Lockfiles v3 da raiz, backend e frontend, `npm ci`, Node 24.x, npm 11.13.0 e `.npmrc` por artefato tornam os fluxos reproduziveis mesmo quando npm inicia nos subdiretorios.
+- A rodada local atual foi validada com 161/161 testes de backend, 45 testes frontend legados e 22 testes React reais, alem dos builds dos dois projetos. O migrador oficial havia aplicado `016` e `017` somente no PostgreSQL local e confirmado idempotencia; nenhuma migration foi aplicada em producao.
 
 ## Rodada visual e funcional publicada
 
@@ -109,18 +111,18 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 `database/migrations` e a unica fonte de verdade do schema. O migrador registra aplicacoes em `schema_migrations`; o startup nao cria nem repara tabelas, colunas, indices ou dados.
 
-Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais vigentes vao de `001` e `003` a `016`, cobrindo portal, ordenacao, execucao, retencao, e-mail, remocao do antigo estado `archived`, metadados de Storage, fundo sonoro versionado e documento opcional de Cliente.
+Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais vigentes vao de `001` e `003` a `017`, cobrindo portal, ordenacao, execucao, retencao, e-mail, remocao do antigo estado `archived`, metadados de Storage, fundo sonoro versionado, documento opcional de Cliente e branding global.
 
 O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da publicacao da hotfix em 31/07/2026 e:
 
 - `001`, a `002` historica e `003` a `016` estao registradas;
 - `016_client_documents.sql` foi aplicada com sucesso;
 - o banco publicado esta em `016`;
-- nao existe migration pendente em producao.
+- aquele deploy terminou sem migration pendente; a `017` criada posteriormente continua ausente do banco publicado e pendente para o futuro release de branding.
 
 O backup logico foi criado, preservado e validado. A restauracao foi comprovada em stack Supabase local compativel, em transacao unica, usando copia de `roles.sql` com somente a instrucao de `statement_timeout` de `supabase_admin` comentada; schema e dados permaneceram identicos. O backup e restauravel com esse procedimento documentado de compatibilidade, mas nao inclui objetos fisicos do Supabase Storage.
 
-Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Nao ha pendencia estrutural no banco publicado.
+Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. A `017`, adicionada depois, ainda nao integra o banco publicado.
 
 ## Seguranca e demonstracao
 
@@ -157,7 +159,7 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 
 - As correcoes, a rodada visual e a hotfix de Clientes foram validadas com 151/151 testes de backend, 40/40 de frontend, builds dos dois projetos e `git diff --check`. Depois da publicacao, os tres health checks e os cenarios especificos de CPF/CNPJ, remocao, compatibilidade legada e prazo personalizado foram aprovados.
 - O script `npm run lint` do frontend existe, mas ESLint e sua configuracao nao estao disponiveis. O comando nao foi aprovado. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; por isso, a pendencia e tecnica e nao bloqueante para a publicacao atual. A verificacao administrativa da Vercel continua necessaria para confirmar que nao existe override remoto.
-- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado esta em `016`, sem migration pendente.
+- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado continua em `016`; a `017` presente no codigo atual ainda deve ser aplicada antes de uma futura publicacao do branding.
 - A verificacao manual da Vercel continua pendente para nomes de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews. Eventual segredo historico exigira rotacao ou invalidacao em etapa separada.
 - A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend da hotfix foi publicado em 31/07/2026 e os tres endpoints de health responderam com sucesso.
 - O ambiente publicado continua em modo demo, disponivel em `https://portal-20cinco.vercel.app` e preparado para testes pela 20Cinco.

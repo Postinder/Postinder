@@ -31,7 +31,7 @@ test('shared brand preserves layout and falls back when configuration or image l
   assert.match(institutionalBrandSource, /object-contain/)
   assert.match(institutionalBrandSource, /onError=\{\(\) => setImageFailed\(true\)\}/)
   assert.match(institutionalBrandSource, /Post<span className="text-mag-500">inder/)
-  assert.match(institutionalBrandSource, /alt=\{`Logo institucional/)
+  assert.match(institutionalBrandSource, /alt="Logo da empresa"/)
   assert.match(brandingProviderSource, /fetchBranding/)
   assert.match(brandingProviderSource, /catch\(\(\) => setBranding\(FALLBACK_BRANDING\)\)/)
   assert.match(adminLayoutSource, /Postinder v2\.0/)

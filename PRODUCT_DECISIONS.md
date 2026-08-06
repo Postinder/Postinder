@@ -45,11 +45,11 @@
 ## Identidade visual
 
 - Existe uma unica identidade institucional global da empresa de marketing responsavel pela plataforma. Ela nao representa o logo individual de cada Cliente.
-- Somente `admin`, por meio da capacidade `branding:update`, pode enviar, substituir ou remover o logo. A leitura publica contem apenas nome institucional, URL utilizavel, versao e data de atualizacao.
-- A entrada da plataforma e as telas publicas de autenticacao preservam a marca Postinder. O logo configuravel e carregado dinamicamente apenas na area administrativa da empresa e no portal do Cliente, sem depender de variavel `VITE_*` ou rebuild do frontend. Ausencia, registro antigo, indisponibilidade ou falha da imagem usam o fallback Postinder.
+- Somente `admin`, por meio da capacidade `branding:update`, pode enviar, substituir ou remover o logo. A leitura publica contem apenas nome institucional, URL utilizavel, indicador booleano de configuracao, versao e data de atualizacao.
+- A entrada da plataforma e as telas publicas de autenticacao preservam a marca Postinder e ficam fora do provider configuravel. O logo da empresa e carregado dinamicamente apenas na area administrativa e no portal do Cliente, sem depender de variavel `VITE_*` ou rebuild. Ausencia, registro antigo, indisponibilidade ou falha da imagem usam o fallback Postinder.
 - O magenta da marca pertence a navegacao, selecao, foco e destaques nao semanticos. Verde para aprovacao, vermelho para recusa ou ajuste e amarelo/laranja para pendencia nao devem ser substituidos pela cor da marca.
 - Tokens de marca devem permanecer centralizados e restritos ao portal para permitir futura parametrizacao sem reescrever componentes.
-- O logo configurado aceita PNG, JPEG ou WebP de ate 2 MB. SVG permanece recusado ate existir sanitizacao especifica.
+- O logo configurado aceita somente PNG, JPEG ou WebP estatico de ate 2 MB e 16 milhoes de pixels. WebP animado, APNG, GIF, AVIF, TIFF, PDF, SVG e qualquer arquivo multipagina, truncado ou estruturalmente invalido permanecem recusados.
 - Multiempresa e white-label permanecem possibilidades futuras; nao sao funcionalidades atuais.
 
 ## Fundo sonoro

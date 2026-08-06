@@ -31,7 +31,7 @@ Videos usam o elemento nativo `video` com controles, `playsInline` e `preload="m
 
 ## Logo institucional
 
-O logo global reutiliza o mesmo adaptador local/Supabase. A identidade persistida em `platform_branding` e `logo_bucket + logo_storage_path`; URL publica nao e armazenada no banco. O servidor controla paths versionados no formato `branding/logo/{uuid}.{ext}` e aceita apenas PNG, JPEG ou WebP de ate 2 MB, confrontando MIME, extensao e assinatura basica do conteudo.
+O logo global reutiliza o mesmo adaptador local/Supabase. A identidade persistida em `platform_branding` e `logo_bucket + logo_storage_path`; URL publica nao e armazenada no banco. O servidor controla paths versionados no formato `branding/logo/{uuid}.{ext}` e aceita apenas PNG, JPEG ou WebP estatico de ate 2 MB. Antes do Storage, confronta MIME, extensao e formato detectado; valida comprimentos/CRC de chunks PNG; rejeita APNG, WebP animado e multipagina; e decodifica a unica imagem com limite de 16 milhoes de pixels. O processo admite no maximo duas decodificacoes simultaneas e retorna `503/BRANDING_VALIDATION_BUSY` quando ocupado.
 
 Na substituicao, o novo objeto e enviado e a nova referencia e confirmada em transacao antes da remocao do anterior. Falha de persistencia tenta compensar o objeto novo; falha posterior ao remover o anterior nao invalida a configuracao salva. Cada alteracao incrementa `logo_version`, e o frontend usa essa versao estavel no cache. O endpoint publico nao retorna bucket, path ou credenciais.
 

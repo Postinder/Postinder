@@ -19,6 +19,7 @@ import IntegrationsPage from './features/settings/IntegrationsPage'
 import ResetDataPage from './features/settings/ResetDataPage'
 import BrandingPage from './features/settings/BrandingPage'
 import ClientPortalPage from './features/portal/ClientPortalPage'
+import { BrandingProvider } from './components/branding/BrandingProvider'
 import { ROLE_PERMISSIONS } from './utils/constants'
 import { isDemoDeploymentMode } from './config/deploymentMode'
 
@@ -67,7 +68,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/recover" element={<RecoverPage />} />
-      <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
+      <Route path="/admin" element={<RequireAdmin><BrandingProvider><AdminLayout /></BrandingProvider></RequireAdmin>}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<RequirePermission permission="dashboard"><DashboardPage /></RequirePermission>} />
         <Route path="clients" element={<RequirePermission permission="clients"><ClientsPage /></RequirePermission>} />
@@ -88,9 +89,9 @@ export default function App() {
             : <Navigate to="/admin/dashboard" replace />}
         />
       </Route>
-      <Route path="/aprovar" element={<RequireClient><ClientPortalPage mode="auth" /></RequireClient>} />
+      <Route path="/aprovar" element={<RequireClient><BrandingProvider><ClientPortalPage mode="auth" /></BrandingProvider></RequireClient>} />
       <Route path="/aprovar/resumo" element={<Navigate to="/aprovar" replace />} />
-      <Route path="/portal/:token" element={<ClientPortalPage />} />
+      <Route path="/portal/:token" element={<BrandingProvider><ClientPortalPage /></BrandingProvider>} />
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

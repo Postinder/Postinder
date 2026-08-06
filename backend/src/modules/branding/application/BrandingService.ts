@@ -41,6 +41,7 @@ export class BrandingService {
     return {
       institutional_name: record?.institutionalName || 'Postinder',
       logo_url: logoUrl,
+      logo_configured: Boolean(record?.logoBucket && record.logoStoragePath),
       logo_version: record?.logoVersion || 0,
       updated_at: record?.updatedAt || null,
     }

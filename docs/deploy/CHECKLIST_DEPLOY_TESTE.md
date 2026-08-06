@@ -2,9 +2,10 @@
 
 Consulte [../DEPLOYMENT.md](../DEPLOYMENT.md) para configuracao de Render, Vercel, Supabase e migrations.
 
-A hotfix de Clientes foi publicada e validada em 31/07/2026. O banco esta em
-`016`, sem migration pendente, e o ambiente demo esta disponivel para avaliacao
-da 20Cinco em `https://portal-20cinco.vercel.app`.
+A hotfix de Clientes foi publicada e validada em 31/07/2026. O banco publicado
+esta em `016`, e o ambiente demo esta disponivel para avaliacao da 20Cinco em
+`https://portal-20cinco.vercel.app`. A `017_platform_branding.sql` e a
+microcorrecao pos-auditoria continuam locais e devem integrar uma publicacao futura.
 
 ## Consolidacao e verificacao
 
@@ -37,6 +38,17 @@ da 20Cinco em `https://portal-20cinco.vercel.app`.
     e iniciou sem pendencias.
 18. [x] Publicar o frontend.
 19. [x] Confirmar commits e bundles ativos.
+
+### Proxima publicacao do branding
+
+- [ ] Criar backup e executar preflight somente leitura.
+- [ ] Confirmar os tres lockfiles v3, `engine-strict=true` na raiz/backend/frontend, instalacao limpa com `npm ci`, Node 24 no Vercel e `NODE_VERSION=24.16.0` no Render; nao presumir que o painel ja esta correto.
+- [ ] Confirmar que o release step aplicara somente a `017_platform_branding.sql` sobre o banco publicado em `016`.
+- [ ] Publicar o backend somente depois da migration e validar leitura, upload, substituicao e remocao de PNG/JPEG/WebP estatico; WebP animado, APNG e CRC PNG invalido devem falhar antes do Storage.
+- [ ] Concluir health checks e smoke tests do backend antes de publicar o frontend.
+- [ ] Publicar o frontend e confirmar que login/recuperacao nao consultam branding, enquanto admin e portais exibem o logo configuravel.
+- [ ] Reexecutar 161 testes de backend, 45 testes frontend legados, 22 testes React reais, builds e `git diff --check` no artefato final.
+- [ ] Em rollback, retornar frontend e depois backend; manter a migration aditiva `017`.
 
 ## Depois do deploy
 

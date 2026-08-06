@@ -21,7 +21,7 @@ export default function InstitutionalBrand({
       {logoUrl && !imageFailed ? (
         <img
           src={logoUrl}
-          alt={`Logo institucional ${branding.institutionalName}`}
+          alt="Logo da empresa"
           className={`block h-auto w-auto object-contain ${imageClassName}`}
           onError={() => setImageFailed(true)}
         />

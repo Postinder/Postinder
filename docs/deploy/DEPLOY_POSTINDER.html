@@ -165,7 +165,7 @@
       pre-deploy. Nao use suas variaveis ou checklists para uma nova
       publicacao. O procedimento vigente esta em
       <code>docs/DEPLOYMENT.md</code> e o deploy permanece nao autorizado.</p>
-      <p class="meta"><strong>Referencia historica:</strong> este arquivo registra um deploy anterior. Para o procedimento oficial atual, consulte <code>docs/DEPLOYMENT.md</code>.</p>
+      <p class="meta"><strong>Referencia historica:</strong> este arquivo registra um deploy anterior. Todas as instrucoes operacionais abaixo estao invalidadas e nao devem ser executadas. Para o procedimento oficial atual, consulte <code>docs/DEPLOYMENT.md</code>.</p>
       <p class="meta">Documento com os passos e configurações usados para publicar o frontend, backend e banco de dados da branch <code>newStructure</code>.</p>
       <p class="meta">Atualizado em 01/06/2026.</p>
     </header>
@@ -286,9 +286,8 @@ Senha:  Cliente@123456</pre>
       <h3>Configurações de build</h3>
       <pre>Framework Preset: Vite
 Root Directory: apps/admin
-Install Command: npm install
-Build Command: npm run build
-Output Directory: dist</pre>
+Install/Build/Output: HISTORICO - NAO EXECUTAR
+Fonte operacional atual: docs/DEPLOYMENT.md</pre>
       <h3>Variáveis de ambiente na Vercel</h3>
       <pre>VITE_API_URL=https://SUA-URL-DO-RENDER.onrender.com/api/v1
 VITE_APP_URL=https://postinder.vercel.app
@@ -313,8 +312,8 @@ Region: Oregon (US West)
 Root Directory: backend
 Instance Type: Free</pre>
       <h3>Comandos no Render</h3>
-      <pre>Build Command: npm install --include=dev && npm run build
-Start Command: npm run start</pre>
+      <pre>Build/Start: HISTORICO - NAO EXECUTAR
+Fonte operacional atual: docs/DEPLOYMENT.md</pre>
       <p>Antes do startup, execute <code>npm run db:migrate</code> como etapa de release. A automatizacao dessa etapa no Render permanece pendente.</p>
       <p>O <code>--include=dev</code> garante que o TypeScript seja instalado mesmo com <code>NODE_ENV=production</code>.</p>
       <h3>Variáveis de ambiente no Render</h3>
@@ -369,7 +368,7 @@ APP_PUBLIC_URL=https://postinder.vercel.app</pre>
           <tr>
             <td>Render falhou no build</td>
             <td><code>NODE_ENV=production</code> podia impedir instalação de dev dependencies.</td>
-            <td>Usar <code>npm install --include=dev && npm run build</code>.</td>
+            <td>Instrucao historica invalidada; consultar <code>docs/DEPLOYMENT.md</code>.</td>
           </tr>
           <tr>
             <td>Render falhou no start com <code>exports is not defined</code></td>

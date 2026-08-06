@@ -4,6 +4,7 @@ import { fetchBranding } from '../../services/branding.service'
 const FALLBACK_BRANDING = Object.freeze({
   institutionalName: 'Postinder',
   logoUrl: null,
+  logoConfigured: false,
   logoVersion: 0,
   updatedAt: null,
 })
@@ -15,9 +16,13 @@ const BrandingContext = createContext({
 })
 
 function normalizeBranding(data) {
+  const logoConfigured = typeof data?.logo_configured === 'boolean'
+    ? data.logo_configured
+    : Boolean(data?.logo_url)
   return {
     institutionalName: data?.institutional_name || 'Postinder',
     logoUrl: data?.logo_url || null,
+    logoConfigured,
     logoVersion: Number(data?.logo_version || 0),
     updatedAt: data?.updated_at || null,
   }

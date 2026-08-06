@@ -4,6 +4,9 @@ import path from 'path'
 import { Request } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import fsPromises from 'fs/promises'
+import sharp from 'sharp'
+import { PNG } from 'pngjs'
+import { crc32 } from 'node:zlib'
 import { AppException } from '../exceptions/AppException'
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -88,6 +91,8 @@ export const soundtrackUpload = multer({
 })
 
 export const MAX_BRANDING_LOGO_SIZE = 2 * 1024 * 1024
+const MAX_BRANDING_LOGO_PIXELS = 16_000_000
+const MAX_CONCURRENT_BRANDING_DECODES = 2
 const BRANDING_LOGO_EXTENSIONS = new Map([
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
@@ -122,7 +127,13 @@ function brandingLogoFileFilter(_req: Request, file: Express.Multer.File, cb: Fi
 export const brandingLogoUpload = multer({
   storage,
   fileFilter: brandingLogoFileFilter,
-  limits: { fileSize: MAX_BRANDING_LOGO_SIZE, files: 1 },
+  limits: {
+    fileSize: MAX_BRANDING_LOGO_SIZE,
+    files: 1,
+    fields: 0,
+    parts: 2,
+    fieldNestingDepth: 0,
+  } as NonNullable<NonNullable<Parameters<typeof multer>[0]>['limits']> & { fieldNestingDepth: number },
 })
 
 async function readFileHeader(file: Express.Multer.File) {
@@ -149,6 +160,174 @@ async function readUploadedFile(file: Express.Multer.File) {
   return fsPromises.readFile(file.path)
 }
 
+type BrandingImageFormat = 'png' | 'jpeg' | 'webp'
+type BrandingImageMetadata = {
+  format?: string
+  width?: number
+  height?: number
+  pages?: number
+}
+
+let activeBrandingDecodes = 0
+
+export async function runWithBrandingDecodeSlot<T>(operation: () => Promise<T>) {
+  if (activeBrandingDecodes >= MAX_CONCURRENT_BRANDING_DECODES) {
+    throw new AppException(
+      'A validacao de imagens esta temporariamente ocupada. Tente novamente.',
+      503,
+      'BRANDING_VALIDATION_BUSY',
+    )
+  }
+  activeBrandingDecodes += 1
+  try {
+    return await operation()
+  } finally {
+    activeBrandingDecodes -= 1
+  }
+}
+
+export function hasSingleStaticPage(metadata: BrandingImageMetadata) {
+  return metadata.pages === undefined || metadata.pages === 1
+}
+
+function detectBrandingImageFormat(content: Buffer): BrandingImageFormat | null {
+  if (content.length >= 8 && content.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return 'png'
+  }
+  if (content.length >= 3 && content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff) {
+    return 'jpeg'
+  }
+  if (
+    content.length >= 12
+    && content.subarray(0, 4).toString('ascii') === 'RIFF'
+    && content.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return 'webp'
+  }
+  return null
+}
+
+function assertStaticPngContainer(content: Buffer) {
+  let offset = 8
+  let ihdrCount = 0
+  let idatCount = 0
+  let iendCount = 0
+  let idatClosed = false
+  let width = 0
+  let height = 0
+
+  while (offset < content.length) {
+    if (content.length - offset < 12) throw new Error('Truncated PNG chunk')
+    const chunkLength = content.readUInt32BE(offset)
+    const typeStart = offset + 4
+    const dataStart = offset + 8
+    const dataEnd = dataStart + chunkLength
+    const chunkEnd = dataEnd + 4
+    if (dataEnd < dataStart || chunkEnd > content.length) throw new Error('PNG chunk exceeds input')
+
+    const chunkType = content.subarray(typeStart, dataStart).toString('ascii')
+    if (!/^[A-Za-z]{4}$/.test(chunkType)) throw new Error('Invalid PNG chunk type')
+    const expectedCrc = content.readUInt32BE(dataEnd)
+    const actualCrc = crc32(content.subarray(typeStart, dataEnd)) >>> 0
+    if (actualCrc !== expectedCrc) throw new Error(`Invalid PNG CRC for ${chunkType}`)
+    if (iendCount) throw new Error('PNG data found after IEND')
+
+    if (chunkType === 'IHDR') {
+      ihdrCount += 1
+      if (ihdrCount !== 1 || offset !== 8 || chunkLength !== 13) throw new Error('Invalid PNG IHDR')
+      width = content.readUInt32BE(dataStart)
+      height = content.readUInt32BE(dataStart + 4)
+      if (!width || !height || width * height > MAX_BRANDING_LOGO_PIXELS) throw new Error('Invalid PNG dimensions')
+    } else if (['acTL', 'fcTL', 'fdAT'].includes(chunkType)) {
+      throw new Error('Animated PNG is not supported')
+    } else if (chunkType === 'IDAT') {
+      if (ihdrCount !== 1 || idatClosed) throw new Error('Invalid PNG IDAT order')
+      idatCount += 1
+    } else {
+      if (idatCount) idatClosed = true
+      if (chunkType === 'IEND') {
+        iendCount += 1
+        if (chunkLength !== 0 || ihdrCount !== 1 || idatCount === 0) throw new Error('Invalid PNG IEND')
+      }
+    }
+    offset = chunkEnd
+  }
+
+  if (offset !== content.length || ihdrCount !== 1 || idatCount === 0 || iendCount !== 1) {
+    throw new Error('Incomplete PNG container')
+  }
+
+  const decoded = PNG.sync.read(content, { checkCRC: true })
+  if (decoded.width !== width || decoded.height !== height || decoded.data.length === 0) {
+    throw new Error('PNG decode did not match container')
+  }
+}
+
+function assertStaticWebpContainer(content: Buffer) {
+  if (content.length < 20 || content.readUInt32LE(4) + 8 !== content.length) {
+    throw new Error('Incomplete WebP container')
+  }
+
+  let offset = 12
+  let imageChunks = 0
+  while (offset < content.length) {
+    if (content.length - offset < 8) throw new Error('Truncated WebP chunk')
+    const chunkType = content.subarray(offset, offset + 4).toString('ascii')
+    const chunkLength = content.readUInt32LE(offset + 4)
+    const dataStart = offset + 8
+    const dataEnd = dataStart + chunkLength
+    const chunkEnd = dataEnd + (chunkLength % 2)
+    if (dataEnd < dataStart || chunkEnd > content.length) throw new Error('WebP chunk exceeds input')
+
+    if (chunkType === 'ANIM' || chunkType === 'ANMF') throw new Error('Animated WebP is not supported')
+    if (chunkType === 'VP8X') {
+      if (chunkLength !== 10 || (content[dataStart] & 0x02) !== 0) throw new Error('Animated or invalid extended WebP')
+    }
+    if (chunkType === 'VP8 ' || chunkType === 'VP8L') imageChunks += 1
+    offset = chunkEnd
+  }
+
+  if (offset !== content.length || imageChunks !== 1) throw new Error('Invalid WebP image chunks')
+}
+
+async function assertStructurallyValidBrandingImage(content: Buffer, expectedFormat: BrandingImageFormat) {
+  return runWithBrandingDecodeSlot(async () => {
+    try {
+      if (expectedFormat === 'png') assertStaticPngContainer(content)
+      if (expectedFormat === 'jpeg' && (
+        content.length < 4
+        || content[content.length - 2] !== 0xff
+        || content[content.length - 1] !== 0xd9
+      )) throw new Error('Incomplete JPEG container')
+      if (expectedFormat === 'webp') assertStaticWebpContainer(content)
+
+      const image = sharp(content, {
+        failOn: 'warning',
+        limitInputPixels: MAX_BRANDING_LOGO_PIXELS,
+        sequentialRead: true,
+      })
+      const metadata = await image.metadata()
+      if (
+        metadata.format !== expectedFormat
+        || !metadata.width
+        || !metadata.height
+        || metadata.width <= 0
+        || metadata.height <= 0
+        || !hasSingleStaticPage(metadata)
+      ) {
+        throw new Error('Unexpected or multi-page image metadata')
+      }
+      await image.raw().toBuffer()
+    } catch {
+      throw new AppException(
+        'O arquivo de logo esta corrompido, animado, incompleto ou possui estrutura invalida.',
+        415,
+        'INVALID_BRANDING_CONTENT',
+      )
+    }
+  })
+}
+
 export async function assertBrandingLogoFile(file: Express.Multer.File) {
   try {
     validateBrandingLogoMetadata(file)
@@ -161,26 +340,20 @@ export async function assertBrandingLogoFile(file: Express.Multer.File) {
     }
 
     const extension = path.extname(file.originalname).toLowerCase()
-    const isPng = content.length >= 24
-      && content.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-      && content.subarray(12, 16).toString('ascii') === 'IHDR'
-      && content.readUInt32BE(16) > 0
-      && content.readUInt32BE(20) > 0
-    const isJpeg = content.length >= 4
-      && content[0] === 0xff && content[1] === 0xd8
-      && content[content.length - 2] === 0xff && content[content.length - 1] === 0xd9
-    const isWebp = content.length >= 16
-      && content.subarray(0, 4).toString('ascii') === 'RIFF'
-      && content.subarray(8, 12).toString('ascii') === 'WEBP'
-      && ['VP8 ', 'VP8L', 'VP8X'].includes(content.subarray(12, 16).toString('ascii'))
-    const valid = extension === '.png' ? isPng : ['.jpg', '.jpeg'].includes(extension) ? isJpeg : isWebp
-    if (!valid) {
+    const expectedFormat: BrandingImageFormat = extension === '.png'
+      ? 'png'
+      : ['.jpg', '.jpeg'].includes(extension)
+        ? 'jpeg'
+        : 'webp'
+    const detectedFormat = detectBrandingImageFormat(content)
+    if (detectedFormat !== expectedFormat) {
       throw new AppException(
         'O conteudo do arquivo nao corresponde a uma imagem PNG, JPEG ou WebP valida.',
         415,
         'INVALID_BRANDING_CONTENT',
       )
     }
+    await assertStructurallyValidBrandingImage(content, expectedFormat)
   } catch (error) {
     await discardTemporaryUpload(file)
     throw error

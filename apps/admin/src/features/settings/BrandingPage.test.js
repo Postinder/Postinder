@@ -13,7 +13,7 @@ test('admin branding page requires explicit confirmation and prevents concurrent
   assert.match(pageSource, /onClick=\{saveLogo\}/)
   assert.doesNotMatch(pageSource, /onChange=\{saveLogo\}/)
   assert.match(pageSource, /disabled=\{!file \|\| busy\}/)
-  assert.match(pageSource, /disabled=\{!branding\.logoUrl \|\| busy\}/)
+  assert.match(pageSource, /disabled=\{!branding\.logoConfigured \|\| busy\}/)
   assert.match(pageSource, /PNG, JPEG ou WebP, ate 2 MB/)
   assert.match(pageSource, /role="alert"/)
 })

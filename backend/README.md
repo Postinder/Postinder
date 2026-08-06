@@ -2,10 +2,12 @@
 
 API Express/TypeScript do Postinder. Ela atende autenticacao, usuarios, Clientes, postagens, aprovacoes, portal, arquivos, fundos sonoros, feedbacks, atividades, notificacoes e manutencao de demonstracao.
 
+O runtime do backend requer Node.js 24.x; `.node-version` fixa 24.16.0 para desenvolvimento e validacao e o npm esperado e 11.13.0. Essa faixa e compativel com os binarios pre-compilados do Sharp 0.35.0 usados exclusivamente para decodificar e validar logos PNG, JPEG e WebP. O `package-lock.json` v3 e a fonte da resolucao exata, e `backend/.npmrc` aplica `engine-strict=true` quando este diretorio e usado como raiz no Render.
+
 ## Desenvolvimento
 
 ```bash
-npm install
+npm ci
 copy .env.example .env
 npm run db:migrate
 npm run dev
@@ -59,7 +61,7 @@ Base local: `http://localhost:3001/api/v1`.
 - Em producao, cada arquivo ainda e recebido em memoria antes do envio ao Supabase; upload direto ou retomavel esta no roadmap.
 - Fundo sonoro usa entidade e aprovacao separadas dos anexos. Audio enviado aceita um arquivo ativo de ate 50 MB em MP3, WAV, OGG, AAC ou M4A e reutiliza o Storage existente.
 - Alteracoes de fundo sonoro em postagens `executed` sao recusadas. Decisoes pertencem somente ao Cliente e ficam versionadas para auditoria.
-- `GET /api/v1/branding` fornece somente a identidade institucional publica. `POST /api/v1/branding/logo` e `DELETE /api/v1/branding/logo` exigem contexto administrativo e a capacidade `branding:update`, exclusiva de `admin`.
-- Logos usam o Storage existente em `branding/logo/{uuid}.{ext}`, aceitam PNG, JPEG ou WebP de ate 2 MB e sao validados por MIME, extensao e assinatura. A URL nao e persistida; ausencia ou falha usa o fallback Postinder.
+- `GET /api/v1/branding` fornece somente a identidade institucional publica, incluindo `logo_configured` derivado da referencia persistida. `POST /api/v1/branding/logo` e `DELETE /api/v1/branding/logo` exigem contexto administrativo e a capacidade `branding:update`, exclusiva de `admin`.
+- Logos usam o Storage existente em `branding/logo/{uuid}.{ext}` e aceitam somente PNG, JPEG ou WebP estaticos de ate 2 MB e 16 milhoes de pixels. O pipeline confronta MIME/extensao/formato, rejeita WebP animado, APNG e multipagina, valida limites e CRC de todos os chunks PNG e conclui a decodificacao da unica imagem antes do Storage. Multer 2.2.0 limita o multipart a um arquivo, nenhum campo textual e dois parts; duas decodificacoes podem ocorrer em paralelo. A URL nao e persistida; ausencia ou falha usa o fallback Postinder.
 
 Consulte [../PROJECT_STATE.md](../PROJECT_STATE.md), [../docs/STORAGE_ARCHITECTURE.md](../docs/STORAGE_ARCHITECTURE.md) e [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) para a documentacao consolidada.
