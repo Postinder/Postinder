@@ -1,31 +1,38 @@
 import { apiClient } from '../lib/axios'
+import { buildSoundtrackPayload } from '../utils/soundtrack'
 
 export async function fetchPosts(filters) {
   const { data } = await apiClient.get('/posts', { params: filters })
   return data.data || []
 }
 
-export async function createPost(postData, files = []) {
-  try {
-    const { data: post } = await apiClient.post('/posts', postData)
+function getRequestErrorMessage(error) {
+  return error.response?.data?.error || error.response?.data?.message || error.message || 'Não foi possível enviar o arquivo.'
+}
 
-    if (files.length > 0) {
-      const formData = new FormData()
-      const sortOrders = []
-      files.forEach((item, index) => {
-        const file = item.file || item
-        formData.append('files', file)
-        sortOrders.push(item.sort_order || item.sortOrder || index + 1)
-      })
-      formData.append('sortOrders', sortOrders.join(','))
-      await apiClient.post(`/posts/${post.id}/files`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+export async function createPost(postData, files = [], options = {}) {
+  let post
+  try {
+    const { data } = await apiClient.post('/posts', postData)
+    post = data
+
+    const uploadedFiles = files.length > 0 ? await uploadPostFiles(post.id, files, options) : []
+
+    if (options.soundtrack?.mode && options.soundtrack.mode !== 'none') {
+      let sourceMediaId = null
+      if (options.soundtrack.mode === 'embedded') {
+        const sourceIndex = files.findIndex(item => (item.id || item.localId) === options.soundtrack.sourceMediaKey)
+        sourceMediaId = uploadedFiles[sourceIndex]?.id || null
+      }
+      await savePostSoundtrack(post.id, options.soundtrack, { sourceMediaId, onUploadProgress: options.onSoundtrackUploadProgress })
     }
 
     return post
   } catch (error) {
-    const message = error.response?.data?.error || error.response?.data?.message || error.message
+    const originalMessage = getRequestErrorMessage(error)
+    const message = post?.id
+      ? `A postagem foi criada, mas o arquivo não foi enviado. Você pode tentar novamente pela edição. Motivo: ${originalMessage}`
+      : originalMessage
     throw new Error(message)
   }
 }
@@ -35,20 +42,37 @@ export async function updatePost(postId, updates) {
   return data
 }
 
-export async function uploadPostFiles(postId, files = []) {
+export async function uploadPostFiles(postId, files = [], options = {}) {
   if (!files.length) return []
-  const formData = new FormData()
-  const sortOrders = []
-  files.forEach((item, index) => {
+  const uploadedFiles = []
+
+  for (let index = 0; index < files.length; index += 1) {
+    const item = files[index]
     const file = item.file || item
+    const formData = new FormData()
     formData.append('files', file)
-    sortOrders.push(item.sort_order || item.sortOrder || index + 1)
-  })
-  formData.append('sortOrders', sortOrders.join(','))
-  const { data } = await apiClient.post(`/posts/${postId}/files`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
-  return data.data || []
+    formData.append('sortOrders', String(item.sort_order || item.sortOrder || index + 1))
+
+    try {
+      const { data } = await apiClient.post(`/posts/${postId}/files`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: event => {
+          const percent = event.total ? Math.round((event.loaded * 100) / event.total) : 0
+          options.onUploadProgress?.({
+            fileIndex: index,
+            totalFiles: files.length,
+            fileName: file.name,
+            percent,
+          })
+        },
+      })
+      uploadedFiles.push(...(data.data || []))
+    } catch (error) {
+      throw new Error(`${file.name}: ${getRequestErrorMessage(error)}`)
+    }
+  }
+
+  return uploadedFiles
 }
 
 export async function reorderPostFiles(postId, files) {
@@ -95,18 +119,48 @@ export async function resubmitPost(postId, data) {
   return response.data
 }
 
-export async function replacePostFile(postId, fileId, file) {
+export async function replacePostFile(postId, fileId, file, options = {}) {
   const formData = new FormData()
   formData.append('file', file)
-  const { data } = await apiClient.post(`/posts/${postId}/files/${fileId}/replace`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
-  return data.data
+  try {
+    const { data } = await apiClient.post(`/posts/${postId}/files/${fileId}/replace`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: event => {
+        const percent = event.total ? Math.round((event.loaded * 100) / event.total) : 0
+        options.onUploadProgress?.({ fileIndex: 0, totalFiles: 1, fileName: file.name, percent })
+      },
+    })
+    return data.data
+  } catch (error) {
+    throw new Error(`${file.name}: ${getRequestErrorMessage(error)}`)
+  }
 }
 
 export async function removePostFile(postId, fileId) {
   const { data } = await apiClient.delete(`/posts/${postId}/files/${fileId}`)
   return data
+}
+
+export async function savePostSoundtrack(postId, soundtrack, options = {}) {
+  const payload = buildSoundtrackPayload(soundtrack, options.sourceMediaId || soundtrack.sourceMediaKey || null)
+  if (soundtrack.mode === 'uploaded' && soundtrack.audioFile) {
+    const formData = new FormData()
+    formData.append('file', soundtrack.audioFile)
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) formData.append(key, String(value))
+    })
+    const { data } = await apiClient.post(`/posts/${postId}/soundtrack/file`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: event => {
+        const percent = event.total ? Math.round((event.loaded * 100) / event.total) : 0
+        options.onUploadProgress?.({ fileName: soundtrack.audioFile.name, percent })
+      },
+    })
+    return data.data
+  }
+
+  const { data } = await apiClient.put(`/posts/${postId}/soundtrack`, payload)
+  return data.data
 }
 
 export function computePostStatus(post) {
@@ -122,12 +176,15 @@ export function computePostStatus(post) {
   const files = Array.isArray(post?.files) ? post.files : []
   const fileStatus = files.length ? computePostStatus(files) : null
   const status = post?.status || 'draft'
+  const soundtrack = post?.soundtrack
+  const soundtrackRequired = Boolean(soundtrack && soundtrack.mode !== 'none')
+  const soundtrackStatus = soundtrack?.approvalStatus || soundtrack?.approval_status || null
 
   if (status === 'executed') return 'executed'
 
-  if (fileStatus === 'approved' && ['sent', 'pending_approval', 'rejected'].includes(status)) return 'approved'
-  if (fileStatus === 'rejected' && ['sent', 'pending_approval', 'approved'].includes(status)) return 'rejected'
-  if (fileStatus === 'pending_approval' && ['sent', 'pending_approval'].includes(status)) return 'pending_approval'
+  if ((fileStatus === 'rejected' || soundtrackStatus === 'adjustment_requested') && ['sent', 'pending_approval', 'approved', 'rejected'].includes(status)) return 'rejected'
+  if ((fileStatus === 'pending_approval' || soundtrackStatus === 'pending') && ['sent', 'pending_approval', 'rejected'].includes(status)) return 'pending_approval'
+  if (fileStatus === 'approved' && (!soundtrackRequired || soundtrackStatus === 'approved') && ['sent', 'pending_approval', 'rejected', 'approved'].includes(status)) return 'approved'
 
   return post?.status || 'draft'
 }

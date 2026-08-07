@@ -2,6 +2,8 @@ import { Request, Response } from 'express'
 import { env } from '../../../../config/environment'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 import { PortalRepository } from '../../infrastructure/repositories/PortalRepository'
+import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
+import { sanitizeForLogging } from '../../../../shared/utils/logSanitizer'
 
 interface AuthRequest extends Request {
   user?: any
@@ -12,11 +14,23 @@ export class PortalController {
   constructor(
     private portalRepository = new PortalRepository(),
     private activityRepository = new ActivityRepository(),
+    private soundtrackRepository = new SoundtrackRepository(),
   ) {}
 
   private buildPortalUrl(token: string) {
     const baseUrl = env.APP_PUBLIC_URL || 'http://localhost:5173'
     return `${baseUrl.replace(/\/$/, '')}/portal/${token}`
+  }
+
+  private serializeActiveLink(result: { record: any; token?: string | null } | null) {
+    if (!result) return { hasActiveLink: false }
+    return {
+      hasActiveLink: true,
+      recoverable: Boolean(result.token),
+      portalUrl: result.token ? this.buildPortalUrl(result.token) : null,
+      expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
+    }
   }
 
   private async getSession(req: Request, res: Response) {
@@ -26,6 +40,10 @@ export class PortalController {
       return null
     }
     return session
+  }
+
+  private sanitizeActivityValue(req: Request, value: unknown) {
+    return sanitizeForLogging(value, { secrets: [req.params.token] })
   }
 
   async createClientLink(req: AuthRequest, res: Response) {
@@ -38,10 +56,45 @@ export class PortalController {
     })
 
     if (!result) return res.status(404).json({ error: 'Client not found' })
+    if (result.existing) {
+      return res.status(409).json({
+        error: 'An active portal link already exists. Use the replace action explicitly.',
+        ...this.serializeActiveLink({ record: result.record, token: null }),
+      })
+    }
 
     res.status(201).json({
+      hasActiveLink: true,
+      recoverable: true,
       portalUrl: this.buildPortalUrl(result.token),
       expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
+    })
+  }
+
+  async getClientLink(req: AuthRequest, res: Response) {
+    const result = await this.portalRepository.getActiveToken({
+      clientId: req.params.id,
+      companyId: req.tenantId,
+    })
+    res.json(this.serializeActiveLink(result))
+  }
+
+  async replaceClientLink(req: AuthRequest, res: Response) {
+    const days = Number(req.body?.days) || 15
+    const result = await this.portalRepository.replaceToken({
+      clientId: req.params.id,
+      companyId: req.tenantId,
+      createdBy: req.user?.userId,
+      days,
+    })
+    if (!result || result.existing) return res.status(404).json({ error: 'Client not found' })
+    res.status(201).json({
+      hasActiveLink: true,
+      recoverable: true,
+      portalUrl: this.buildPortalUrl(result.token),
+      expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
     })
   }
 
@@ -220,7 +273,7 @@ export class PortalController {
       actorRole: 'client_portal',
       type: 'post_rejected',
       title: 'Ajustes solicitados pelo portal',
-      metadata: { comment },
+      metadata: this.sanitizeActivityValue(req, { comment }) as Record<string, unknown>,
     }).catch(() => {})
 
     res.json({ success: true })
@@ -254,7 +307,7 @@ export class PortalController {
       actorRole: 'client_portal',
       type: 'feedback_sent',
       title: 'Ajuste solicitado pelo portal',
-      metadata: { comment, tags },
+      metadata: this.sanitizeActivityValue(req, { comment, tags }) as Record<string, unknown>,
     }).catch(() => {})
 
     res.json({ success: true })
@@ -280,7 +333,7 @@ export class PortalController {
       actorRole: 'client_portal',
       type: 'feedback_updated',
       title: 'Feedback de ajuste atualizado pelo portal',
-      metadata: { comment, tags },
+      metadata: this.sanitizeActivityValue(req, { comment, tags }) as Record<string, unknown>,
     }).catch(() => {})
 
     res.json({ success: true })
@@ -403,6 +456,82 @@ export class PortalController {
     res.json({ success: true })
   }
 
+  private async decideSoundtrack(
+    req: Request,
+    res: Response,
+    session: { clientId: string; companyId?: string },
+    decision: 'approved' | 'adjustment_requested',
+    actorRole: string,
+  ) {
+    const comment = decision === 'adjustment_requested' ? String(req.body?.comment || '').trim() : null
+    if (decision === 'adjustment_requested' && !comment) {
+      return res.status(400).json({ error: 'comment is required' })
+    }
+    const soundtrack = await this.soundtrackRepository.decide(
+      req.params.postId,
+      decision,
+      comment,
+      { clientId: session.clientId, companyId: session.companyId },
+      actorRole,
+    )
+    if (!soundtrack) return res.status(404).json({ error: 'Fundo sonoro nao encontrado ou indisponivel para decisao' })
+
+    await this.activityRepository.createForPost(req.params.postId, {
+      companyId: session.companyId,
+      actorId: session.clientId,
+      actorRole,
+      type: decision === 'approved' ? 'soundtrack_approved' : 'soundtrack_adjustment_requested',
+      title: decision === 'approved' ? 'Fundo sonoro aprovado' : 'Ajuste solicitado no fundo sonoro',
+      metadata: this.sanitizeActivityValue(req, {
+        soundtrackId: soundtrack.id,
+        mode: soundtrack.mode,
+        revisionNumber: soundtrack.revisionNumber,
+        comment,
+      }) as Record<string, unknown>,
+    }).catch(() => {})
+    res.json({ success: true, data: soundtrack })
+  }
+
+  async approveSoundtrack(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'approved', 'client_portal')
+  }
+
+  async rejectSoundtrack(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'adjustment_requested', 'client_portal')
+  }
+
+  async resetSoundtrack(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    const reset = await this.soundtrackRepository.resetDecision(req.params.postId, session)
+    if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })
+    res.json({ success: true })
+  }
+
+  async approveAuthenticatedSoundtrack(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'approved', 'client')
+  }
+
+  async rejectAuthenticatedSoundtrack(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'adjustment_requested', 'client')
+  }
+
+  async resetAuthenticatedSoundtrack(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    const reset = await this.soundtrackRepository.resetDecision(req.params.postId, session)
+    if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })
+    res.json({ success: true })
+  }
+
   async createFeedback(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
@@ -431,7 +560,7 @@ export class PortalController {
       actorRole: 'client_portal',
       type: 'feedback_sent',
       title: 'Feedback enviado pelo portal',
-      description: text,
+      description: this.sanitizeActivityValue(req, text) as string,
       metadata: { rating },
     }).catch(() => {})
 

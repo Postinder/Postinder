@@ -33,7 +33,10 @@ export default function ResetDataPage() {
       toast.success('Dados resetados. Entre novamente com o usuario padrao.')
       navigate('/login', { replace: true })
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message || 'Nao foi possivel resetar os dados.')
+      const unavailable = error.response?.status === 404
+      toast.error(unavailable
+        ? 'O reset nao esta disponivel neste ambiente.'
+        : error.response?.data?.error || error.message || 'Nao foi possivel resetar os dados.')
     } finally {
       setLoading(false)
     }

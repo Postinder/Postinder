@@ -2,10 +2,17 @@
   "name": "@postinder/admin",
   "private": true,
   "version": "2.0.0",
+  "packageManager": "npm@11.13.0",
+  "engines": {
+    "node": "24.x"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "npm run test:unit && npm run test:react",
+    "test:unit": "node --test src/utils/soundtrack.test.js src/utils/collapsiblePanels.test.js src/utils/clientDocument.test.js src/utils/brandingLogo.test.js src/config/deploymentMode.test.js src/services/integrations/ai.integration.test.js src/features/clients/ClientsPage.test.js src/features/posts/ManagePostsPage.test.js src/features/settings/BrandingPage.test.js src/features/portal/portalSwipe.test.js src/features/portal/portalBranding.test.js src/features/portal/portalReadability.test.js",
+    "test:react": "vitest run --environment jsdom src/App.branding.test.jsx src/components/branding/BrandingFlow.test.jsx",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
@@ -25,14 +32,18 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.1.0",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.5.0",
+    "jsdom": "^25.0.1",
     "postcss": "^8.5.13",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.2.2",
-    "vite": "^5.0.8"
+    "vite": "^5.0.8",
+    "vitest": "^3.2.6"
   },
   "description": "Postinder Admin - Plataforma de Aprovação de Conteúdo"
 }

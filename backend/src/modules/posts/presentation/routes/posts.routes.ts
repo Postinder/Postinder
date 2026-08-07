@@ -1,13 +1,15 @@
-import { Router, Request, Response } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import { PostsController } from '../controllers/PostsController'
 import { CreatePostService } from '../../application/services/CreatePostService'
 import { ListPostsService } from '../../application/services/ListPostsService'
 import { GetPostService } from '../../application/services/GetPostService'
 import { PostRepository } from '../../infrastructure/repositories/PostRepository'
 import { upload } from '../../../../shared/upload/multer'
+import { soundtrackUpload } from '../../../../shared/upload/multer'
+import { SoundtracksController } from '../../../soundtracks/presentation/controllers/SoundtracksController'
 
 function wrap(fn: (req: any, res: Response) => Promise<any>) {
-  return (req: Request, res: Response) => fn(req as any, res).catch(err => res.status(err.statusCode || 500).json({ error: err.message }))
+  return (req: Request, res: Response, next: NextFunction) => fn(req as any, res).catch(next)
 }
 
 export function createPostsRoutes(): Router {
@@ -19,6 +21,7 @@ export function createPostsRoutes(): Router {
     new GetPostService(postRepo),
     postRepo,
   )
+  const soundtracksController = new SoundtracksController()
 
   router.get('/', wrap(controller.list.bind(controller)))
   router.post('/', wrap(controller.create.bind(controller)))
@@ -27,6 +30,9 @@ export function createPostsRoutes(): Router {
   router.put('/:id', wrap(controller.update.bind(controller)))
   router.delete('/:id', wrap(controller.delete.bind(controller)))
   router.post('/:id/duplicate', wrap(controller.duplicate.bind(controller)))
+  router.get('/:id/soundtrack', wrap(soundtracksController.get.bind(soundtracksController)))
+  router.put('/:id/soundtrack', wrap(soundtracksController.update.bind(soundtracksController)))
+  router.post('/:id/soundtrack/file', soundtrackUpload.single('file'), wrap(soundtracksController.upload.bind(soundtracksController)))
   router.patch('/:id/status', wrap(controller.updateStatus.bind(controller)))
   router.post('/:id/execute', wrap(controller.markExecuted.bind(controller)))
   router.post('/:id/files', upload.array('files'), wrap(controller.uploadFiles.bind(controller)))

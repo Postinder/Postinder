@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusSquare, UploadCloud, MessageCircle } from 'lucide-react'
+import { PlusSquare, UploadCloud } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { createPost } from '../../services/posts.service'
-import { fetchClients, generateClientPortalLink } from '../../services/clients.service'
-import { CHANNELS, FUNNEL_TAGS, buildApprovalLink } from '../../utils/constants'
+import { fetchClients } from '../../services/clients.service'
+import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input, { Textarea, Select } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
+import ChannelIcon from '../../components/posts/ChannelIcon'
+import { prepareUploadFiles } from '../../utils/uploadValidation'
+import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import toast from 'react-hot-toast'
 
 function Section({ number, title, description, children }) {
@@ -43,14 +46,16 @@ export default function NewPostPage() {
   const [emailLink, setEmailLink] = useState('')
   const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
   const [loading, setLoading] = useState(false)
-  const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft', client: null, portalLink: '' })
-  const [waMsg, setWaMsg] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(null)
+  const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft' })
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {})
   }, [])
 
   const isEmail = Boolean(selChannels['E-mail Marketing'])
+  const isEmailOnly = isEmail && Object.keys(selChannels).length === 1
+  const emailPreviewUrl = normalizeEmailPreviewUrl(emailLink)
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
 
   function toggleChannel(channel) {
@@ -67,8 +72,6 @@ export default function NewPostPage() {
       }
       return
     }
-
-    if (selChannels['E-mail Marketing']) return
 
     const nextChannels = { ...selChannels }
     if (nextChannels[channel]) {
@@ -92,27 +95,20 @@ export default function NewPostPage() {
     }))
   }
 
+  function addFiles(fileList) {
+    const { accepted, errors } = prepareUploadFiles(fileList)
+    if (accepted.length) setFiles(current => [...current, ...accepted])
+    errors.forEach(error => toast.error(error))
+  }
+
   function handleFiles(event) {
-    const nextFiles = Array.from(event.target.files).map(file => ({
-      localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
-      file,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-    }))
-    setFiles(current => [...current, ...nextFiles])
+    addFiles(event.target.files)
+    event.target.value = ''
   }
 
   function handleDrop(event) {
     event.preventDefault()
-    const nextFiles = Array.from(event.dataTransfer.files).map(file => ({
-      localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
-      file,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-    }))
-    setFiles(current => [...current, ...nextFiles])
+    addFiles(event.dataTransfer.files)
   }
 
   async function handleSave(status = 'draft', keepCreating = false) {
@@ -121,16 +117,18 @@ export default function NewPostPage() {
       toast.error('Preencha cliente, título e ao menos um canal.')
       return
     }
-    if (isEmail && !emailLink) {
-      toast.error('Adicione o link do e-mail marketing.')
+    const normalizedEmailLink = emailPreviewUrl
+    if (isEmail && !normalizedEmailLink) {
+      toast.error('Informe um Link de pre-visualizacao do e-mail valido, iniciado por http:// ou https://.')
       return
     }
-    if (!isEmail && !files.length) {
+    if (!isEmailOnly && !files.length) {
       toast.error('Adicione ao menos um arquivo.')
       return
     }
 
     setLoading(true)
+    setUploadProgress(null)
     try {
       const formats = {}
       channels.forEach(channel => {
@@ -145,32 +143,24 @@ export default function NewPostPage() {
         caption: form.caption,
         scheduledDate: form.scheduledDate || null,
         funnelTag: funnelTag || null,
-        emailLink: isEmail ? emailLink : null,
+        emailLink: isEmail ? normalizedEmailLink : null,
         clientId: form.clientId,
         createdById: user?.id,
-      }, isEmail ? [] : files.map((item, index) => ({ ...item, sortOrder: index + 1 })))
+      }, files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
+        onUploadProgress: setUploadProgress,
+      })
 
       toast.success(status === 'ready' ? 'Postagem salva como pronta para envio.' : 'Rascunho salvo.')
       if (keepCreating) {
         resetForm()
       } else {
-        const client = clients.find(c => c.id === form.clientId) || null
-        let portalLink = ''
-        if (status === 'ready' && form.clientId) {
-          try {
-            const res = await generateClientPortalLink(form.clientId, 15)
-            portalLink = res?.url || res?.link || buildApprovalLink(res?.slug || '')
-          } catch { /* link opcional */ }
-        }
-        if (status === 'ready' && client) {
-          setWaMsg(`Olá ${client.name}! 🎉 Uma nova postagem está pronta para sua aprovação. Acesse o link abaixo:\n\n${portalLink}`)
-        }
-        setSuccessModal({ open: true, clientId: form.clientId, status, client, portalLink })
+        setSuccessModal({ open: true, clientId: form.clientId, status })
       }
     } catch (error) {
       toast.error(error.message)
     } finally {
       setLoading(false)
+      setUploadProgress(null)
     }
   }
 
@@ -181,6 +171,7 @@ export default function NewPostPage() {
     setSelFormats({})
     setFunnelTag('')
     setEmailLink('')
+    setUploadProgress(null)
   }
 
   return (
@@ -247,15 +238,15 @@ export default function NewPostPage() {
                   : 'border-neutral-200 text-neutral-600 hover:border-mag-300 dark:border-neutral-700 dark:text-neutral-400'
               }`}
             >
-              <span>{data.icon}</span>
+              <ChannelIcon channel={channel} />
               {channel}
             </button>
           ))}
         </div>
 
-        {Object.keys(selChannels).filter(channel => !CHANNELS[channel]?.exclusive).map(channel => (
+        {Object.keys(selChannels).filter(channel => CHANNELS[channel]?.formats?.length).map(channel => (
           <div key={channel} className="mb-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-            <span className="mb-2 block text-xs font-semibold text-mag-500">{CHANNELS[channel]?.icon} {channel} - Formato</span>
+            <span className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-mag-500"><ChannelIcon channel={channel} size={14} /> {channel} - Formato</span>
             <div className="flex flex-wrap gap-1.5">
               {(CHANNELS[channel]?.formats || []).map(format => (
                 <button
@@ -278,24 +269,26 @@ export default function NewPostPage() {
       {isEmail ? (
         <Card className="border-blue-200 bg-blue-50 p-5 dark:border-blue-800 dark:bg-blue-950/30">
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
-            Link do E-mail Marketing
+            Link de pré-visualização do e-mail
           </label>
           <div className="flex gap-2">
             <input
               value={emailLink}
               onChange={event => setEmailLink(event.target.value)}
+              type="url"
               placeholder="https://backend.leadconnectorhq.com/..."
               className="flex-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-blue-700 dark:bg-neutral-800"
             />
-            {emailLink && (
-              <button onClick={() => window.open(emailLink, '_blank')} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">
+            {emailPreviewUrl && (
+              <button onClick={() => window.open(emailPreviewUrl, '_blank', 'noopener,noreferrer')} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">
                 Preview
               </button>
             )}
           </div>
         </Card>
-      ) : (
-        <Section number="4" title="Arquivos" description="Anexe as pecas que o cliente precisa aprovar.">
+      ) : null}
+
+        <Section number="4" title="Arquivos" description={isEmailOnly ? 'Anexos opcionais para complementar a pré-visualização do e-mail.' : 'Anexe as pecas que o cliente precisa aprovar.'}>
           <div
             onDrop={handleDrop}
             onDragOver={event => event.preventDefault()}
@@ -325,8 +318,21 @@ export default function NewPostPage() {
               />
             </div>
           )}
-        </Section>
-      )}
+
+          {uploadProgress ? (
+            <div className="mt-4 rounded-lg border border-mag-200 bg-mag-50 p-3 dark:border-mag-900 dark:bg-mag-950/30">
+              <div className="flex items-center justify-between gap-3 text-xs font-bold text-mag-700 dark:text-mag-300">
+                <span className="min-w-0 truncate">
+                  Enviando {uploadProgress.fileIndex + 1} de {uploadProgress.totalFiles}: {uploadProgress.fileName}
+                </span>
+                <span>{uploadProgress.percent}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-mag-100 dark:bg-mag-900">
+                <div className="h-full rounded-full bg-mag-600 transition-[width]" style={{ width: `${uploadProgress.percent}%` }} />
+              </div>
+            </div>
+          ) : null}
+      </Section>
 
       <div className="sticky bottom-0 z-10 -mx-4 border-t border-neutral-200 bg-neutral-100/95 px-4 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 md:-mx-6 md:px-6">
         <div className="flex flex-wrap justify-end gap-3">
@@ -343,45 +349,13 @@ export default function NewPostPage() {
         </div>
       </div>
 
-      <Modal
-        open={successModal.open}
-        onClose={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/dashboard') }}
-        title="Postagem salva!"
-        subtitle="Ela ficou na área interna de gerenciamento. Envie ao cliente quando estiver pronta."
-      >
-        <div className="space-y-4 py-2">
-          <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+      <Modal open={successModal.open} onClose={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/dashboard') }}
+        title="Postagem salva!" subtitle="Ela ficou na area interna de gerenciamento. Envie ao cliente quando estiver pronta.">
+        <div className="py-4 text-center">
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
             Status atual: {successModal.status === 'ready' ? 'pronto para envio' : 'rascunho interno'}.
           </p>
-
-          {successModal.status === 'ready' && successModal.client && (
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                Avisar {successModal.client.name} pelo WhatsApp
-              </label>
-              <textarea
-                value={waMsg}
-                onChange={e => setWaMsg(e.target.value)}
-                className="h-24 w-full resize-none rounded-xl border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-mag-500 dark:border-neutral-700 dark:bg-neutral-800"
-              />
-              <button
-                onClick={() => {
-                  const phone = (successModal.client.whatsapp || '').replace(/\D/g, '')
-                  if (!phone || phone.length < 10) {
-                    toast.error('WhatsApp não cadastrado para este cliente.')
-                    return
-                  }
-                  const fullPhone = phone.length <= 11 ? '55' + phone : phone
-                  window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(waMsg)}`, '_blank')
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-bold text-white transition-colors hover:bg-[#20ba5a]"
-              >
-                <MessageCircle size={16} /> Enviar pelo WhatsApp
-              </button>
-            </div>
-          )}
         </div>
-
         <div className="mt-2 flex gap-3">
           <Button variant="secondary" className="flex-1 justify-center"
             onClick={() => { setSuccessModal({ open: false, clientId: '' }); navigate('/admin/posts') }}>

@@ -5,6 +5,7 @@ import { Building2, FileText, Search, UserCog, X } from 'lucide-react'
 import { fetchClients } from '../../services/clients.service'
 import { computePostStatus, fetchPosts } from '../../services/posts.service'
 import { fetchUsers } from '../../services/users.service'
+import { onlyClientDocumentDigits } from '../../utils/clientDocument'
 
 const STATUS_LABELS = {
   draft: 'Rascunho',
@@ -136,13 +137,17 @@ export default function GlobalSearch() {
 
     return {
       clients: clients
-        .filter(client => [
-          client.name,
-          client.email,
-          client.whatsapp,
-          client.segment,
-          client.document,
-        ].some(value => matchesSearch(value, term)))
+        .filter(client => {
+          const documentQuery = onlyClientDocumentDigits(term)
+          const documentNumber = onlyClientDocumentDigits(client.document_number)
+          return [
+            client.name,
+            client.email,
+            client.whatsapp,
+            client.segment,
+          ].some(value => matchesSearch(value, term))
+            || Boolean(documentQuery && documentNumber.includes(documentQuery))
+        })
         .slice(0, 5)
         .map(client => ({
           id: `client-${client.id}`,

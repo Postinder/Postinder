@@ -1,10 +1,10 @@
-import { Router, Request, Response } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import { PortalController } from '../controllers/PortalController'
 
 const controller = new PortalController()
 
 function wrap(fn: (req: any, res: Response) => Promise<any>) {
-  return (req: Request, res: Response) => fn(req, res).catch(err => res.status(500).json({ error: err.message }))
+  return (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next)
 }
 
 export function createClientPortalRoutes(): Router {
@@ -17,6 +17,9 @@ export function createClientPortalRoutes(): Router {
   router.post('/files/:fileId/reject', wrap(controller.rejectAuthenticatedFile.bind(controller)))
   router.patch('/files/:fileId/feedback', wrap(controller.updateAuthenticatedRejectedFileFeedback.bind(controller)))
   router.post('/files/:fileId/reset', wrap(controller.resetAuthenticatedFile.bind(controller)))
+  router.post('/posts/:postId/soundtrack/approve', wrap(controller.approveAuthenticatedSoundtrack.bind(controller)))
+  router.post('/posts/:postId/soundtrack/adjust', wrap(controller.rejectAuthenticatedSoundtrack.bind(controller)))
+  router.post('/posts/:postId/soundtrack/reset', wrap(controller.resetAuthenticatedSoundtrack.bind(controller)))
   router.post('/feedback', wrap(controller.createAuthenticatedFeedback.bind(controller)))
 
   return router

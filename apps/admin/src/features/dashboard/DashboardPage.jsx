@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useReducer } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Trash2, Edit3, RotateCcw, Plus, Search, Eye,
   Building2, SlidersHorizontal, X, ArrowUpDown, CalendarDays, Paperclip, UploadCloud,
-  Activity, CheckCircle, MessageSquare, UserPlus
+  Activity, CheckCircle, MessageSquare, UserPlus, ChevronDown
 } from 'lucide-react'
 import { fetchPosts, softDeletePost, computePostStatus, updatePost, resubmitPost, replacePostFile } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
@@ -17,6 +17,10 @@ import Input, { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
+import { validateUploadFile } from '../../utils/uploadValidation'
+import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
+import MediaPreview from '../../components/media/MediaPreview'
+import { DASHBOARD_PANELS_INITIAL_STATE, toggleDashboardPanel } from '../../utils/collapsiblePanels'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTIONS = [
@@ -47,10 +51,6 @@ function getPostClientId(post) {
 
 function isClientActive(client) {
   return client?.is_active !== false && client?.isActive !== false
-}
-
-function isPostArchived(post) {
-  return post?.archived === true || post?.is_archived === true || post?.isArchived === true || post?.status === 'archived'
 }
 
 function getPostDate(post) {
@@ -328,10 +328,7 @@ function EditPostModal({ post, open, onClose, onSave }) {
                   <div key={file.id} className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
                     <div className="mb-3 flex items-start gap-3">
                       <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
-                        {(file.file_type || '').toUpperCase() === 'IMAGE' && previewUrl
-                          ? <img src={previewUrl} alt="" className="h-full w-full object-cover" onError={event => { event.currentTarget.style.display = 'none' }} />
-                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-400">{FILE_LABELS[file.file_type] || 'Arquivo'}</div>
-                        }
+                        <MediaPreview file={file} src={previewUrl} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-1 text-sm font-bold text-neutral-900 dark:text-white">{file.name}</div>
@@ -349,10 +346,14 @@ function EditPostModal({ post, open, onClose, onSave }) {
                       <span className="shrink-0 text-xs font-semibold text-mag-500">Escolher</span>
                       <input
                         type="file"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
                         className="hidden"
                         onChange={event => {
                           const nextFile = event.target.files?.[0]
-                          if (nextFile) setReplacementFiles(current => ({ ...current, [file.id]: nextFile }))
+                          const validationError = nextFile ? validateUploadFile(nextFile) : null
+                          if (validationError) toast.error(validationError)
+                          else if (nextFile) setReplacementFiles(current => ({ ...current, [file.id]: nextFile }))
+                          event.target.value = ''
                         }}
                       />
                     </label>
@@ -401,7 +402,11 @@ export default function DashboardPage() {
   const [sortBy, setSortBy] = useState('updated')
   const [activityLimit, setActivityLimit] = useState(5)
   const [activityPage, setActivityPage] = useState(1)
+  const [dashboardPanels, dispatchDashboardPanel] = useReducer(toggleDashboardPanel, DASHBOARD_PANELS_INITIAL_STATE)
+  const { activity: isActivityExpanded, posts: isPostsExpanded } = dashboardPanels
   const [editPost, setEditPost] = useState(null)
+  const [postToDelete, setPostToDelete] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const clientFilter = searchParams.get('client') || ''
   const isReadOnly = String(user?.role || '').trim().toLowerCase() === 'viewer'
@@ -412,7 +417,7 @@ export default function DashboardPage() {
   }
 
   const load = useCallback(() => {
-    Promise.all([fetchPosts({ includeArchived: true }), fetchClients({ includeInactive: true }), fetchActivities({ limit: 50 })])
+    Promise.all([fetchPosts(), fetchClients({ includeInactive: true }), fetchActivities({ limit: 50 })])
       .then(([p, c, a]) => { setPosts(p); setClients(c); setActivities(a) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -420,11 +425,19 @@ export default function DashboardPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function handleDelete(id) {
-    if (!confirm('Excluir esta postagem?')) return
-    await softDeletePost(id)
-    setPosts(p => p.filter(x => x.id !== id))
-    toast.success('Postagem excluida.')
+  async function handleDelete() {
+    if (!postToDelete) return
+    setDeleteLoading(true)
+    try {
+      await softDeletePost(postToDelete.id)
+      setPosts(posts => posts.filter(post => post.id !== postToDelete.id))
+      setPostToDelete(null)
+      toast.success('Postagem excluida.')
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setDeleteLoading(false)
+    }
   }
 
   async function sendApprovalNotification(clientId) {
@@ -441,8 +454,8 @@ export default function DashboardPage() {
     ? clients.filter(client => activeClientIds.has(client.id))
     : clients
   const scopedPosts = dashboardScope === 'active'
-    ? posts.filter(post => activeClientIds.has(getPostClientId(post)) && !isPostArchived(post))
-    : posts.filter(post => !isPostArchived(post) || !activeClientIds.has(getPostClientId(post)))
+    ? posts.filter(post => activeClientIds.has(getPostClientId(post)))
+    : posts
   const scopedActivities = dashboardScope === 'active'
     ? activities.filter(item => {
       const clientId = item.clientId || item.client_id
@@ -633,124 +646,170 @@ export default function DashboardPage() {
       </div>
 
       <Card className="mb-4 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="flex items-center gap-2">
+        <div className={`flex flex-wrap items-center justify-between gap-3 bg-neutral-50/80 p-4 dark:bg-neutral-900 ${isActivityExpanded ? 'border-b border-neutral-200 dark:border-neutral-800' : ''}`}>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-300">
               <Activity size={17} />
             </div>
-            <div>
-              <div className="text-sm font-bold text-neutral-900 dark:text-white">Atividade recente</div>
-              <div className="mt-0.5 text-xs text-neutral-400">
+            <div className="min-w-0">
+              <h2 id="dashboard-activity-title" className="text-sm font-bold text-neutral-900 dark:text-white">Atividade recente</h2>
+              <div className="mt-0.5 truncate text-xs text-neutral-400">
                 {activeClient ? `Últimos eventos de ${activeClient.name}` : 'Últimos eventos do sistema'}
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
             <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
               {recentActivities.length} evento{recentActivities.length !== 1 ? 's' : ''}
             </span>
-            <Select value={activityLimit} onChange={event => setActivityLimit(Number(event.target.value))} className="w-28">
-              <option value={5}>5 itens</option>
-              <option value={10}>10 itens</option>
-            </Select>
+            {isActivityExpanded ? (
+              <Select value={activityLimit} onChange={event => setActivityLimit(Number(event.target.value))} className="w-28">
+                <option value={5}>5 itens</option>
+                <option value={10}>10 itens</option>
+              </Select>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => dispatchDashboardPanel('activity')}
+              aria-expanded={isActivityExpanded}
+              aria-controls="dashboard-activity-content"
+              aria-label={`${isActivityExpanded ? 'Recolher' : 'Expandir'} Atividade recente`}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 transition-colors hover:border-mag-300 hover:text-mag-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:border-mag-500 dark:hover:text-mag-300 dark:focus-visible:ring-offset-neutral-900"
+            >
+              <ChevronDown
+                size={18}
+                aria-hidden="true"
+                className={`transition-transform duration-200 motion-reduce:transition-none ${isActivityExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
           </div>
         </div>
-        {loading ? (
-          <div className="space-y-3 p-4">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="flex items-center gap-3">
-                <Skeleton className="h-9 w-9 rounded-lg" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-3 w-40" />
-                  <Skeleton className="h-2 w-64" />
+        <div
+          id="dashboard-activity-content"
+          role="region"
+          aria-labelledby="dashboard-activity-title"
+          hidden={!isActivityExpanded}
+        >
+          {loading ? (
+            <div className="space-y-3 p-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-9 w-9 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-3 w-40" />
+                    <Skeleton className="h-2 w-64" />
+                  </div>
+                  <Skeleton className="h-3 w-16" />
                 </div>
-                <Skeleton className="h-3 w-16" />
-              </div>
-            ))}
-          </div>
-        ) : recentActivities.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm">
-              <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50/60 dark:border-neutral-800 dark:bg-neutral-900/80">
-                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Evento</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Detalhe</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Quando</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {visibleActivities.map(item => {
-                  const Icon = item.icon
-                  return (
-                    <tr key={item.id} className="transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900/70">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${getActivityToneClass(item.tone)}`}>
-                            <Icon size={15} />
+              ))}
+            </div>
+          ) : recentActivities.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[680px] text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-100 bg-neutral-50/60 dark:border-neutral-800 dark:bg-neutral-900/80">
+                    <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Evento</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Detalhe</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-neutral-400">Quando</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                  {visibleActivities.map(item => {
+                    const Icon = item.icon
+                    return (
+                      <tr key={item.id} className="transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900/70">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${getActivityToneClass(item.tone)}`}>
+                              <Icon size={15} />
+                            </div>
+                            <span className="font-semibold text-neutral-900 dark:text-white">{item.title}</span>
                           </div>
-                          <span className="font-semibold text-neutral-900 dark:text-white">{item.title}</span>
-                        </div>
-                      </td>
-                      <td className="max-w-[340px] px-4 py-3">
-                        <div className="truncate text-neutral-500 dark:text-neutral-400">{item.description}</div>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-semibold text-neutral-400">{formatActivityTime(item.date)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-4 py-3 text-xs font-semibold text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
-              <span>
-                Página {currentActivityPage} de {activityTotalPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActivityPage(page => Math.max(1, page - 1))}
-                  disabled={currentActivityPage <= 1}
-                  className="rounded-lg border border-neutral-200 px-3 py-1.5 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700"
-                >
-                  Anterior
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivityPage(page => Math.min(activityTotalPages, page + 1))}
-                  disabled={currentActivityPage >= activityTotalPages}
-                  className="rounded-lg border border-neutral-200 px-3 py-1.5 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700"
-                >
-                  Próxima
-                </button>
+                        </td>
+                        <td className="max-w-[340px] px-4 py-3">
+                          <div className="truncate text-neutral-500 dark:text-neutral-400">{item.description}</div>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-semibold text-neutral-400">{formatActivityTime(item.date)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-4 py-3 text-xs font-semibold text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+                <span>
+                  Página {currentActivityPage} de {activityTotalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActivityPage(page => Math.max(1, page - 1))}
+                    disabled={currentActivityPage <= 1}
+                    className="rounded-lg border border-neutral-200 px-3 py-1.5 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivityPage(page => Math.min(activityTotalPages, page + 1))}
+                    disabled={currentActivityPage >= activityTotalPages}
+                    className="rounded-lg border border-neutral-200 px-3 py-1.5 transition-colors hover:border-mag-500 hover:text-mag-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700"
+                  >
+                    Próxima
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="p-6 text-center text-sm text-neutral-400">
-            Nenhuma atividade recente encontrada para este filtro.
-          </div>
-        )}
+          ) : (
+            <div className="p-6 text-center text-sm text-neutral-400">
+              Nenhuma atividade recente encontrada para este filtro.
+            </div>
+          )}
+        </div>
       </Card>
 
       <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 p-4 dark:border-neutral-800">
-          <div>
-            <div className="text-sm font-semibold text-neutral-900 dark:text-white">
+        <div className={`flex flex-wrap items-center justify-between gap-3 p-4 ${isPostsExpanded ? 'border-b border-neutral-200 dark:border-neutral-800' : ''}`}>
+          <div className="min-w-0 flex-1">
+            <h2 id="dashboard-posts-title" className="text-sm font-semibold text-neutral-900 dark:text-white">
               Postagens <span className="text-neutral-400 font-normal">({sortedPosts.length})</span>
-            </div>
-            <div className="mt-1 text-xs text-neutral-400">{activeClient?.name || activeScope} - {activeStatus}</div>
+            </h2>
+            <div className="mt-1 truncate text-xs text-neutral-400">{activeClient?.name || activeScope} - {activeStatus}</div>
           </div>
-          <label className="flex items-center gap-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
-            <ArrowUpDown size={14} />
-            Ordenar
-            <Select value={sortBy} onChange={e => setSortBy(e.target.value)} className="w-40">
-              <option value="updated">Mais recentes</option>
-              <option value="client">Cliente</option>
-              <option value="status">Status</option>
-              <option value="title">Título</option>
-            </Select>
-          </label>
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {isPostsExpanded ? (
+              <label className="flex items-center gap-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+                <ArrowUpDown size={14} />
+                Ordenar
+                <Select value={sortBy} onChange={e => setSortBy(e.target.value)} className="w-40">
+                  <option value="updated">Mais recentes</option>
+                  <option value="client">Cliente</option>
+                  <option value="status">Status</option>
+                  <option value="title">Título</option>
+                </Select>
+              </label>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => dispatchDashboardPanel('posts')}
+              aria-expanded={isPostsExpanded}
+              aria-controls="dashboard-posts-content"
+              aria-label={`${isPostsExpanded ? 'Recolher' : 'Expandir'} Postagens`}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 transition-colors hover:border-mag-300 hover:text-mag-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mag-500 focus-visible:ring-offset-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:border-mag-500 dark:hover:text-mag-300 dark:focus-visible:ring-offset-neutral-900"
+            >
+              <ChevronDown
+                size={18}
+                aria-hidden="true"
+                className={`transition-transform duration-200 motion-reduce:transition-none ${isPostsExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
+          </div>
         </div>
-        <div>
+        <div
+          id="dashboard-posts-content"
+          role="region"
+          aria-labelledby="dashboard-posts-title"
+          hidden={!isPostsExpanded}
+        >
           {loading ? (
             <div className="p-4 space-y-3">
               {[1, 2, 3].map(i => (
@@ -786,6 +845,7 @@ export default function DashboardPage() {
                 const client = getPostClient(post)
                 const files = post.files || []
                 const isRej = st === 'rejected'
+                const canDelete = canDeletePost(st, user?.role)
                 const firstFile = files[0]
                 const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
                 return (
@@ -802,10 +862,9 @@ export default function DashboardPage() {
                     </div>
                     <div className="mt-3 flex gap-3">
                       <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-800">
-                        {firstFile?.file_type === 'IMAGE' && resolveMediaUrl(firstFile?.storage_url)
-                          ? <img src={resolveMediaUrl(firstFile.storage_url)} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
-                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem midia'}</div>
-                        }
+                        {firstFile
+                          ? <MediaPreview file={firstFile} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
+                          : <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-neutral-500 dark:text-neutral-300">Sem midia</div>}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-2 text-sm font-extrabold text-neutral-950 dark:text-white">{post.title || '(sem titulo)'}</div>
@@ -821,10 +880,10 @@ export default function DashboardPage() {
                         <>
                           {isRej ? (
                             <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-3 py-2 text-xs font-bold text-teal-600 dark:bg-teal-900/30 dark:text-teal-400"><RotateCcw size={13} /> Corrigir</button>
-                          ) : (
+                          ) : st !== 'executed' ? (
                             <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-bold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"><Edit3 size={13} /> Editar</button>
-                          )}
-                          <button onClick={() => handleDelete(post.id)} className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-950/30"><Trash2 size={13} /> Arquivar</button>
+                          ) : null}
+                          {canDelete ? <button onClick={() => setPostToDelete(post)} className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-950/30"><Trash2 size={13} /> Excluir</button> : null}
                         </>
                       )}
                     </div>
@@ -858,6 +917,7 @@ export default function DashboardPage() {
                   const client = getPostClient(post)
                   const files = post.files || []
                   const isRej = st === 'rejected'
+                  const canDelete = canDeletePost(st, user?.role)
                   const firstFile = files[0]
                   const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
 
@@ -875,10 +935,9 @@ export default function DashboardPage() {
                       <td className="px-4 py-3 align-middle">
                         <div className="flex items-center gap-3">
                           <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-800">
-                            {firstFile?.file_type === 'IMAGE' && resolveMediaUrl(firstFile?.storage_url)
-                              ? <img src={resolveMediaUrl(firstFile.storage_url)} alt="" className="h-full w-full object-cover" onError={e => e.target.style.display = 'none'} />
-                              : <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-neutral-500 dark:text-neutral-300">{firstFile ? FILE_LABELS[firstFile.file_type] || 'Arquivo' : 'Sem mídia'}</div>
-                            }
+                            {firstFile
+                              ? <MediaPreview file={firstFile} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
+                              : <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-neutral-500 dark:text-neutral-300">Sem mídia</div>}
                           </div>
                           <div className="min-w-0">
                             <div className="line-clamp-1 font-semibold text-neutral-900 dark:text-white">{post.title || '(sem título)'}</div>
@@ -920,16 +979,16 @@ export default function DashboardPage() {
                                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 text-xs font-semibold">
                                   <RotateCcw size={11} /> Corrigir
                                 </button>
-                              ) : (
+                              ) : st !== 'executed' ? (
                                 <button onClick={() => setEditPost(post)}
                                   className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500" title="Editar">
                                   <Edit3 size={14} />
                                 </button>
-                              )}
-                              <button onClick={() => handleDelete(post.id)}
+                              ) : null}
+                              {canDelete ? <button onClick={() => setPostToDelete(post)}
                                 className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-neutral-400 hover:text-red-500" title="Excluir">
                                 <Trash2 size={14} />
-                              </button>
+                              </button> : null}
                             </>
                           )}
                         </div>
@@ -951,6 +1010,14 @@ export default function DashboardPage() {
         }
         load()
       }} />
+      <DeletePostModal
+        post={postToDelete}
+        status={postToDelete ? computePostStatus(postToDelete) : ''}
+        open={!!postToDelete}
+        onClose={() => setPostToDelete(null)}
+        onConfirm={handleDelete}
+        loading={deleteLoading}
+      />
     </div>
   )
 }

@@ -1,0 +1,43 @@
+warning: in the working copy of 'CHANGELOG.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'PRODUCT_DECISIONS.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'PROJECT_STATE.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ROADMAP.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/components/layout/AdminLayout.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/components/media/MediaPreview.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/clients/ClientsPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/dashboard/DashboardPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/portal/ClientPortalPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/portal/PortalChannelChips.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/portal/PortalContentSelector.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/portal/PortalHeader.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/portal/PortalMetricsBar.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/portal/PortalReviewHeader.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/portal/SoundtrackReviewCard.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/posts/FeedPreviewPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/admin/src/features/posts/ManagePostsPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/DEPLOYMENT.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/deploy/CHECKLIST_DEPLOY_TESTE.md', LF will be replaced by CRLF the next time Git touches it
+ CHANGELOG.md                                       |  16 [32m+[m[31m-[m
+ PRODUCT_DECISIONS.md                               |  17 [32m+[m[31m-[m
+ PROJECT_STATE.md                                   |  21 [32m+[m[31m-[m
+ README.md                                          |  12 [32m+[m[31m-[m
+ ROADMAP.md                                         |   6 [32m+[m[31m-[m
+ apps/admin/package.json                            |   2 [32m+[m[31m-[m
+ apps/admin/src/components/layout/AdminLayout.jsx   |   2 [32m+[m[31m-[m
+ apps/admin/src/components/media/MediaPreview.jsx   |   2 [32m+[m
+ apps/admin/src/features/clients/ClientsPage.jsx    |  18 [32m+[m[31m-[m
+ .../admin/src/features/dashboard/DashboardPage.jsx | 245 [32m+++++++++[m[31m-------[m
+ .../admin/src/features/portal/ClientPortalPage.jsx | 326 [32m++++++++++++++[m[31m-------[m
+ .../src/features/portal/PortalChannelChips.jsx     |   4 [32m+[m[31m-[m
+ .../src/features/portal/PortalContentSelector.jsx  |  22 [32m+[m[31m-[m
+ apps/admin/src/features/portal/PortalHeader.jsx    |  30 [32m+[m[31m-[m
+ .../admin/src/features/portal/PortalMetricsBar.jsx |   6 [32m+[m[31m-[m
+ .../src/features/portal/PortalReviewHeader.jsx     |   6 [32m+[m[31m-[m
+ .../src/features/portal/SoundtrackReviewCard.jsx   |  12 [32m+[m[31m-[m
+ apps/admin/src/features/posts/FeedPreviewPage.jsx  |  13 [32m+[m
+ apps/admin/src/features/posts/ManagePostsPage.jsx  |  34 [32m+[m[31m--[m
+ docs/DEPLOYMENT.md                                 |  11 [32m+[m[31m-[m
+ docs/deploy/CHECKLIST_DEPLOY_TESTE.md              |  18 [32m+[m[31m-[m
+ 21 files changed, 544 insertions(+), 279 deletions(-)

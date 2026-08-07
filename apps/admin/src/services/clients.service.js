@@ -52,8 +52,30 @@ export async function notifyClient(clientId) {
 }
 
 export async function generateClientPortalLink(clientId, days = 15) {
-  const { data } = await apiClient.post(`/clients/${clientId}/portal-link`, { days })
-  return data
+  try {
+    const { data } = await apiClient.post(`/clients/${clientId}/portal-link`, { days })
+    return data
+  } catch (error) {
+    throw getApiError(error)
+  }
+}
+
+export async function fetchClientPortalLink(clientId) {
+  try {
+    const { data } = await apiClient.get(`/clients/${clientId}/portal-link`)
+    return data
+  } catch (error) {
+    throw getApiError(error)
+  }
+}
+
+export async function replaceClientPortalLink(clientId, days = 15) {
+  try {
+    const { data } = await apiClient.post(`/clients/${clientId}/portal-link/replace`, { days })
+    return data
+  } catch (error) {
+    throw getApiError(error)
+  }
 }
 
 export function parseVCFText(text) {

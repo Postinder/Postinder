@@ -1,20 +1,13 @@
-# Setup Local Rapido
+# Setup local
 
-Este arquivo e um resumo. O guia completo esta no `README.md`.
-
-## Primeira vez
-
-No PowerShell:
+## Primeira execucao
 
 ```powershell
 .\docs\deploy\setup.ps1
-```
-
-Depois:
-
-```bash
 npm run dev
 ```
+
+O script sobe o PostgreSQL local, instala dependencias, aplica migrations e executa a seed demo explicita. Para uma instalacao sem dados demo, siga o fluxo manual no [README](../../README.md) e nao execute `db:seed-demo`.
 
 ## Dia a dia
 
@@ -23,26 +16,10 @@ docker compose up -d
 npm run dev
 ```
 
-Ou, no Windows, use:
+URLs:
 
-```text
-docs\deploy\iniciar.bat
-```
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:3001`
+- Health: `http://localhost:3001/health`
 
-## URLs
-
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3001
-- Health check: http://localhost:3001/health
-
-## Credenciais
-
-Admin:
-
-- `admin@postinder.local`
-- `Admin@123456`
-
-Cliente:
-
-- `cliente@example.com`
-- `Cliente@123456`
+O banco deve ser atualizado somente com `npm run db:migrate` em `backend`. Consulte o [README](../../README.md) para credenciais demo e variaveis de ambiente.

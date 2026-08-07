@@ -12,6 +12,8 @@ import { Textarea, Select } from '../../components/ui/Input'
 import Skeleton from '../../components/ui/Skeleton'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
+import { validateUploadFile } from '../../utils/uploadValidation'
+import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
 import toast from 'react-hot-toast'
 
 const FILE_LABELS = {
@@ -58,15 +60,8 @@ function FilePreview({ file }) {
   const label = FILE_LABELS[ft] || 'Arquivo'
   const url = getFileUrl(file)
 
-  if (ft === 'IMAGE' && url) {
-    return (
-      <img
-        src={url}
-        alt={file.name}
-        className="h-full w-full object-cover"
-        onError={event => { event.currentTarget.style.display = 'none' }}
-      />
-    )
+  if (['IMAGE', 'VIDEO'].includes(ft) && url) {
+    return <MediaPreview file={file} src={url} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
   }
 
   return (
@@ -327,8 +322,8 @@ export default function ApprovalsPage() {
     <div>
       <PageHeader
         icon={CheckCircle}
-        title="Acompanhamento de aprovacoes"
-        subtitle="A empresa acompanha o status e corrige reprovacoes, mas a aprovacao final e sempre do cliente."
+        title="Acompanhamento de aprovações"
+        subtitle="A empresa acompanha o status e corrige reprovações, mas a aprovação final é sempre do cliente."
         actions={
           <div className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
             {actionable.length} em acompanhamento
@@ -423,10 +418,14 @@ export default function ApprovalsPage() {
                   <span className="shrink-0 text-xs font-semibold text-mag-500">Escolher</span>
                   <input
                     type="file"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
                     className="hidden"
                     onChange={event => {
                       const nextFile = event.target.files?.[0]
-                      if (nextFile) setReplacementFiles(current => ({ ...current, [file.id]: nextFile }))
+                      const validationError = nextFile ? validateUploadFile(nextFile) : null
+                      if (validationError) toast.error(validationError)
+                      else if (nextFile) setReplacementFiles(current => ({ ...current, [file.id]: nextFile }))
+                      event.target.value = ''
                     }}
                   />
                 </label>
@@ -475,7 +474,9 @@ export default function ApprovalsPage() {
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
               <div className="overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950">
-                {(fileViewer.file.file_type || '').toUpperCase() === 'IMAGE' && getFileUrl(fileViewer.file) ? (
+                {getMediaKind(fileViewer.file) === 'video' && getFileUrl(fileViewer.file) ? (
+                  <MediaPreview file={fileViewer.file} src={getFileUrl(fileViewer.file)} className="h-[60vh] w-full" mediaClassName="h-full w-full object-contain" />
+                ) : (fileViewer.file.file_type || '').toUpperCase() === 'IMAGE' && getFileUrl(fileViewer.file) ? (
                   <img src={getFileUrl(fileViewer.file)} alt={fileViewer.file.name} className="max-h-[60vh] w-full object-contain" />
                 ) : getFileUrl(fileViewer.file) ? (
                   <iframe title={fileViewer.file.name} src={getFileUrl(fileViewer.file)} className="h-[60vh] w-full bg-white" />

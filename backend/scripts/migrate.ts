@@ -1,9 +1,10 @@
 import dotenv from 'dotenv'
 import fs from 'fs/promises'
 import path from 'path'
-import { Pool } from 'pg'
+import { Pool, PoolClient } from 'pg'
+import { listStructuralMigrationFiles } from '../src/shared/database/migrationCatalog'
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true })
+dotenv.config({ path: path.resolve(process.cwd(), '.env') })
 
 const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) {
@@ -13,14 +14,15 @@ if (!databaseUrl) {
 
 const migrationsDir = path.resolve(process.cwd(), '..', 'database', 'migrations')
 const isProduction = process.env.NODE_ENV === 'production'
+const migrationLockName = 'postinder:database:migrations'
 
 const pool = new Pool({
   connectionString: databaseUrl,
   ssl: isProduction ? { rejectUnauthorized: false } : undefined,
 })
 
-async function ensureMigrationsTable() {
-  await pool.query(`
+async function ensureMigrationsTable(client: PoolClient) {
+  await client.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       id SERIAL PRIMARY KEY,
       filename VARCHAR(255) UNIQUE NOT NULL,
@@ -29,15 +31,14 @@ async function ensureMigrationsTable() {
   `)
 }
 
-async function getAppliedMigrations() {
-  const result = await pool.query('SELECT filename FROM schema_migrations')
+async function getAppliedMigrations(client: PoolClient) {
+  const result = await client.query('SELECT filename FROM schema_migrations')
   return new Set(result.rows.map(row => row.filename))
 }
 
-async function runMigration(filename: string) {
+async function runMigration(client: PoolClient, filename: string) {
   const filePath = path.join(migrationsDir, filename)
   const sql = await fs.readFile(filePath, 'utf8')
-  const client = await pool.connect()
 
   try {
     await client.query('BEGIN')
@@ -52,27 +53,34 @@ async function runMigration(filename: string) {
     await client.query('ROLLBACK')
     console.error(`Failed to apply ${filename}`)
     throw error
-  } finally {
-    client.release()
   }
 }
 
 async function main() {
-  await ensureMigrationsTable()
-  const applied = await getAppliedMigrations()
-  const files = (await fs.readdir(migrationsDir))
-    .filter(file => file.endsWith('.sql'))
-    .sort()
+  const client = await pool.connect()
+  try {
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [migrationLockName])
+    await ensureMigrationsTable(client)
+    const applied = await getAppliedMigrations(client)
+    const files = await listStructuralMigrationFiles()
 
-  for (const file of files) {
-    if (applied.has(file)) {
-      console.log(`Skipping ${file}`)
-      continue
+    console.log('Skipping 002_development_seed.sql; run the explicit demo seed command when needed.')
+    for (const file of files) {
+      if (applied.has(file)) {
+        console.log(`Skipping ${file}`)
+        continue
+      }
+      await runMigration(client, file)
     }
-    await runMigration(file)
-  }
 
-  console.log('Database migrations completed.')
+    console.log('Database migrations completed.')
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [migrationLockName])
+    } finally {
+      client.release()
+    }
+  }
 }
 
 main()

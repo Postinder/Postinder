@@ -4,9 +4,12 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
+import { useThemeStore } from './store/themeStore'
 import './styles/globals.css'
 
 const queryClient = new QueryClient()
+
+document.documentElement.classList.toggle('dark', useThemeStore.getState().isDark)
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

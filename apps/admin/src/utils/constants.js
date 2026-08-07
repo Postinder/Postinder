@@ -1,49 +1,44 @@
 // ── Channel definitions ──
 export const CHANNELS = {
   'Instagram/Facebook': {
-    icon: '📷',
-    formats: ['Feed', 'Stories', 'Reels', 'Carrossel', 'Foto'],
+    icon: 'instagram-facebook',
+    formats: ['Card', 'Carrossel', 'Stories', 'Reels', 'Foto'],
     exclusive: false,
   },
   'LinkedIn': {
-    icon: '💼',
+    icon: 'linkedin',
     formats: ['Post', 'Artigo', 'Card'],
     exclusive: false,
   },
   'TikTok': {
-    icon: '🎵',
+    icon: 'tiktok',
     formats: ['Vídeo', 'Stories'],
     exclusive: false,
   },
   'YouTube': {
-    icon: '🎬',
+    icon: 'youtube',
     formats: ['Vídeo', 'Shorts'],
     exclusive: false,
   },
   'Google Meu Negócio': {
-    icon: '📍',
+    icon: 'google-business',
     formats: ['Post', 'Foto'],
     exclusive: false,
   },
   'WhatsApp': {
-    icon: '📱',
+    icon: 'whatsapp',
     formats: ['Mensagem', 'Status'],
     exclusive: false,
   },
-  '3A3R': {
-    icon: '🚀',
-    formats: ['Post'],
-    exclusive: false,
-  },
   'Site': {
-    icon: '🌐',
+    icon: 'site',
     formats: ['Banner', 'Blog', 'Popup'],
     exclusive: false,
   },
   'E-mail Marketing': {
-    icon: '📧',
+    icon: 'email',
     formats: [],
-    exclusive: true,
+    exclusive: false,
   },
 }
 

@@ -1,6 +1,8 @@
 import { pool, query } from '../../../../shared/database/pool'
+import { assertActiveEmailAvailable, isEmailConflict, normalizeEmail } from '../../../../shared/database/emailUniqueness'
 import { logger } from '../../../../shared/utils/Logger'
 import { removeStoredFile } from '../../../../shared/upload/storage'
+import type { ClientDocumentType } from '../../domain/clientInput'
 
 export interface CreateClientDTO {
   name: string
@@ -10,6 +12,8 @@ export interface CreateClientDTO {
   segment?: string
   color?: string
   deadline_days?: number
+  document_type?: ClientDocumentType | null
+  document_number?: string | null
   company_id?: string
 }
 
@@ -19,31 +23,28 @@ export interface UpdateClientDTO {
   segment?: string
   color?: string
   deadline_days?: number
+  document_type?: ClientDocumentType | null
+  document_number?: string | null
+  portal_detailed_view?: boolean
 }
 
 export class ClientRepository {
-  private normalizeEmail(email: string) {
-    return String(email || '').trim().toLowerCase()
-  }
-
-  private duplicateScopeConditions(params: any[], companyId?: string) {
-    if (!companyId) return ''
-    params.push(companyId)
-    return ` AND (company_id = $${params.length} OR company_id IS NULL)`
-  }
-
   async create(dto: CreateClientDTO) {
+    const email = normalizeEmail(dto.email)
+    const client = await pool.connect()
+    let transactionStarted = false
     try {
-      const email = this.normalizeEmail(dto.email)
-      const duplicate = await this.emailExistsInUsersOrClients(email, dto.company_id)
-      if (duplicate) {
-        throw new Error('Email already exists')
-      }
-
-      const result = await query(
-        `INSERT INTO clients (name, email, password_hash, whatsapp, segment, color, deadline_days, company_id, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-         RETURNING id, name, email, whatsapp, segment, color, deadline_days, created_at`,
+      await client.query('BEGIN')
+      transactionStarted = true
+      await assertActiveEmailAvailable(client, email)
+      const result = await client.query(
+        `INSERT INTO clients (
+           name, email, password_hash, whatsapp, segment, color, deadline_days,
+           document_type, document_number, company_id, is_active
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+         RETURNING id, name, email, whatsapp, segment, color, deadline_days,
+           document_type, document_number, portal_detailed_view, created_at`,
         [
           dto.name,
           email,
@@ -51,42 +52,27 @@ export class ClientRepository {
           dto.whatsapp || null,
           dto.segment || null,
           dto.color || null,
-          dto.deadline_days || 7,
+          dto.deadline_days ?? 7,
+          dto.document_type ?? null,
+          dto.document_number ?? null,
           dto.company_id || null,
         ]
       )
+      await client.query('COMMIT')
       return result.rows[0]
     } catch (error: any) {
-      if (error.message === 'Email already exists') {
-        throw error
-      }
-      if (error.code === '23505') {
+      if (transactionStarted) await client.query('ROLLBACK')
+      if (isEmailConflict(error)) {
         throw new Error('Email already exists')
       }
-      logger.error('Failed to create client', { error })
+      logger.error('Failed to create client', {
+        errorName: error?.name,
+        errorCode: error?.code,
+      })
       throw new Error('Failed to create client')
+    } finally {
+      client.release()
     }
-  }
-
-  async emailExistsInUsersOrClients(email: string, companyId?: string) {
-    const normalizedEmail = this.normalizeEmail(email)
-    const userParams: any[] = [normalizedEmail]
-    const clientParams: any[] = [normalizedEmail]
-    const userScope = this.duplicateScopeConditions(userParams, companyId)
-    const clientScope = this.duplicateScopeConditions(clientParams, companyId)
-
-    const userResult = await query(
-      `SELECT 1 FROM users WHERE LOWER(email) = $1 AND is_active = true${userScope} LIMIT 1`,
-      userParams,
-    )
-    if (userResult.rows[0]) return true
-
-    const clientResult = await query(
-      `SELECT 1 FROM clients WHERE LOWER(email) = $1 AND is_active = true${clientScope} LIMIT 1`,
-      clientParams,
-    )
-
-    return Boolean(clientResult.rows[0])
   }
 
   async findById(id: string, companyId?: string) {
@@ -101,6 +87,9 @@ export class ClientRepository {
           c.segment,
           c.color,
           c.deadline_days,
+          c.document_type,
+          c.document_number,
+          c.portal_detailed_view,
           c.company_id,
           c.is_active,
           COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
@@ -156,9 +145,10 @@ export class ClientRepository {
   async findByEmail(email: string) {
     try {
       const result = await query(
-        `SELECT id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, last_access_at, created_at, updated_at
+        `SELECT id, name, email, whatsapp, segment, color, deadline_days,
+           document_type, document_number, portal_detailed_view, company_id, is_active, last_access_at, created_at, updated_at
          FROM clients WHERE LOWER(email) = $1 AND is_active = true`,
-        [this.normalizeEmail(email)]
+        [normalizeEmail(email)]
       )
       return result.rows[0] || null
     } catch (error) {
@@ -178,6 +168,9 @@ export class ClientRepository {
           c.segment,
           c.color,
           c.deadline_days,
+          c.document_type,
+          c.document_number,
+          c.portal_detailed_view,
           c.company_id,
           c.is_active,
           COALESCE(c.last_access_at, MAX(t.last_used_at)) AS last_access_at,
@@ -255,6 +248,19 @@ export class ClientRepository {
         values.push(dto.deadline_days)
         paramIndex++
       }
+      if (dto.document_type !== undefined || dto.document_number !== undefined) {
+        updates.push(`document_type = $${paramIndex}`)
+        values.push(dto.document_type ?? null)
+        paramIndex++
+        updates.push(`document_number = $${paramIndex}`)
+        values.push(dto.document_number ?? null)
+        paramIndex++
+      }
+      if (dto.portal_detailed_view !== undefined) {
+        updates.push(`portal_detailed_view = $${paramIndex}`)
+        values.push(dto.portal_detailed_view)
+        paramIndex++
+      }
 
       if (updates.length === 0) return this.findById(id, companyId)
 
@@ -267,12 +273,17 @@ export class ClientRepository {
         conditions.push(`company_id = $${paramIndex}`)
       }
 
-      const sql = `UPDATE clients SET ${updates.join(', ')} WHERE ${conditions.join(' AND ')} RETURNING id, name, email, whatsapp, segment, color, deadline_days`
+      const sql = `UPDATE clients SET ${updates.join(', ')} WHERE ${conditions.join(' AND ')}
+        RETURNING id, name, email, whatsapp, segment, color, deadline_days,
+          document_type, document_number, portal_detailed_view`
 
       const result = await query(sql, values)
       return result.rows[0] || null
-    } catch (error) {
-      logger.error('Failed to update client', { error })
+    } catch (error: any) {
+      logger.error('Failed to update client', {
+        errorName: error?.name,
+        errorCode: error?.code,
+      })
       throw new Error('Failed to update client')
     }
   }
@@ -296,7 +307,7 @@ export class ClientRepository {
       await query(
         `UPDATE posts
          SET files_delete_after = COALESCE(files_delete_after, NOW() + INTERVAL '1 day'),
-             archived_by_client_deactivation = CASE WHEN status = 'archived' THEN archived_by_client_deactivation ELSE true END,
+             archived_by_client_deactivation = true,
              updated_at = NOW()
          WHERE ${postConditions.join(' AND ')}`,
         postParams,
@@ -336,14 +347,44 @@ export class ClientRepository {
       }
 
       const files = await client.query(
-        `SELECT f.url
-         FROM files f
-         JOIN posts p ON p.id = f.post_id
-         WHERE p.client_id = $1`,
+        `SELECT DISTINCT storage.bucket, storage.storage_path
+         FROM (
+           SELECT f.bucket, f.storage_path, p.client_id
+           FROM files f JOIN posts p ON p.id = f.post_id
+           UNION ALL
+           SELECT ps.bucket, ps.storage_path, p.client_id
+           FROM post_soundtracks ps JOIN posts p ON p.id = ps.post_id
+           WHERE ps.storage_path IS NOT NULL
+         ) storage
+         WHERE storage.client_id = $1`,
         [id],
       )
 
-      await Promise.all(files.rows.map(row => removeStoredFile(row.url).catch(() => {})))
+      const removals = await Promise.all(files.rows.map(async row => {
+        if (!row.bucket || !row.storage_path) {
+          return { bucket: row.bucket, storagePath: row.storage_path, removed: false, error: 'Storage object identity is missing' }
+        }
+        const shared = await client.query(
+          `SELECT 1 FROM (
+             SELECT f.bucket, f.storage_path, p.client_id
+             FROM files f JOIN posts p ON p.id = f.post_id
+             UNION ALL
+             SELECT ps.bucket, ps.storage_path, p.client_id
+             FROM post_soundtracks ps JOIN posts p ON p.id = ps.post_id
+             WHERE ps.deleted_at IS NULL
+           ) storage
+           WHERE storage.bucket = $1
+             AND storage.storage_path = $2
+             AND storage.client_id <> $3
+           LIMIT 1`,
+          [row.bucket, row.storage_path, id],
+        )
+        if (shared.rows[0]) return { bucket: row.bucket, storagePath: row.storage_path, removed: true }
+        return removeStoredFile({ bucket: row.bucket, storagePath: row.storage_path })
+      }))
+      removals.filter(result => !result.removed).forEach(result => {
+        logger.error('Failed to remove client storage object', result)
+      })
 
       await client.query(
         `DELETE FROM activity_events
@@ -365,6 +406,8 @@ export class ClientRepository {
   }
 
   async activate(id: string, companyId?: string) {
+    const client = await pool.connect()
+    let transactionStarted = false
     try {
       const params: any[] = [id]
       const conditions = ['id = $1']
@@ -373,12 +416,26 @@ export class ClientRepository {
         conditions.push(`company_id = $${params.length}`)
       }
 
-      const result = await query(
+      await client.query('BEGIN')
+      transactionStarted = true
+      const current = await client.query(
+        `SELECT id, email FROM clients WHERE ${conditions.join(' AND ')} FOR UPDATE`,
+        params,
+      )
+      if (!current.rows[0]) {
+        await client.query('ROLLBACK')
+        transactionStarted = false
+        return null
+      }
+
+      await assertActiveEmailAvailable(client, current.rows[0].email, { clientId: id })
+      const result = await client.query(
         `UPDATE clients
          SET is_active = true,
              updated_at = NOW()
          WHERE ${conditions.join(' AND ')}
-         RETURNING id, name, email, whatsapp, segment, color, deadline_days, company_id, is_active, last_access_at, created_at, updated_at`,
+         RETURNING id, name, email, whatsapp, segment, color, deadline_days,
+           document_type, document_number, portal_detailed_view, company_id, is_active, last_access_at, created_at, updated_at`,
         params,
       )
 
@@ -390,31 +447,9 @@ export class ClientRepository {
           postConditions.push(`company_id = $${postParams.length}`)
         }
 
-        await query(
+        await client.query(
           `UPDATE posts
-           SET status = CASE
-                 WHEN status <> 'archived' THEN status
-                 WHEN EXISTS (
-                   SELECT 1 FROM files f
-                   WHERE f.post_id = posts.id
-                     AND (f.status = 'rejected' OR f.rejection_reason IS NOT NULL)
-                 ) THEN 'rejected'
-                 WHEN EXISTS (
-                   SELECT 1 FROM files f
-                   WHERE f.post_id = posts.id
-                     AND f.status = 'pending'
-                 ) THEN 'pending_approval'
-                 WHEN EXISTS (
-                   SELECT 1 FROM files f
-                   WHERE f.post_id = posts.id
-                 ) AND NOT EXISTS (
-                   SELECT 1 FROM files f
-                   WHERE f.post_id = posts.id
-                     AND COALESCE(f.status, 'pending') <> 'approved'
-                 ) THEN 'approved'
-                 ELSE 'draft'
-               END,
-               files_delete_after = NULL,
+           SET files_delete_after = NULL,
                archived_by_client_deactivation = false,
                updated_at = NOW()
            WHERE ${postConditions.join(' AND ')}
@@ -423,10 +458,15 @@ export class ClientRepository {
         )
       }
 
+      await client.query('COMMIT')
       return result.rows[0] || null
-    } catch (error) {
+    } catch (error: any) {
+      if (transactionStarted) await client.query('ROLLBACK')
+      if (isEmailConflict(error)) throw new Error('Email already exists')
       logger.error('Failed to activate client', { error })
       throw new Error('Failed to activate client')
+    } finally {
+      client.release()
     }
   }
 }

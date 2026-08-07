@@ -3,10 +3,21 @@ import { ClientRepository } from '../../infrastructure/repositories/ClientReposi
 import bcryptjs from 'bcryptjs'
 import { env } from '../../../../config/environment'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
+import {
+  ClientInputValidationError,
+  normalizeClientDocument,
+  normalizeDeadlineDays,
+} from '../../domain/clientInput'
 
 interface AuthRequest extends Request {
   user?: any
   tenantId?: string
+}
+
+function preferredBodyValue(body: Record<string, any>, officialName: string, compatibilityName: string) {
+  return Object.prototype.hasOwnProperty.call(body, officialName)
+    ? body[officialName]
+    : body[compatibilityName]
 }
 
 export class ClientsController {
@@ -48,21 +59,24 @@ export class ClientsController {
     )
 
     if (!response.ok) {
-      const details = await response.text().catch(() => '')
-      throw new Error(details || 'WhatsApp provider failed')
+      throw new Error('WhatsApp provider failed')
     }
 
     return { sent: true, provider: 'z-api' }
   }
 
   async create(req: AuthRequest, res: Response) {
-    const { name, email, password, whatsapp, segment, color, deadline_days } = req.body
+    const body = req.body || {}
+    const { name, email, password, whatsapp, segment, color } = body
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
 
     try {
+      const deadlineDays = normalizeDeadlineDays(
+        preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
+      )
       const passwordHash = await bcryptjs.hash(password, 10)
 
       const client = await this.clientRepository.create({
@@ -72,7 +86,9 @@ export class ClientsController {
         whatsapp,
         segment,
         color,
-        deadline_days,
+        deadline_days: deadlineDays,
+        document_type: null,
+        document_number: null,
         company_id: req.tenantId,
       })
 
@@ -86,6 +102,9 @@ export class ClientsController {
 
       res.status(201).json({ data: client })
     } catch (error: any) {
+      if (error instanceof ClientInputValidationError) {
+        return res.status(400).json({ error: error.message })
+      }
       const status = error.message === 'Email already exists' ? 400 : 500
       const message = error.message === 'Email already exists'
         ? 'Este e-mail ja esta em uso por um usuario ou cliente.'
@@ -140,14 +159,36 @@ export class ClientsController {
   async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params
-      const { name, whatsapp, segment, color, deadline_days } = req.body
+      const body = req.body || {}
+      const { name, whatsapp, segment, color } = body
+      const includesDocument = [
+        'document_type',
+        'document_number',
+        'documentType',
+        'document',
+      ].some(field => Object.prototype.hasOwnProperty.call(body, field))
+      const document = includesDocument
+        ? normalizeClientDocument(
+          preferredBodyValue(body, 'document_type', 'documentType'),
+          preferredBodyValue(body, 'document_number', 'document'),
+        )
+        : {}
+      const deadlineDays = normalizeDeadlineDays(
+        preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
+      )
+      const detailedViewValue = preferredBodyValue(body, 'portal_detailed_view', 'portalDetailedView')
+      if (detailedViewValue !== undefined && typeof detailedViewValue !== 'boolean') {
+        return res.status(400).json({ error: 'Invalid portal detailed view setting' })
+      }
 
       const client = await this.clientRepository.update(id, {
         name,
         whatsapp,
         segment,
         color,
-        deadline_days,
+        deadline_days: deadlineDays,
+        portal_detailed_view: detailedViewValue,
+        ...document,
       }, req.tenantId)
 
       if (!client) {
@@ -156,6 +197,9 @@ export class ClientsController {
 
       res.json({ data: client })
     } catch (error: any) {
+      if (error instanceof ClientInputValidationError) {
+        return res.status(400).json({ error: error.message })
+      }
       res.status(500).json({ error: error.message })
     }
   }
@@ -190,7 +234,10 @@ export class ClientsController {
       if (!client) return res.status(404).json({ error: 'Client not found' })
       res.json({ data: client })
     } catch (error: any) {
-      res.status(500).json({ error: error.message })
+      const conflict = error.message === 'Email already exists'
+      res.status(conflict ? 400 : 500).json({
+        error: conflict ? 'Este e-mail ja esta em uso por um usuario ou cliente.' : error.message,
+      })
     }
   }
 
@@ -225,8 +272,8 @@ export class ClientsController {
         message,
         approvalUrl,
       })
-    } catch (error: any) {
-      res.status(502).json({ error: error.message || 'Failed to send WhatsApp notification' })
+    } catch {
+      res.status(502).json({ error: 'Failed to send WhatsApp notification' })
     }
   }
 }
