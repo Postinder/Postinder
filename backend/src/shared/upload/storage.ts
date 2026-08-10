@@ -238,6 +238,7 @@ export async function removeStoredFile(reference: StorageObjectReference): Promi
       await fs.unlink(getLocalStoragePath(storagePath))
       return { bucket, storagePath, removed: true }
     } catch (error: any) {
+      if (error?.code === 'ENOENT') return { bucket, storagePath, removed: true }
       return { bucket, storagePath, removed: false, error: error.message }
     }
   }

@@ -13,7 +13,7 @@ O estado efetivamente publicado deve ser confirmado no painel de cada provedor. 
 
 - Backend e frontend das correcoes anteriores foram publicados em 30/07/2026.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`; `017_platform_branding.sql` e `018_client_portal_preferences_and_recoverable_links.sql` existem somente no codigo local e devem ser aplicadas, nessa ordem, antes de um futuro deploy.
+- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`; `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql` e `019_platform_settings.sql` existem somente no codigo local e devem ser aplicadas, nessa ordem, antes de um futuro deploy.
 - `/health`, `/health/db` e `/health/storage` responderam com sucesso depois da publicacao.
 - Criacao com CPF, criacao e edicao com CNPJ, remocao do documento, Cliente antigo sem documento e prazo diferente de 7 dias foram validados.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
@@ -30,11 +30,15 @@ npm run db:migrate
 
 O migrador registra cada migration em `schema_migrations`. A migration `002_development_seed.sql` e historica e nao deve ser executada como parte da cadeia estrutural. O startup valida migrations pendentes e nao corrige schema automaticamente.
 
-O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. `017_platform_branding.sql` e `018_client_portal_preferences_and_recoverable_links.sql` existem somente no codigo/local e devem ser as proximas migrations estruturais aplicadas no pre-deploy da futura publicacao.
+O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql` e `019_platform_settings.sql` existem somente no codigo/local e devem ser as proximas migrations estruturais aplicadas no pre-deploy da futura publicacao.
+
+A `019` cria o singleton operacional e o override anulavel do portal, sem backfill. Antes do deploy, valide a cadeia ate `019` e a segunda execucao/no-op em PostgreSQL local descartavel. Essa validacao nao foi concluida nesta rodada porque o Docker local estava inativo e a instalacao `psql` nao incluia servidor inicializavel; nao substitua esse gate por teste em producao.
+
+Depois do startup, o backend executa a limpeza de retencao e agenda novas varreduras a cada hora. Aplique a `019` antes de iniciar a nova versao e confirme Storage/DB nos health checks; nao e necessario Render Cron Job.
 
 A `018` e aditiva: inclui a preferencia booleana do portal com default simplificado, ciphertext anulavel para recuperacao administrativa e indice parcial. Ela nao invalida links existentes nem exige nova variavel de ambiente; a cifra deriva de forma separada do `JWT_SECRET` backend ja obrigatorio. Em caso de rollback de aplicacao, mantenha o backend anterior ate decidir a estrategia de schema — nao remova colunas nem reescreva tokens.
 
-O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Aquele deploy terminou sem pendencias; em relacao ao repositorio atual, `017` e `018` permanecem deliberadamente pendentes e nao devem ser omitidas na proxima publicacao. A cadeia ate `018` foi validada em PostgreSQL 18.4 local vazio e a segunda execucao foi no-op.
+O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Em relacao ao repositorio atual, `017`, `018` e `019` permanecem deliberadamente pendentes. A cadeia ate `018` foi validada anteriormente em PostgreSQL 18.4 local vazio; a validacao de `019` permanece gate de pre-deploy.
 
 No Render, configure um Pre-Deploy Command/release step separado e bloqueante:
 

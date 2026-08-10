@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PlusSquare, CheckCircle,
-  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, RotateCcw, Image
+  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, RotateCcw, Image, Settings2
 } from 'lucide-react'
 import { useAuthStore }  from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -96,6 +96,7 @@ export default function AdminLayout() {
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-4 pb-1">Sistema</div>
         {isAdmin && <NavItem to="/admin/users" icon={UserCog} label="Usuários" />}
         {isAdmin && <NavItem to="/admin/branding" icon={Image} label="Identidade visual" />}
+        {isAdmin && <NavItem to="/admin/platform-settings" icon={Settings2} label="Configuracoes da plataforma" />}
         {canAccess('email') && <NavItem to="/admin/email" icon={Mail} label="E-mail" />}
         {(isGestor || canAccess('integrations')) && <NavItem to="/admin/integrations" icon={Plug} label="Integrações" />}
 

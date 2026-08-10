@@ -41,13 +41,18 @@ import {
   reorderPostFiles,
   removePostFile,
   markPostExecuted,
+  savePostSoundtrack,
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
 import ChannelIcon from '../../components/posts/ChannelIcon'
-import MediaPreview, { getMediaName } from '../../components/media/MediaPreview'
+import MediaPreview, { getMediaKind, getMediaName } from '../../components/media/MediaPreview'
 import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
 import { useAuthStore } from '../../store/authStore'
+import { usePlatformSettings } from '../../hooks/usePlatformSettings'
+import { isFieldRequired, isFieldVisible, putVisibleField, requiredFieldIsMissing } from '../../utils/fieldPolicies'
+import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
+import { soundtrackDraftFromPost, validateSoundtrackDraft } from '../../utils/soundtrack'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -59,14 +64,6 @@ const STATUS_OPTIONS = [
 ]
 
 const SENDABLE_STATUSES = ['draft', 'ready', 'rejected']
-
-const EXECUTION_RETENTION_OPTIONS = [
-  { value: 'never', label: 'Manter arquivos', description: 'Os anexos continuam disponiveis para consulta.' },
-  { value: 'immediate', label: 'Excluir imediatamente', description: 'Deixa os anexos elegiveis para o proximo comando de limpeza.' },
-  { value: '1d', label: 'Excluir em 1 dia', description: 'Mantem os anexos por 24 horas apos a execucao.' },
-  { value: '7d', label: 'Excluir em 1 semana', description: 'Mantem os anexos por 7 dias apos a execucao.' },
-  { value: '30d', label: 'Excluir em 30 dias', description: 'Mantem os anexos por 30 dias apos a execucao.' },
-]
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
@@ -193,7 +190,7 @@ function CompactFeedPreview({ channels, files }) {
   )
 }
 
-function EditPostModal({ post, clients, open, onClose, onSaved }) {
+function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
   const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', funnelTag: '', emailLink: '' })
   const [channels, setChannels] = useState({})
   const [existingFiles, setExistingFiles] = useState([])
@@ -201,6 +198,8 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
   const [files, setFiles] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
+  const [soundtrack, setSoundtrack] = useState(() => soundtrackDraftFromPost(null))
+  const [soundtrackDirty, setSoundtrackDirty] = useState(false)
 
   useEffect(() => {
     if (!post) return
@@ -213,6 +212,8 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
     setRemovedExistingFiles([])
     setFiles([])
     setUploadProgress(null)
+    setSoundtrack(soundtrackDraftFromPost(post))
+    setSoundtrackDirty(false)
     setForm({
       clientId: getPostClientId(post) || '',
       title: post.title || '',
@@ -244,23 +245,48 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
       toast.error('Mantenha ou adicione ao menos um arquivo para os canais selecionados.')
       return
     }
+    for (const [policy, value] of [
+      [settings.post_fields.description, form.caption],
+      [settings.post_fields.scheduled_date, form.scheduledDate],
+      [settings.post_fields.funnel_tag, form.funnelTag],
+    ]) {
+      if (requiredFieldIsMissing(policy, value)) {
+        toast.error('Preencha todos os campos obrigatorios da postagem.')
+        return
+      }
+    }
+    if (settings.features.soundtrack && soundtrackDirty) {
+      const videos = previewFiles.map((item, index) => ({ key: item.id || item.localId || `file-${index}`, isVideo: getMediaKind(item) === 'video' })).filter(item => item.isVideo)
+      const soundtrackError = validateSoundtrackDraft(soundtrack, videos)
+      if (soundtrackError) {
+        toast.error(soundtrackError)
+        return
+      }
+    }
 
     setSaving(true)
     try {
-      await updatePost(post.id, {
+      const payload = {
         clientId: form.clientId,
         title: form.title,
-        description: form.caption,
-        scheduledDate: form.scheduledDate || null,
-        funnelTag: form.funnelTag || null,
         channels: selectedChannels,
         emailLink: hasEmail ? normalizedEmailLink : null,
-      })
+      }
+      putVisibleField(payload, 'description', form.caption, settings.post_fields.description)
+      putVisibleField(payload, 'scheduledDate', form.scheduledDate || null, settings.post_fields.scheduled_date)
+      putVisibleField(payload, 'funnelTag', form.funnelTag || null, settings.post_fields.funnel_tag)
+      await updatePost(post.id, payload)
+      let uploadedFiles = []
       if (files.length) {
-        await uploadPostFiles(post.id, files.map((item, index) => ({
+        uploadedFiles = await uploadPostFiles(post.id, files.map((item, index) => ({
           ...item,
           sortOrder: existingFiles.length + index + 1,
         })), { onUploadProgress: setUploadProgress })
+      }
+      if (settings.features.soundtrack && soundtrackDirty) {
+        const sourceIndex = files.findIndex(item => (item.id || item.localId) === soundtrack.sourceMediaKey)
+        const sourceMediaId = sourceIndex >= 0 ? uploadedFiles[sourceIndex]?.id : soundtrack.sourceMediaKey
+        await savePostSoundtrack(post.id, soundtrack, { sourceMediaId })
       }
       if (removedExistingFiles.length) {
         await Promise.all(removedExistingFiles.map(file => removePostFile(post.id, file.id)))
@@ -302,12 +328,12 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
             <Select label="Cliente" value={form.clientId} onChange={event => setForm(current => ({ ...current, clientId: event.target.value }))}>
               {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
             </Select>
-            <Input label="Data planejada" type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} />
+            {isFieldVisible(settings.post_fields.scheduled_date) ? <Input label={`Data planejada${isFieldRequired(settings.post_fields.scheduled_date) ? ' *' : ''}`} type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} /> : null}
           </div>
 
           <Input label="Titulo" value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
           <CompactFeedPreview channels={channels} files={previewFiles} />
-          <Textarea label="Legenda / texto" value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} />
+          {isFieldVisible(settings.post_fields.description) ? <Textarea label={`Legenda / texto${isFieldRequired(settings.post_fields.description) ? ' *' : ''}`} value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} /> : null}
         </div>
 
         {channels['E-mail Marketing'] ? (
@@ -320,7 +346,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
           />
         ) : null}
 
-        <div>
+        {isFieldVisible(settings.post_fields.funnel_tag) ? <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Tag de funil</label>
           <div className="flex flex-wrap gap-2">
             {FUNNEL_TAGS.map(tag => (
@@ -334,7 +360,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
               </button>
             ))}
           </div>
-        </div>
+        </div> : null}
 
         <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Canais</label>
@@ -414,6 +440,14 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
           </div>
         ) : null}
 
+        {settings.features.soundtrack ? (
+          <SoundtrackEditor
+            value={soundtrack}
+            onChange={value => { setSoundtrack(value); setSoundtrackDirty(true) }}
+            attachments={previewFiles}
+          />
+        ) : null}
+
         <div className="flex gap-3 pt-2">
           <Button variant="secondary" className="flex-1 justify-center" onClick={onClose}>Cancelar</Button>
           <Button className="flex-1 justify-center" onClick={handleSave} loading={saving}>Salvar alteracoes</Button>
@@ -464,13 +498,7 @@ function BatchSendModal({ posts, clientsById, open, onClose, onConfirm, loading 
   )
 }
 
-function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
-  const [retention, setRetention] = useState('never')
-
-  useEffect(() => {
-    if (open) setRetention('never')
-  }, [open])
-
+function ExecutePostModal({ post, client, open, onClose, onConfirm, loading, retentionHours }) {
   if (!post) return null
 
   return (
@@ -481,26 +509,8 @@ function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
           <div className="mt-1 text-xs text-neutral-500">{client?.name || 'Cliente'} - {(post.files || []).length} arquivo(s)</div>
         </div>
 
-        <div>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Limpeza dos arquivos</div>
-          <div className="space-y-2">
-            {EXECUTION_RETENTION_OPTIONS.map(option => (
-              <label key={option.value} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${retention === option.value ? 'border-mag-500 bg-mag-50 dark:bg-mag-500/10' : 'border-neutral-200 dark:border-neutral-800'}`}>
-                <input
-                  type="radio"
-                  name="execution-retention"
-                  value={option.value}
-                  checked={retention === option.value}
-                  onChange={event => setRetention(event.target.value)}
-                  className="mt-1 accent-mag-600"
-                />
-                <span>
-                  <span className="block text-sm font-bold text-neutral-900 dark:text-white">{option.label}</span>
-                  <span className="mt-0.5 block text-xs text-neutral-500">{option.description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+          Os arquivos permanecem disponiveis por <strong>{retentionHours} hora(s)</strong> apos a execucao. O historico e as metricas permanecem preservados.
         </div>
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
@@ -509,7 +519,7 @@ function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
 
         <div className="flex gap-3">
           <Button variant="secondary" className="flex-1 justify-center" onClick={onClose}>Cancelar</Button>
-          <Button className="flex-1 justify-center" onClick={() => onConfirm(retention)} loading={loading} icon={<CheckCircle size={16} />}>Confirmar execucao</Button>
+          <Button className="flex-1 justify-center" onClick={onConfirm} loading={loading} icon={<CheckCircle size={16} />}>Confirmar execucao</Button>
         </div>
       </div>
     </Modal>
@@ -520,6 +530,7 @@ export default function ManagePostsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
+  const { settings } = usePlatformSettings()
   const [posts, setPosts] = useState([])
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
@@ -634,11 +645,11 @@ export default function ManagePostsPage() {
     }
   }
 
-  async function handleMarkExecuted(retention) {
+  async function handleMarkExecuted() {
     if (!executePost) return
     setExecuteLoading(true)
     try {
-      await markPostExecuted(executePost.id, retention)
+      await markPostExecuted(executePost.id)
       toast.success('Postagem marcada como executada.')
       setExecutePost(null)
       load()
@@ -802,7 +813,7 @@ export default function ManagePostsPage() {
         </div>
       )}
 
-      <EditPostModal post={editPost} clients={clients} open={!!editPost} onClose={() => setEditPost(null)} onSaved={load} />
+      <EditPostModal post={editPost} clients={clients} open={!!editPost} onClose={() => setEditPost(null)} onSaved={load} settings={settings} />
       <BatchSendModal
         posts={sendableSelected}
         clientsById={clientsById}
@@ -818,6 +829,7 @@ export default function ManagePostsPage() {
         onClose={() => setExecutePost(null)}
         onConfirm={handleMarkExecuted}
         loading={executeLoading}
+        retentionHours={settings.retention.executed_attachment_hours}
       />
       <DeletePostModal
         post={postToDelete}

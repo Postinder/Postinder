@@ -1,5 +1,13 @@
 # Backend do Postinder
 
+## Configuracoes da plataforma
+
+`GET /api/v1/platform-settings` le a configuracao global; `PATCH /api/v1/platform-settings` aceita somente chaves conhecidas e atualizacoes parciais. A mutacao exige admin com `platform-settings:update`. Ausencia de linha retorna defaults de dominio; a primeira alteracao cria o singleton.
+
+O schema inclui `retention.executed_attachment_hours` (1 a 8760), `features.soundtrack`, politicas `hidden|optional|required` para quatro campos de Cliente e tres de postagem e os tres booleans do portal. Branding nao faz parte do contrato.
+
+`StorageRetentionScheduler` inicia uma varredura nao bloqueante junto ao servidor e repete a cada hora com timer `unref`. O cleanup limita o lote total a 50, exige `status='executed'`, `executed_at` e prazo vencido/coerente, usa locks por objeto e marca `storage_deleted_at` somente apos remocao confirmada. Falhas persistem mensagem sanitizada e permanecem elegiveis para retry.
+
 API Express/TypeScript do Postinder. Ela atende autenticacao, usuarios, Clientes, postagens, aprovacoes, portal, arquivos, fundos sonoros, feedbacks, atividades, notificacoes e manutencao de demonstracao.
 
 O runtime do backend requer Node.js 24.x; `.node-version` fixa 24.16.0 para desenvolvimento e validacao e o npm esperado e 11.13.0. Essa faixa e compativel com os binarios pre-compilados do Sharp 0.35.0 usados exclusivamente para decodificar e validar logos PNG, JPEG e WebP. O `package-lock.json` v3 e a fonte da resolucao exata, e `backend/.npmrc` aplica `engine-strict=true` quando este diretorio e usado como raiz no Render.

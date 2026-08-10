@@ -18,6 +18,10 @@ export function getMediaMimeType(file) {
   return file?.mime_type || file?.mimeType || file?.type || file?.file?.type || ''
 }
 
+export function isStoragePurged(file) {
+  return Boolean(file?.storage_deleted_at || file?.storageDeletedAt)
+}
+
 export function getMediaKind(file) {
   const category = String(file?.file_type || file?.fileType || '').toUpperCase()
   const mimeType = String(getMediaMimeType(file)).toLowerCase()
@@ -64,6 +68,17 @@ export default function MediaPreview({
   const kind = getMediaKind(file)
   const name = getMediaName(file)
   const mimeType = getMediaMimeType(file)
+
+  if (isStoragePurged(file)) {
+    return (
+      <div className={`${className} ${fallbackClassName}`.trim()}>
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center text-neutral-400">
+          <FileText size={compact ? 22 : 36} />
+          <span className={`${compact ? 'text-[10px]' : 'text-xs'} font-bold`}>Arquivo removido pela politica de retencao</span>
+        </div>
+      </div>
+    )
+  }
 
   useEffect(() => {
     setMediaFailed(false)

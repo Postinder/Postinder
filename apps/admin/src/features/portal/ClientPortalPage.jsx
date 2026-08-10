@@ -28,6 +28,8 @@ import {
   resetPortalFile,
   sendPortalFeedback,
   updatePortalFileFeedback,
+  approvePortalSoundtrack,
+  adjustPortalSoundtrack,
 } from '../../services/portal.service'
 import {
   approveAuthenticatedPortalFile,
@@ -38,12 +40,14 @@ import {
   resetAuthenticatedPortalFile,
   sendAuthenticatedPortalFeedback,
   updateAuthenticatedPortalFileFeedback,
+  approveAuthenticatedPortalSoundtrack,
+  adjustAuthenticatedPortalSoundtrack,
 } from '../../services/clientPortal.service'
 import { useAuthStore } from '../../store/authStore'
 import { REJECTION_TAGS } from '../../utils/constants'
 import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
-import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
+import MediaPreview, { getMediaKind, isStoragePurged } from '../../components/media/MediaPreview'
 import { PORTAL_OVERVIEW_INITIAL_STATE, togglePortalOverview } from '../../utils/collapsiblePanels'
 import PortalDialog from './PortalDialog'
 import PortalContentSelector from './PortalContentSelector'
@@ -52,6 +56,7 @@ import PortalMetricsBar from './PortalMetricsBar'
 import PortalReviewActions from './PortalReviewActions'
 import PortalReviewHeader from './PortalReviewHeader'
 import PortalStatusBadge from './PortalStatusBadge'
+import SoundtrackReviewCard from './SoundtrackReviewCard'
 import {
   formatDate,
   getPendingPortalProjects,
@@ -401,8 +406,8 @@ function EmailPreviewReviewCard({ post, onApprove, onReject, busy }) {
   )
 }
 
-function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onApproveFile, onRejectFile, onApprovePost, onRejectPost, onUndo, canUndoLastAction, detailedView, busy }) {
-  const selectedProject = detailedView
+function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onApproveFile, onRejectFile, onApprovePost, onRejectPost, onApproveSoundtrack, onAdjustSoundtrack, onUndo, canUndoLastAction, showPostList, sequentialApproval, soundtrackEnabled, busy }) {
+  const selectedProject = !sequentialApproval
     ? projects.find(post => post.id === selectedProjectId) || projects[0]
     : projects[0]
   const pendingFiles = selectedProject ? (selectedProject.files || []).filter(isPendingFile) : []
@@ -480,7 +485,7 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
 
   return (
     <div className="min-w-0 space-y-3 xl:flex xl:items-start xl:gap-4 xl:space-y-0">
-      {detailedView ? (
+      {showPostList ? (
         <PortalContentSelector
           contents={projects}
           totalPendingItems={pendingItemsCount}
@@ -525,6 +530,16 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             <p className="mt-1 text-sm text-green-700/80 dark:text-green-300/80">Todos os arquivos deste conteúdo foram analisados.</p>
           </div>
         )}
+
+        {soundtrackEnabled && selectedProject.soundtrack && selectedProject.soundtrack.mode !== 'none' ? (
+          <SoundtrackReviewCard
+            post={selectedProject}
+            soundtrack={selectedProject.soundtrack}
+            busy={busy}
+            onApprove={() => onApproveSoundtrack(selectedProject.id)}
+            onAdjust={comment => onAdjustSoundtrack(selectedProject.id, comment)}
+          />
+        ) : null}
 
         {rejectOpen ? (
           <PortalDialog
@@ -624,7 +639,16 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
   const posts = payload?.posts || []
   const client = payload?.client
-  const detailedView = client?.portalDetailedView === true || client?.portal_detailed_view === true
+  const legacyDetailedView = client?.portalDetailedView === true || client?.portal_detailed_view === true
+  const portalSettings = payload?.portalSettings || client?.portalSettings || {
+    show_post_list: legacyDetailedView,
+    show_supplementary_info: legacyDetailedView,
+    sequential_approval: !legacyDetailedView,
+  }
+  const showPostList = portalSettings.show_post_list === true
+  const showSupplementaryInfo = portalSettings.show_supplementary_info === true
+  const sequentialApproval = portalSettings.sequential_approval !== false
+  const soundtrackEnabled = payload?.features?.soundtrack === true
   const lastActionKey = useMemo(
     () => `postinder.portal.lastAction.${isAuthenticatedMode ? client?.id || 'auth' : token || 'token'}`,
     [client?.id, isAuthenticatedMode, token],
@@ -638,8 +662,9 @@ export default function ClientPortalPage({ mode = 'token' }) {
   const pendingItemsCount = useMemo(
     () => pendingProjects.reduce((total, post) => total
       + (post.files || []).filter(isPendingFile).length
-      + (!(post.files || []).length && hasSafeEmailPreview(post) ? 1 : 0), 0),
-    [pendingProjects],
+      + (!(post.files || []).length && hasSafeEmailPreview(post) ? 1 : 0)
+      + (soundtrackEnabled && (post.soundtrack?.approvalStatus || post.soundtrack?.approval_status) === 'pending' ? 1 : 0), 0),
+    [pendingProjects, soundtrackEnabled],
   )
 
   useEffect(() => {
@@ -648,10 +673,10 @@ export default function ClientPortalPage({ mode = 'token' }) {
       return
     }
 
-    if (!detailedView || !selectedProjectId || !pendingProjects.some(post => post.id === selectedProjectId)) {
+    if (sequentialApproval || !selectedProjectId || !pendingProjects.some(post => post.id === selectedProjectId)) {
       setSelectedProjectId(pendingProjects[0].id)
     }
-  }, [detailedView, pendingProjects, selectedProjectId])
+  }, [sequentialApproval, pendingProjects, selectedProjectId])
 
   const historyPosts = useMemo(
     () => posts.filter(post => ['approved', 'rejected', 'executed'].includes(getPostStatus(post))),
@@ -774,6 +799,36 @@ export default function ClientPortalPage({ mode = 'token' }) {
       toast.success('E-mail aprovado.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleApproveSoundtrack(projectId) {
+    setBusy(true)
+    try {
+      if (isAuthenticatedMode) await approveAuthenticatedPortalSoundtrack(projectId)
+      else await approvePortalSoundtrack(token, projectId)
+      await reload()
+      toast.success('Fundo sonoro aprovado.')
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleAdjustSoundtrack(projectId, comment) {
+    setBusy(true)
+    try {
+      if (isAuthenticatedMode) await adjustAuthenticatedPortalSoundtrack(projectId, comment)
+      else await adjustPortalSoundtrack(token, projectId, comment)
+      await reload()
+      toast.success('Ajuste do fundo sonoro solicitado.')
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+      throw error
     } finally {
       setBusy(false)
     }
@@ -923,14 +978,18 @@ export default function ClientPortalPage({ mode = 'token' }) {
             onRejectFile={handleRejectFile}
             onApprovePost={handleApprovePost}
             onRejectPost={handleRejectPost}
+            onApproveSoundtrack={handleApproveSoundtrack}
+            onAdjustSoundtrack={handleAdjustSoundtrack}
             onUndo={handleUndoLastAction}
             canUndoLastAction={canUndoLastAction}
-            detailedView={detailedView}
+            showPostList={showPostList}
+            sequentialApproval={sequentialApproval}
+            soundtrackEnabled={soundtrackEnabled}
             busy={busy}
           />
         </section>
 
-        {detailedView ? <section className="space-y-5 border-t border-neutral-200 pt-6 dark:border-neutral-800" aria-labelledby="portal-overview-title">
+        {showSupplementaryInfo ? <section className="space-y-5 border-t border-neutral-200 pt-6 dark:border-neutral-800" aria-labelledby="portal-overview-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-400 dark:text-neutral-300/80">Visão geral</div>
@@ -1018,9 +1077,9 @@ export default function ClientPortalPage({ mode = 'token' }) {
           <section id="portal-panel-rejected" role="tabpanel" aria-labelledby="portal-tab-rejected" tabIndex={0} className="space-y-4 focus:outline-none">
             {rejectedFiles.length ? rejectedFiles.map(file => (
               <article key={file.id} className="grid gap-4 rounded-lg border border-red-200 bg-white p-4 shadow-sm dark:border-red-900 dark:bg-neutral-900 lg:grid-cols-[220px_minmax(0,1fr)]">
-                <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="block">
+                {isStoragePurged(file) ? <div className="block"><FilePreview file={file} /></div> : <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="block">
                   <FilePreview file={file} />
-                </a>
+                </a>}
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1108,9 +1167,9 @@ export default function ClientPortalPage({ mode = 'token' }) {
                   </div>
                   <PortalStatusBadge status={file.status || getPostStatus(file.post)} />
                 </div>
-                <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 rounded-sm text-xs font-bold text-[var(--portal-brand-foreground)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)]">
+                {isStoragePurged(file) ? <span className="mt-3 inline-flex text-xs font-bold text-neutral-400">Arquivo removido pela politica de retencao</span> : <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 rounded-sm text-xs font-bold text-[var(--portal-brand-foreground)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)]">
                   <ExternalLink size={13} /> Abrir arquivo original
-                </a>
+                </a>}
               </article>
             )) : <div className="md:col-span-2 xl:col-span-3"><EmptyPanel title="Sem arquivos" description="Arquivos anexados aos conteúdos aparecerão aqui." /></div>}
           </section>

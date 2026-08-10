@@ -1,13 +1,24 @@
 # Estado Atual do Postinder
 
+## Configuracoes gerais da plataforma — pacote local nao publicado
+
+- A instalacao passa a ter um singleton `platform_settings`, separado de `platform_branding` e sem `agency_id`, `tenant_id` ou arquitetura multiagencia. A area `/admin/platform-settings` e exclusiva do admin na interface; `GET /api/v1/platform-settings` possui leitura administrativa e `PATCH` exige a capacidade exclusiva `platform-settings:update`.
+- Defaults de dominio: retencao de 24 horas, fundo sonoro desligado, WhatsApp/segmento/prazo opcionais, documento oculto, legenda/data/tag de funil opcionais e portal global simplificado com aprovacao sequencial. Nome, e-mail e senha de Cliente e cliente/titulo/canal de postagem permanecem invariantes.
+- Ao marcar uma postagem aprovada como `executed`, o backend grava `executed_at` e prazo calculado com a configuracao vigente. Somente registros executados com timestamp confiavel e prazo vencido sao elegiveis. Postagens historicas sem prazo seguro nao recebem backfill.
+- A limpeza roda no startup e a cada hora, em lotes globais de ate 50, com lock por objeto, rechecagem transacional e retry. Remove apenas o objeto fisico; registros, decisoes, historico e metricas permanecem. `storage_deleted_at` marca sucesso e a interface mostra o arquivo removido sem URL quebrada.
+- O toggle de fundo sonoro controla criacao, edicao, duplicacao, reenvio e portal sem remover tabelas ou historico. Desligado, novas postagens usam `none` e a trilha nao bloqueia arquivos/status; ligado, a infraestrutura existente volta a participar da aprovacao.
+- O portal usa tres defaults globais. `clients.portal_mode_override` e anulavel: `NULL` herda imediatamente a plataforma; `simplified` e `detailed` sao overrides. O booleano legado da migration 018 continua aceito e `true` historico permanece detalhado.
+- A migration aditiva local `019_platform_settings.sql` cria o singleton e o override sem backfill. Ela nao foi aplicada em producao. O teste em banco efemero local foi impedido porque o Docker estava inativo e a instalacao PostgreSQL continha apenas clientes, sem servidor para `initdb`; o diretorio temporario vazio foi removido.
+- Branding permanece em area, tabela e endpoints proprios; cores, white label e multiempresa nao foram adicionados.
+
 ## Status da auditoria e da publicacao
 
 - A auditoria tecnica pre-deploy foi concluida.
 - Os bloqueadores tecnicos C-01, C-02, H-02, H-03 e H-04 foram corrigidos e validados localmente.
-- O pacote local pos-branding possui 170 testes de backend, 52 testes frontend unitarios e 22 testes React reais aprovados. Os dois builds tambem foram aprovados; a validacao final do diff e repetida antes da entrega.
+- O pacote local de configuracoes gerais possui 197 testes de backend, 58 testes frontend unitarios e 25 testes React reais aprovados. Os dois builds e a validacao final do diff tambem foram aprovados.
 - As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; em relacao ao codigo local atual, `017_platform_branding.sql` e `018_client_portal_preferences_and_recoverable_links.sql` permanecem pendentes para uma futura publicacao.
+- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; no codigo local, `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql` e `019_platform_settings.sql` permanecem pendentes.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Rodada local para novos testes com Clientes
@@ -123,18 +134,18 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 `database/migrations` e a unica fonte de verdade do schema. O migrador registra aplicacoes em `schema_migrations`; o startup nao cria nem repara tabelas, colunas, indices ou dados.
 
-Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais vigentes vao de `001` e `003` a `017`, cobrindo portal, ordenacao, execucao, retencao, e-mail, remocao do antigo estado `archived`, metadados de Storage, fundo sonoro versionado, documento opcional de Cliente e branding global.
+Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais locais vigentes vao de `001` e `003` a `019`, incluindo branding, preferencias do portal e configuracoes operacionais globais.
 
 O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da publicacao da hotfix em 31/07/2026 e:
 
 - `001`, a `002` historica e `003` a `016` estao registradas;
 - `016_client_documents.sql` foi aplicada com sucesso;
 - o banco publicado esta em `016`;
-- aquele deploy terminou sem migration pendente; a `017` criada posteriormente continua ausente do banco publicado e pendente para o futuro release de branding.
+- aquele deploy terminou sem migration pendente; `017`, `018` e `019`, criadas depois, continuam ausentes do banco publicado.
 
 O backup logico foi criado, preservado e validado. A restauracao foi comprovada em stack Supabase local compativel, em transacao unica, usando copia de `roles.sql` com somente a instrucao de `statement_timeout` de `supabase_admin` comentada; schema e dados permaneceram identicos. O backup e restauravel com esse procedimento documentado de compatibilidade, mas nao inclui objetos fisicos do Supabase Storage.
 
-Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. A `017`, adicionada depois, ainda nao integra o banco publicado.
+Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. `017`, `018` e `019` ainda nao integram o banco publicado.
 
 ## Seguranca e demonstracao
 
@@ -163,8 +174,8 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 - O frontend valida tipo e limite de 200 MB antes do envio, apresenta progresso por arquivo e envia anexos sequencialmente. O backend devolve `413` para excesso de tamanho e `415` para tipo nao suportado.
 - Se a postagem for criada e um anexo falhar, o registro permanece editavel e a interface informa que o envio pode ser tentado novamente.
 - Duplicacao cria copia fisica independente em novo path e registro proprio; arquivos legados sem identidade bloqueiam a duplicacao de modo explicito.
-- Retencao por postagem aceita `immediate`, `1d`, `7d`, `30d` e `never`. O comando manual `npm run storage:cleanup-retention` remove o objeto vencido, preserva metadados e registra `storage_deleted_at` ou `storage_delete_error`.
-- Nao existe scheduler, fila ou retry automatico nesta versao.
+- A retencao global usa 24 horas por default e e materializada quando a postagem vira `executed`. O comando manual permanece, e o scheduler interno executa no startup e a cada hora; falhas ficam para retry posterior.
+- Nao existe fila distribuida, outbox ou cron externo; locks e lotes de 50 protegem as varreduras concorrentes.
 - Arquivos de fundo sonoro usam o mesmo bucket e adaptador de Storage, em path proprio da postagem, com limite de 50 MB e validacao inicial de MP3, WAV, OGG, AAC e M4A. Duplicacao e Retencao aplicam as mesmas garantias de identidade independente e auditoria dos anexos.
 
 ## Estado operacional e limitacoes

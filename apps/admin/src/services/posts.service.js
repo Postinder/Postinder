@@ -90,8 +90,8 @@ export async function updatePostStatus(postId, status) {
   return data
 }
 
-export async function markPostExecuted(postId, retention = 'never') {
-  const { data } = await apiClient.post(`/posts/${postId}/execute`, { retention })
+export async function markPostExecuted(postId) {
+  const { data } = await apiClient.post(`/posts/${postId}/execute`)
   return data
 }
 

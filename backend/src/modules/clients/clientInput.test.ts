@@ -32,11 +32,11 @@ function createResponse() {
   return { response, state }
 }
 
-async function createController(repository: Record<string, any>) {
+async function createController(repository: Record<string, any>, settings?: Record<string, any>) {
   const { ClientsController } = await import('./presentation/controllers/ClientsController')
   return new ClientsController(repository as any, {
     async createForClient() {},
-  } as any)
+  } as any, settings as any)
 }
 
 test('CPF and CNPJ validators accept valid numbers and reject invalid check digits', () => {
@@ -180,6 +180,16 @@ test('client update changes and explicitly removes a document and accepts legacy
       updates.push(dto)
       return { id: 'client-1', ...dto }
     },
+  }, {
+    async get() {
+      return {
+        retention: { executed_attachment_hours: 24 },
+        features: { soundtrack: false },
+        client_fields: { whatsapp: 'optional', segment: 'optional', deadline_days: 'optional', document: 'optional' },
+        post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
+        portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+      }
+    },
   })
 
   let result = createResponse()
@@ -221,11 +231,86 @@ test('client update accepts the portal detailed view only as a boolean', async (
   await controller.update({ params: { id: 'client-1' }, body: { portal_detailed_view: true } } as any, result.response as any)
   assert.equal(result.state.status, 200)
   assert.equal(updates[0].portal_detailed_view, true)
+  assert.equal(updates[0].portal_mode_override, 'detailed')
 
   result = createResponse()
   await controller.update({ params: { id: 'client-1' }, body: { portal_detailed_view: 'true' } } as any, result.response as any)
   assert.equal(result.state.status, 400)
   assert.equal(updates.length, 1)
+})
+
+test('hidden client fields are omitted and cannot block or overwrite historical values', async () => {
+  let created: any
+  let updated: any
+  const controller = await createController({
+    async create(dto: any) { created = dto; return { id: 'client-1', ...dto } },
+    async update(_id: string, dto: any) { updated = dto; return { id: 'client-1', ...dto } },
+  }, {
+    async get() {
+      return {
+        retention: { executed_attachment_hours: 24 },
+        features: { soundtrack: false },
+        client_fields: { whatsapp: 'hidden', segment: 'hidden', deadline_days: 'hidden', document: 'hidden' },
+        post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
+        portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+      }
+    },
+  })
+  let result = createResponse()
+  await controller.create({
+    body: {
+      name: 'Cliente', email: 'client@example.test', password: 'password',
+      whatsapp: 'secret-old', segment: 'old', deadline_days: 99,
+      document_type: 'cpf', document_number: '52998224725',
+    },
+  } as any, result.response as any)
+  assert.equal(result.state.status, 201)
+  assert.equal(created.whatsapp, undefined)
+  assert.equal(created.segment, undefined)
+  assert.equal(created.deadline_days, undefined)
+  assert.equal(created.document_number, null)
+
+  result = createResponse()
+  await controller.update({
+    params: { id: 'client-1' },
+    body: { document_type: null, document_number: null },
+  } as any, result.response as any)
+  assert.equal(result.state.status, 200)
+  assert.equal(Object.prototype.hasOwnProperty.call(updated, 'document_number'), false)
+})
+
+test('required client fields are enforced on create and against the effective record on partial update', async () => {
+  let createCalls = 0
+  let updateCalls = 0
+  const requiredSettings = {
+    async get() {
+      return {
+        retention: { executed_attachment_hours: 24 },
+        features: { soundtrack: false },
+        client_fields: { whatsapp: 'required', segment: 'required', deadline_days: 'required', document: 'required' },
+        post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
+        portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+      }
+    },
+  }
+  const repository = {
+    async create() { createCalls += 1; return { id: 'client-1' } },
+    async findById() {
+      return { whatsapp: '', segment: 'Segmento', deadline_days: 7, document_number: '52998224725' }
+    },
+    async update() { updateCalls += 1; return { id: 'client-1' } },
+  }
+  const controller = await createController(repository, requiredSettings)
+  let result = createResponse()
+  await controller.create({ body: { name: 'Cliente', email: 'client@example.test', password: 'password' } } as any, result.response as any)
+  assert.equal(result.state.status, 400)
+  assert.equal(createCalls, 0)
+
+  result = createResponse()
+  await controller.update({ params: { id: 'client-1' }, body: { name: 'Novo nome' } } as any, result.response as any)
+  assert.equal(result.state.status, 400)
+  assert.equal(result.state.body.error, 'whatsapp is required')
+  assert.equal(updateCalls, 0)
 })
 
 test('E-mail Marketing accepts a trimmed HTTP preview without files and rejects unsafe protocols', () => {
@@ -255,6 +340,20 @@ test('new posts reject 3A3R while partial updates can preserve an unread legacy 
   assert.equal(updatePostSchema.safeParse({ channels: ['3A3R'] }).success, true)
 })
 
+test('post identity invariants require client, title and at least one channel', () => {
+  const base = {
+    title: 'Post valido',
+    clientId: '00000000-0000-4000-8000-000000000001',
+    channels: ['Instagram/Facebook'],
+  }
+  assert.equal(createPostSchema.safeParse(base).success, true)
+  assert.equal(createPostSchema.safeParse({ ...base, channels: [] }).success, false)
+  assert.equal(createPostSchema.safeParse({ ...base, channels: undefined }).success, false)
+  assert.equal(createPostSchema.safeParse({ ...base, title: '' }).success, false)
+  assert.equal(createPostSchema.safeParse({ ...base, clientId: undefined }).success, false)
+  assert.equal(updatePostSchema.safeParse({ channels: [] }).success, false)
+})
+
 test('portal queue orders scheduled dates first, then creation and stable id, with undated posts last', async () => {
   const { comparePortalQueueItems, normalizePortalEmailLink } = await import('../portal/infrastructure/repositories/PortalRepository')
   const posts = [
@@ -275,7 +374,8 @@ test('recoverable portal tokens are encrypted and authenticated', async () => {
   const encrypted = encryptPortalToken(token)
   assert.notEqual(encrypted.includes(token), true)
   assert.equal(decryptPortalToken(encrypted), token)
-  assert.equal(decryptPortalToken(`${encrypted.slice(0, -1)}x`), null)
+  const replacement = encrypted.endsWith('x') ? 'y' : 'x'
+  assert.equal(decryptPortalToken(`${encrypted.slice(0, -1)}${replacement}`), null)
 })
 
 test('initial portal link is issued once and administrative recovery returns the same token', async () => {
@@ -408,7 +508,7 @@ test('migration 018 is additive and defaults old clients to the simplified porta
   assert.doesNotMatch(migration, /\b(?:DROP|DELETE|TRUNCATE)\b/i)
 })
 
-test('portal decisions ignore dormant soundtrack state without removing its infrastructure', () => {
+test('portal decisions conditionally include soundtrack state without removing its infrastructure', () => {
   const portalRepository = readFileSync(
     path.resolve(process.cwd(), 'src/modules/portal/infrastructure/repositories/PortalRepository.ts'),
     'utf8',
@@ -417,7 +517,7 @@ test('portal decisions ignore dormant soundtrack state without removing its infr
     path.resolve(process.cwd(), 'src/modules/soundtracks/infrastructure/repositories/SoundtrackRepository.ts'),
     'utf8',
   )
-  assert.match(portalRepository, /recalculatePostStatus\(postId, \{ includeSoundtrack: false \}\)/)
+  assert.match(portalRepository, /includeSoundtrack: settings\.features\.soundtrack/)
   assert.match(soundtrackRepository, /options\.includeSoundtrack === false/)
   assert.match(soundtrackRepository, /post_soundtrack_versions/)
   assert.match(soundtrackRepository, /post_soundtrack_decisions/)

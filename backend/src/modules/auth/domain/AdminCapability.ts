@@ -38,6 +38,8 @@ export const ADMIN_CAPABILITIES = Object.freeze([
   'soundtracks:update',
   'soundtracks:upload',
   'ai-insights:generate',
+  'platform-settings:read',
+  'platform-settings:update',
   'branding:update',
   'demo-reset:execute',
 ] as const)
@@ -72,6 +74,7 @@ const ADMIN_ROLE_CAPABILITIES = Object.freeze({
     'soundtracks:read',
     'soundtracks:update',
     'soundtracks:upload',
+    'platform-settings:read',
   ]),
   [UserRole.EDITOR]: Object.freeze<AdminCapability[]>([
     'clients:read',
@@ -93,6 +96,7 @@ const ADMIN_ROLE_CAPABILITIES = Object.freeze({
     'soundtracks:read',
     'soundtracks:update',
     'soundtracks:upload',
+    'platform-settings:read',
   ]),
   [UserRole.VIEWER]: Object.freeze<AdminCapability[]>([
     'clients:read',
@@ -102,6 +106,7 @@ const ADMIN_ROLE_CAPABILITIES = Object.freeze({
     'activities:read',
     'notifications:read',
     'soundtracks:read',
+    'platform-settings:read',
   ]),
 } satisfies Record<UserRole, readonly AdminCapability[]>)
 

@@ -127,7 +127,7 @@ test('the official migrator discovers the additive branding migration without to
   const { listStructuralMigrationFiles } = await import('../../shared/database/migrationCatalog')
   const files = await listStructuralMigrationFiles()
   assert.ok(files.includes('017_platform_branding.sql'))
-  assert.equal(files[files.length - 1], '018_client_portal_preferences_and_recoverable_links.sql')
+  assert.equal(files[files.length - 1], '019_platform_settings.sql')
   const sql = readFileSync(path.resolve(process.cwd(), '..', 'database', 'migrations', '017_platform_branding.sql'), 'utf8')
   assert.match(sql, /CREATE TABLE IF NOT EXISTS platform_branding/)
   assert.match(sql, /logo_bucket TEXT/)

@@ -153,7 +153,8 @@ export class PostRepository implements IPostRepository {
                json_build_object(
                  'id', f.id,
                  'name', COALESCE(f.original_name, f.url),
-                 'storage_url', f.url,
+                 'storage_url', CASE WHEN f.storage_deleted_at IS NULL THEN f.url ELSE NULL END,
+                 'url', CASE WHEN f.storage_deleted_at IS NULL THEN f.url ELSE NULL END,
                  'file_type', f.file_type,
                  'mime_type', f.mime_type,
                  'size_bytes', f.size_bytes,
@@ -221,7 +222,8 @@ export class PostRepository implements IPostRepository {
                json_build_object(
                  'id', f.id,
                  'name', COALESCE(f.original_name, f.url),
-                 'storage_url', f.url,
+                 'storage_url', CASE WHEN f.storage_deleted_at IS NULL THEN f.url ELSE NULL END,
+                 'url', CASE WHEN f.storage_deleted_at IS NULL THEN f.url ELSE NULL END,
                  'file_type', f.file_type,
                  'mime_type', f.mime_type,
                  'size_bytes', f.size_bytes,
@@ -504,7 +506,7 @@ export class PostRepository implements IPostRepository {
     return result.rows[0]
   }
 
-  async submitForApproval(id: string, companyId?: string): Promise<boolean> {
+  async submitForApproval(id: string, companyId?: string, includeSoundtrack = true): Promise<boolean> {
     const { params, conditions } = this.buildPostScope(id, companyId)
     const result = await query(
       `UPDATE posts
@@ -531,7 +533,7 @@ export class PostRepository implements IPostRepository {
            AND status = 'rejected'`,
         [id],
       )
-      await query(
+      if (includeSoundtrack) await query(
         `UPDATE post_soundtracks
          SET approval_status = 'pending', approved_at = NULL,
              adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
@@ -573,8 +575,8 @@ export class PostRepository implements IPostRepository {
     return true
   }
 
-  async removeFile(postId: string, fileId: string, companyId?: string) {
-    if (await this.soundtrackRepository.isEmbeddedSource(postId, fileId)) {
+  async removeFile(postId: string, fileId: string, companyId?: string, enforceSoundtrackSource = true) {
+    if (enforceSoundtrackSource && await this.soundtrackRepository.isEmbeddedSource(postId, fileId)) {
       throw new AppException('O video esta vinculado ao fundo sonoro incorporado. Altere a modalidade antes de remove-lo.', 409, 'SOUNDTRACK_SOURCE_IN_USE')
     }
     const params: any[] = [postId, fileId]
@@ -653,7 +655,7 @@ export class PostRepository implements IPostRepository {
       : { updated: false, reason: 'invalid_transition' }
   }
 
-  async submitManyForApproval(ids: string[], companyId?: string) {
+  async submitManyForApproval(ids: string[], companyId?: string, includeSoundtrack = true) {
     if (!ids.length) return []
     const params: any[] = [ids]
     const conditions = [
@@ -689,7 +691,7 @@ export class PostRepository implements IPostRepository {
            AND status = 'rejected'`,
         [sentIds],
       )
-      await query(
+      if (includeSoundtrack) await query(
         `UPDATE post_soundtracks
          SET approval_status = 'pending', approved_at = NULL,
              adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
@@ -702,7 +704,7 @@ export class PostRepository implements IPostRepository {
     return result.rows
   }
 
-  async duplicate(id: string, companyId?: string) {
+  async duplicate(id: string, companyId?: string, includeSoundtrack = true) {
     const client = await pool.connect()
     const copiedFiles: StoredFile[] = []
     let transactionStarted = false
@@ -732,12 +734,12 @@ export class PostRepository implements IPostRepository {
       if (originalFiles.rows.some(file => !file.bucket || !file.storage_path)) {
         throw new PostDuplicationError('legacy_file_identity_missing')
       }
-      const originalSoundtrack = await client.query(
+      const originalSoundtrack = includeSoundtrack ? await client.query(
         `SELECT * FROM post_soundtracks
          WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
          FOR UPDATE`,
         [id],
-      )
+      ) : { rows: [] as any[] }
       if (originalSoundtrack.rows[0]?.mode === 'uploaded'
         && (!originalSoundtrack.rows[0].bucket || !originalSoundtrack.rows[0].storage_path)) {
         throw new PostDuplicationError('legacy_file_identity_missing')
@@ -899,7 +901,7 @@ export class PostRepository implements IPostRepository {
     }
   }
 
-  async resubmit(id: string, data: { title?: string; caption?: string; description?: string; justificativa?: string }, companyId?: string) {
+  async resubmit(id: string, data: { title?: string; caption?: string; description?: string; justificativa?: string }, companyId?: string, includeSoundtrack = true) {
     const updates: string[] = [`status = 'pending_approval'`, 'updated_at = NOW()']
     const params: any[] = []
 
@@ -929,7 +931,7 @@ export class PostRepository implements IPostRepository {
     if (!result.rows[0]) return false
 
     await query(`UPDATE files SET status = 'pending' WHERE post_id = $1 AND status = 'rejected'`, [id])
-    await query(
+    if (includeSoundtrack) await query(
       `UPDATE post_soundtracks
        SET approval_status = 'pending', approved_at = NULL,
            adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
@@ -940,29 +942,20 @@ export class PostRepository implements IPostRepository {
     return true
   }
 
-  async markExecuted(id: string, retention: 'never' | 'immediate' | '1d' | '7d' | '30d' = 'never', companyId?: string) {
+  async markExecuted(id: string, retentionHours = 24, companyId?: string) {
     const { params, conditions } = this.buildPostScope(id, companyId)
-    const deleteAfterSql = retention === 'immediate'
-      ? 'NOW()'
-      : retention === '1d'
-        ? "NOW() + INTERVAL '1 day'"
-        : retention === '7d'
-          ? "NOW() + INTERVAL '7 days'"
-          : retention === '30d'
-            ? "NOW() + INTERVAL '30 days'"
-            : 'NULL'
 
     const result = await query(
       `UPDATE posts
        SET status = 'executed',
            executed_at = NOW(),
-           files_delete_after = ${deleteAfterSql},
-           files_retention_policy = $${params.length + 1},
+           files_delete_after = NOW() + ($${params.length + 1}::text || ' hours')::interval,
+           files_retention_policy = NULL,
            updated_at = NOW()
        WHERE ${conditions.join(' AND ')}
          AND status = 'approved'
        RETURNING id`,
-       [...params, retention],
+       [...params, String(retentionHours)],
     )
 
     if (!result.rows[0]) return false

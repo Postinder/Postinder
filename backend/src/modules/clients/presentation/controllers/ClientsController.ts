@@ -7,7 +7,10 @@ import {
   ClientInputValidationError,
   normalizeClientDocument,
   normalizeDeadlineDays,
+  requiredClientFieldMissing,
 } from '../../domain/clientInput'
+import { DEFAULT_PLATFORM_SETTINGS } from '../../../platformSettings/domain/PlatformSettings'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
 
 interface AuthRequest extends Request {
   user?: any
@@ -24,6 +27,9 @@ export class ClientsController {
   constructor(
     private clientRepository: ClientRepository,
     private activityRepository = new ActivityRepository(),
+    private settingsService: Pick<PlatformSettingsService, 'get'> = {
+      get: async () => ({ ...DEFAULT_PLATFORM_SETTINGS, updated_at: null }),
+    },
   ) {}
 
   private onlyDigits(value = '') {
@@ -74,21 +80,41 @@ export class ClientsController {
     }
 
     try {
+      const settings = await this.settingsService.get()
+      const policies = settings.client_fields
+      for (const [field, value] of [['whatsapp', whatsapp], ['segment', segment]] as const) {
+        if (policies[field] === 'required' && requiredClientFieldMissing(value)) {
+          return res.status(400).json({ error: `${field} is required` })
+        }
+      }
+      const deadlineInput = preferredBodyValue(body, 'deadline_days', 'deadlineDays')
+      if (policies.deadline_days === 'required' && (deadlineInput === undefined || deadlineInput === null || deadlineInput === '')) {
+        return res.status(400).json({ error: 'deadline_days is required' })
+      }
+      const documentInput = preferredBodyValue(body, 'document_number', 'document')
+      if (policies.document === 'required' && requiredClientFieldMissing(documentInput)) {
+        return res.status(400).json({ error: 'document is required' })
+      }
       const deadlineDays = normalizeDeadlineDays(
-        preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
+        policies.deadline_days === 'hidden' ? undefined : deadlineInput,
       )
+      const document = policies.document === 'hidden'
+        ? { document_type: null, document_number: null }
+        : normalizeClientDocument(
+          preferredBodyValue(body, 'document_type', 'documentType'),
+          documentInput,
+        )
       const passwordHash = await bcryptjs.hash(password, 10)
 
       const client = await this.clientRepository.create({
         name,
         email,
         password_hash: passwordHash,
-        whatsapp,
-        segment,
+        whatsapp: policies.whatsapp === 'hidden' ? undefined : whatsapp,
+        segment: policies.segment === 'hidden' ? undefined : segment,
         color,
         deadline_days: deadlineDays,
-        document_type: null,
-        document_number: null,
+        ...document,
         company_id: req.tenantId,
       })
 
@@ -161,33 +187,66 @@ export class ClientsController {
       const { id } = req.params
       const body = req.body || {}
       const { name, whatsapp, segment, color } = body
-      const includesDocument = [
+      const settings = await this.settingsService.get()
+      const policies = settings.client_fields
+      const includesDocument = policies.document !== 'hidden' && [
         'document_type',
         'document_number',
         'documentType',
         'document',
       ].some(field => Object.prototype.hasOwnProperty.call(body, field))
-      const document = includesDocument
+      const document: { document_type?: 'cpf' | 'cnpj' | null; document_number?: string | null } = includesDocument
         ? normalizeClientDocument(
           preferredBodyValue(body, 'document_type', 'documentType'),
           preferredBodyValue(body, 'document_number', 'document'),
         )
         : {}
       const deadlineDays = normalizeDeadlineDays(
-        preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
+        policies.deadline_days === 'hidden'
+          ? undefined
+          : preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
       )
+      const includesWhatsapp = Object.prototype.hasOwnProperty.call(body, 'whatsapp')
+      const includesSegment = Object.prototype.hasOwnProperty.call(body, 'segment')
+      const includesDeadline = ['deadline_days', 'deadlineDays'].some(field => Object.prototype.hasOwnProperty.call(body, field))
+      const needsCurrent = Object.values(policies).includes('required')
+      const current = needsCurrent ? await this.clientRepository.findById(id, req.tenantId) : null
+      if (needsCurrent && !current) return res.status(404).json({ error: 'Client not found' })
+      if (policies.whatsapp === 'required' && requiredClientFieldMissing(includesWhatsapp ? whatsapp : current?.whatsapp)) {
+        return res.status(400).json({ error: 'whatsapp is required' })
+      }
+      if (policies.segment === 'required' && requiredClientFieldMissing(includesSegment ? segment : current?.segment)) {
+        return res.status(400).json({ error: 'segment is required' })
+      }
+      if (policies.deadline_days === 'required' && requiredClientFieldMissing(includesDeadline ? deadlineDays : current?.deadline_days)) {
+        return res.status(400).json({ error: 'deadline_days is required' })
+      }
+      if (policies.document === 'required' && requiredClientFieldMissing(includesDocument ? document.document_number : current?.document_number)) {
+        return res.status(400).json({ error: 'document is required' })
+      }
       const detailedViewValue = preferredBodyValue(body, 'portal_detailed_view', 'portalDetailedView')
       if (detailedViewValue !== undefined && typeof detailedViewValue !== 'boolean') {
         return res.status(400).json({ error: 'Invalid portal detailed view setting' })
       }
+      const hasPortalOverride = Object.prototype.hasOwnProperty.call(body, 'portal_mode_override')
+        || Object.prototype.hasOwnProperty.call(body, 'portalModeOverride')
+      const portalModeOverride = hasPortalOverride
+        ? preferredBodyValue(body, 'portal_mode_override', 'portalModeOverride')
+        : detailedViewValue === undefined
+          ? undefined
+          : detailedViewValue ? 'detailed' : 'simplified'
+      if (hasPortalOverride && portalModeOverride !== null && !['simplified', 'detailed'].includes(portalModeOverride)) {
+        return res.status(400).json({ error: 'Invalid portal mode override' })
+      }
 
       const client = await this.clientRepository.update(id, {
         name,
-        whatsapp,
-        segment,
+        whatsapp: policies.whatsapp === 'hidden' ? undefined : whatsapp,
+        segment: policies.segment === 'hidden' ? undefined : segment,
         color,
         deadline_days: deadlineDays,
         portal_detailed_view: detailedViewValue,
+        portal_mode_override: portalModeOverride,
         ...document,
       }, req.tenantId)
 

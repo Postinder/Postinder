@@ -28,6 +28,8 @@ import { AIInsightsController } from './modules/integrations/presentation/contro
 import { createIntegrationsRoutes } from './modules/integrations/presentation/routes/integrations.routes'
 import { BrandingController } from './modules/branding/presentation/controllers/BrandingController'
 import { createAdminBrandingRoutes, createPublicBrandingRoutes } from './modules/branding/presentation/routes/branding.routes'
+import { PlatformSettingsController } from './modules/platformSettings/presentation/controllers/PlatformSettingsController'
+import { createPlatformSettingsRoutes } from './modules/platformSettings/presentation/routes/platformSettings.routes'
 
 export interface AppOptions {
   runtimeEnvironment?: Environment
@@ -35,6 +37,7 @@ export interface AppOptions {
   portalController?: PortalController
   aiInsightsController?: AIInsightsController
   brandingController?: BrandingController
+  platformSettingsController?: PlatformSettingsController
 }
 
 function parseCorsOrigins(runtimeEnvironment: Environment) {
@@ -122,6 +125,7 @@ export function createApp(options: AppOptions = {}): Express {
   adminRoutes.use('/feedback', createFeedbackRoutes())
   adminRoutes.use('/activities', createActivitiesRoutes())
   adminRoutes.use('/branding', createAdminBrandingRoutes(options.brandingController))
+  adminRoutes.use('/platform-settings', createPlatformSettingsRoutes(options.platformSettingsController))
   adminRoutes.use(
     '/integrations',
     createIntegrationsRoutes(runtimeEnvironment, options.aiInsightsController),

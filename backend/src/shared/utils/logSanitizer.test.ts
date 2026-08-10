@@ -221,6 +221,17 @@ test('portal request matrix never emits or reflects the private token and preser
     portalRepository as any,
     activityRepository as any,
     soundtrackRepository as any,
+    {
+      async get() {
+        return {
+          retention: { executed_attachment_hours: 24 },
+          features: { soundtrack: false },
+          client_fields: { whatsapp: 'optional', segment: 'optional', deadline_days: 'optional', document: 'hidden' },
+          post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
+          portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+        }
+      },
+    } as any,
   )
   const app = createApp({ runtimeEnvironment: env, portalController: controller })
   const server: Server = app.listen(0, '127.0.0.1')

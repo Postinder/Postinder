@@ -10,10 +10,39 @@ import { getFileCategory } from '../../../../shared/upload/multer'
 import { removeStoredFile, StoredFile, storeUploadedFile } from '../../../../shared/upload/storage'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
+import { DEFAULT_PLATFORM_SETTINGS, PlatformSettings } from '../../../platformSettings/domain/PlatformSettings'
 
 interface AuthRequest extends Request {
   user?: any
   tenantId?: string
+}
+
+export function applyPostFieldPolicies(
+  input: Record<string, any>,
+  settings: PlatformSettings,
+  current?: any,
+) {
+  const result = { ...input }
+  const definitions = [
+    { policy: settings.post_fields.description, keys: ['description', 'caption'], current: current?.description },
+    { policy: settings.post_fields.scheduled_date, keys: ['scheduledDate', 'scheduled_date'], current: current?.scheduledDate },
+    { policy: settings.post_fields.funnel_tag, keys: ['funnelTag', 'funnel_tag'], current: current?.funnelTag },
+  ] as const
+
+  for (const definition of definitions) {
+    const suppliedKey = definition.keys.find(key => Object.prototype.hasOwnProperty.call(result, key))
+    const supplied = suppliedKey ? result[suppliedKey] : undefined
+    if (definition.policy === 'hidden') {
+      definition.keys.forEach(key => delete result[key])
+      continue
+    }
+    const effective = suppliedKey ? supplied : definition.current
+    if (definition.policy === 'required' && (effective === undefined || effective === null || String(effective).trim() === '')) {
+      throw new Error(`${definition.keys[0]} is required`)
+    }
+  }
+  return result
 }
 
 export class PostsController {
@@ -24,6 +53,9 @@ export class PostsController {
     private postRepository: PostRepository,
     private activityRepository = new ActivityRepository(),
     private soundtrackRepository = new SoundtrackRepository(),
+    private settingsService: Pick<PlatformSettingsService, 'get'> = {
+      get: async () => ({ ...DEFAULT_PLATFORM_SETTINGS, updated_at: null }),
+    },
   ) {}
 
   private async compensateUploadedFiles(files: StoredFile[]) {
@@ -48,7 +80,14 @@ export class PostsController {
   }
 
   async create(req: AuthRequest, res: Response) {
-    const dto = createPostSchema.parse(req.body)
+    const settings = await this.settingsService.get()
+    let policyInput
+    try {
+      policyInput = applyPostFieldPolicies(req.body || {}, settings)
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message })
+    }
+    const dto = createPostSchema.parse(policyInput)
     const post = await this.createPostService.execute(
       dto,
       req.user?.userId || req.user?.clientId,
@@ -87,7 +126,14 @@ export class PostsController {
     if (!await this.ensurePostMutable(req, res)) return
     const current = await this.postRepository.findById(req.params.id, req.tenantId)
     if (!current) return res.status(404).json({ error: 'Post not found' })
-    const updates = updatePostSchema.parse(req.body)
+    const settings = await this.settingsService.get()
+    let policyInput
+    try {
+      policyInput = applyPostFieldPolicies(req.body || {}, settings, current)
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message })
+    }
+    const updates = updatePostSchema.parse(policyInput)
     const unsupportedNewChannels = (updates.channels || []).filter(channel => (
       !ACTIVE_POST_CHANNELS.includes(channel as any)
       && !(current.channels || []).includes(channel)
@@ -216,7 +262,9 @@ export class PostsController {
     if (!uploadedFile) {
       return res.status(400).json({ error: 'No file uploaded' })
     }
-    if (await this.soundtrackRepository.isEmbeddedSource(req.params.id, req.params.fileId)
+    const settings = await this.settingsService.get()
+    if (settings.features.soundtrack
+      && await this.soundtrackRepository.isEmbeddedSource(req.params.id, req.params.fileId)
       && getFileCategory(uploadedFile.mimetype) !== 'VIDEO') {
       return res.status(400).json({
         error: 'O arquivo vinculado ao fundo sonoro incorporado deve continuar sendo um video',
@@ -250,17 +298,25 @@ export class PostsController {
       await this.compensateUploadedFiles([storedFile])
       return res.status(404).json({ error: 'Rejected file not found' })
     }
-    await this.soundtrackRepository.invalidateEmbeddedSource(req.params.id, req.params.fileId, {
-      id: req.user?.userId,
-      role: req.user?.role,
-      companyId: req.tenantId,
-    })
+    if (settings.features.soundtrack) {
+      await this.soundtrackRepository.invalidateEmbeddedSource(req.params.id, req.params.fileId, {
+        id: req.user?.userId,
+        role: req.user?.role,
+        companyId: req.tenantId,
+      })
+    }
     res.status(200).json({ data: savedFile })
   }
 
   async removeFile(req: AuthRequest, res: Response) {
     if (!await this.ensurePostMutable(req, res)) return
-    const removed = await this.postRepository.removeFile(req.params.id, req.params.fileId, req.tenantId)
+    const settings = await this.settingsService.get()
+    const removed = await this.postRepository.removeFile(
+      req.params.id,
+      req.params.fileId,
+      req.tenantId,
+      settings.features.soundtrack,
+    )
     if (!removed) return res.status(404).json({ error: 'Post or file not found' })
     await this.activityRepository.createForPost(req.params.id, {
       companyId: req.tenantId,
@@ -275,7 +331,12 @@ export class PostsController {
 
   async submitForApproval(req: AuthRequest, res: Response) {
     if (!await this.ensurePostMutable(req, res)) return
-    const submitted = await this.postRepository.submitForApproval(req.params.id, req.tenantId)
+    const settings = await this.settingsService.get()
+    const submitted = await this.postRepository.submitForApproval(
+      req.params.id,
+      req.tenantId,
+      settings.features.soundtrack,
+    )
     if (!submitted) return res.status(404).json({ error: 'Post not found' })
     await this.activityRepository.createForPost(req.params.id, {
       companyId: req.tenantId,
@@ -311,10 +372,9 @@ export class PostsController {
 
   async markExecuted(req: AuthRequest, res: Response) {
     if (!await this.ensurePostMutable(req, res)) return
-    const retention = ['never', 'immediate', '1d', '7d', '30d'].includes(req.body?.retention)
-      ? req.body.retention
-      : 'never'
-    const executed = await this.postRepository.markExecuted(req.params.id, retention, req.tenantId)
+    const settings = await this.settingsService.get()
+    const retentionHours = settings.retention.executed_attachment_hours
+    const executed = await this.postRepository.markExecuted(req.params.id, retentionHours, req.tenantId)
     if (!executed) return res.status(400).json({ error: 'Post must be approved before execution or was not found' })
     await this.activityRepository.createForPost(req.params.id, {
       companyId: req.tenantId,
@@ -322,7 +382,7 @@ export class PostsController {
       actorRole: req.user?.role,
       type: 'post_executed',
       title: 'Postagem marcada como executada',
-      metadata: { retention },
+      metadata: { retentionHours },
     }).catch(() => {})
     res.json({ success: true })
   }
@@ -330,7 +390,12 @@ export class PostsController {
   async duplicate(req: AuthRequest, res: Response) {
     let post: any
     try {
-      post = await this.postRepository.duplicate(req.params.id, req.tenantId)
+      const settings = await this.settingsService.get()
+      post = await this.postRepository.duplicate(
+        req.params.id,
+        req.tenantId,
+        settings.features.soundtrack,
+      )
     } catch (error) {
       if (error instanceof PostDuplicationError) {
         const message = error.code === 'legacy_file_identity_missing'
@@ -360,7 +425,12 @@ export class PostsController {
     const ids = Array.isArray(req.body?.postIds) ? req.body.postIds : []
     if (!ids.length) return res.status(400).json({ error: 'postIds is required' })
 
-    const sent = await this.postRepository.submitManyForApproval(ids, req.tenantId)
+    const settings = await this.settingsService.get()
+    const sent = await this.postRepository.submitManyForApproval(
+      ids,
+      req.tenantId,
+      settings.features.soundtrack,
+    )
     await Promise.all(sent.map(post => this.activityRepository.createForPost(post.id, {
       companyId: req.tenantId,
       actorId: req.user?.userId,
@@ -375,7 +445,13 @@ export class PostsController {
 
   async resubmit(req: AuthRequest, res: Response) {
     if (!await this.ensurePostMutable(req, res)) return
-    const resubmitted = await this.postRepository.resubmit(req.params.id, req.body, req.tenantId)
+    const settings = await this.settingsService.get()
+    const resubmitted = await this.postRepository.resubmit(
+      req.params.id,
+      req.body,
+      req.tenantId,
+      settings.features.soundtrack,
+    )
     if (!resubmitted) return res.status(404).json({ error: 'Post not found' })
     res.json({ success: true })
   }

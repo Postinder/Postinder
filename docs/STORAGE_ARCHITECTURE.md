@@ -45,22 +45,24 @@ Quando o fundo sonoro e `uploaded`, a duplicacao tambem cria objeto e registro f
 
 ## Retencao
 
-Ao marcar uma postagem como `executed`, a agencia escolhe `immediate`, `1d`, `7d`, `30d` ou `never`. A escolha calcula a elegibilidade do arquivo; ela nao remove o objeto dentro da requisicao de execucao.
+Ao marcar uma postagem aprovada como `executed`, o backend grava o timestamp canonico e calcula `files_delete_after` com o prazo global vigente. O default e 24 horas. A remocao nao ocorre dentro da requisicao, e mudancas posteriores do default valem para novas execucoes sem antecipar prazos ja gravados.
 
-O comando manual abaixo processa anexos vencidos:
+O backend executa uma varredura nao bloqueante no startup e repete a cada hora, sem cron externo. Cada rodada processa no maximo 50 candidatos somando anexos e audios. O comando manual permanece disponivel para operacao controlada:
 
 ```bash
 cd backend
 npm run storage:cleanup-retention
 ```
 
-Depois da remocao fisica, o registro permanece. `storage_deleted_at` registra sucesso e `storage_delete_error` registra falha. O comando nao tenta remover novamente objetos ja marcados como removidos. Interface e historico preservam nome, tipo, tamanho, ordem, decisao, politica e data de remocao.
+Somente postagens ainda `executed`, com `executed_at` presente, prazo vencido e `files_delete_after >= executed_at` sao elegiveis. Registros historicos sem timestamp/prazo confiavel e todos os estados anteriores nunca entram na limpeza. Nao ha backfill que torne acervo antigo imediatamente vencido.
 
-O comando processa anexos e audios enviados. Antes da remocao, verifica referencias ativas em ambos os conjuntos; para fundo sonoro preserva tambem revisoes e decisoes historicas.
+Depois da remocao fisica, o registro permanece. `storage_deleted_at` registra sucesso e `storage_delete_error` registra falha sanitizada. A interface nao usa a URL antiga e mostra **Arquivo removido pela politica de retencao**; postagem, Cliente, titulo, legenda, datas, aprovacoes, decisoes, metricas e historico permanecem.
+
+O cleanup usa somente `bucket + storage_path` persistidos, revalida elegibilidade sob lock, serializa concorrencia por objeto e marca todas as referencias vencidas somente apos o adaptador confirmar sucesso. Objeto local ja ausente e sucesso idempotente. Falha nao marca purge e permanece para retry; uma referencia ainda ativa impede a remocao compartilhada.
 
 ## Limitacoes atuais
 
-- Nao ha scheduler, fila, outbox ou retry automatico.
+- O scheduler e interno ao processo; nao ha fila distribuida, outbox nem garantia de horario exato durante indisponibilidade. A varredura de startup recupera o trabalho vencido apos reinicio.
 - O bucket publicado continua publico no fluxo atual; URLs assinadas e bucket privado ainda nao existem.
 - Nao ha upload direto, retomavel nem transcodificacao de video; cada arquivo ainda atravessa a memoria do backend em producao.
 - Objetos compartilhados e arquivos legados sem identidade possuem diagnostico, mas nao migracao automatica.

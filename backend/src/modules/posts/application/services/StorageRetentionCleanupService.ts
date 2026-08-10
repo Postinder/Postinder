@@ -20,26 +20,37 @@ type CleanupOutcome = {
 export class StorageRetentionCleanupService {
   constructor(private readonly removeStorageObject: StorageRemoval = removeStoredFile) {}
 
-  async execute(): Promise<StorageRetentionCleanupResult> {
-    const [fileCandidates, soundtrackCandidates] = await Promise.all([pool.query(
+  async execute(batchSize = 50): Promise<StorageRetentionCleanupResult> {
+    const limit = Math.min(Math.max(Math.trunc(batchSize) || 50, 1), 200)
+    const fileCandidates = await pool.query(
       `SELECT f.id
        FROM files f
        JOIN posts p ON p.id = f.post_id
-       WHERE p.files_delete_after IS NOT NULL
+       WHERE p.status = 'executed'
+         AND p.executed_at IS NOT NULL
+         AND p.files_delete_after IS NOT NULL
          AND p.files_delete_after <= NOW()
+         AND p.files_delete_after >= p.executed_at
          AND f.storage_deleted_at IS NULL
-       ORDER BY p.files_delete_after, f.created_at, f.id`,
-    ), pool.query(
+       ORDER BY p.files_delete_after, f.created_at, f.id
+       LIMIT $1`, [limit],
+    )
+    const remaining = limit - fileCandidates.rows.length
+    const soundtrackCandidates = remaining > 0 ? await pool.query(
       `SELECT ps.id
        FROM post_soundtracks ps
        JOIN posts p ON p.id = ps.post_id
-       WHERE p.files_delete_after IS NOT NULL
+       WHERE p.status = 'executed'
+         AND p.executed_at IS NOT NULL
+         AND p.files_delete_after IS NOT NULL
          AND p.files_delete_after <= NOW()
+         AND p.files_delete_after >= p.executed_at
          AND ps.storage_path IS NOT NULL
          AND ps.storage_deleted_at IS NULL
          AND ps.deleted_at IS NULL
-       ORDER BY p.files_delete_after, ps.created_at, ps.id`,
-    )])
+       ORDER BY p.files_delete_after, ps.created_at, ps.id
+       LIMIT $1`, [remaining],
+    ) : { rows: [] }
 
     const result: StorageRetentionCleanupResult = {
       candidates: fileCandidates.rows.length + soundtrackCandidates.rows.length,
@@ -83,13 +94,39 @@ export class StorageRetentionCleanupService {
     try {
       await client.query('BEGIN')
       transactionStarted = true
+      const identityResult = await client.query(
+        `SELECT f.bucket, f.storage_path
+         FROM files f
+         JOIN posts p ON p.id = f.post_id
+         WHERE f.id = $1
+           AND p.status = 'executed'
+           AND p.executed_at IS NOT NULL
+           AND p.files_delete_after IS NOT NULL
+           AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
+           AND f.storage_deleted_at IS NULL`,
+        [fileId],
+      )
+      const identity = identityResult.rows[0]
+      if (!identity) {
+        await client.query('ROLLBACK')
+        transactionStarted = false
+        return { kind: 'skipped' }
+      }
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [identity.bucket && identity.storage_path ? `${identity.bucket}:${identity.storage_path}` : `file:${fileId}`],
+      )
       const locked = await client.query(
         `SELECT f.id, f.bucket, f.storage_path
          FROM files f
          JOIN posts p ON p.id = f.post_id
          WHERE f.id = $1
+           AND p.status = 'executed'
+           AND p.executed_at IS NOT NULL
            AND p.files_delete_after IS NOT NULL
            AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
            AND f.storage_deleted_at IS NULL
          FOR UPDATE OF f SKIP LOCKED`,
         [fileId],
@@ -114,7 +151,6 @@ export class StorageRetentionCleanupService {
         return { kind: 'failed' }
       }
 
-      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${file.bucket}:${file.storage_path}`])
       const activeReference = await client.query(
         `SELECT 1 FROM (
            SELECT other_file.bucket, other_file.storage_path
@@ -123,7 +159,9 @@ export class StorageRetentionCleanupService {
            WHERE other_file.bucket = $1
              AND other_file.storage_path = $2
              AND other_file.storage_deleted_at IS NULL
-             AND (other_post.files_delete_after IS NULL OR other_post.files_delete_after > NOW())
+             AND (other_post.status <> 'executed' OR other_post.executed_at IS NULL
+               OR other_post.files_delete_after IS NULL OR other_post.files_delete_after > NOW()
+               OR other_post.files_delete_after < other_post.executed_at)
            UNION ALL
            SELECT other_soundtrack.bucket, other_soundtrack.storage_path
            FROM post_soundtracks other_soundtrack
@@ -132,7 +170,9 @@ export class StorageRetentionCleanupService {
              AND other_soundtrack.storage_path = $2
              AND other_soundtrack.storage_deleted_at IS NULL
              AND other_soundtrack.deleted_at IS NULL
-             AND (other_post.files_delete_after IS NULL OR other_post.files_delete_after > NOW())
+             AND (other_post.status <> 'executed' OR other_post.executed_at IS NULL
+               OR other_post.files_delete_after IS NULL OR other_post.files_delete_after > NOW()
+               OR other_post.files_delete_after < other_post.executed_at)
          ) active_references LIMIT 1`,
         [file.bucket, file.storage_path],
       )
@@ -160,11 +200,14 @@ export class StorageRetentionCleanupService {
            WHERE id = $1
              AND bucket = $2
              AND storage_deleted_at IS NULL`,
-          [file.id, file.bucket, removal.error || 'Storage deletion failed'],
+          [file.id, file.bucket, 'Storage deletion failed; retry pending'],
         )
         await client.query('COMMIT')
         transactionStarted = false
-        logger.error('Storage retention cleanup failed', { fileId: file.id, ...removal })
+        logger.error('Storage retention cleanup failed', {
+          fileId: file.id,
+          error: 'Storage deletion failed; retry pending',
+        })
         return { kind: 'failed' }
       }
 
@@ -178,8 +221,9 @@ export class StorageRetentionCleanupService {
            AND f.bucket = $1
            AND f.storage_path = $2
            AND f.storage_deleted_at IS NULL
-           AND p.files_delete_after IS NOT NULL
-           AND p.files_delete_after <= NOW()
+           AND p.status = 'executed' AND p.executed_at IS NOT NULL
+           AND p.files_delete_after IS NOT NULL AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
          RETURNING f.id`,
         [file.bucket, file.storage_path],
       )
@@ -189,7 +233,9 @@ export class StorageRetentionCleanupService {
          FROM posts p
          WHERE ps.post_id = p.id AND ps.bucket = $1 AND ps.storage_path = $2
            AND ps.storage_deleted_at IS NULL AND ps.deleted_at IS NULL
+           AND p.status = 'executed' AND p.executed_at IS NOT NULL
            AND p.files_delete_after IS NOT NULL AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
          RETURNING ps.id`,
         [file.bucket, file.storage_path],
       )
@@ -201,15 +247,18 @@ export class StorageRetentionCleanupService {
         : { kind: 'skipped' }
     } catch (error: any) {
       if (transactionStarted) await client.query('ROLLBACK')
-      logger.error('Unexpected storage retention cleanup failure', { fileId, error })
+      logger.error('Unexpected storage retention cleanup failure', {
+        fileId,
+        error: 'Unexpected cleanup failure; retry pending',
+      })
       await pool.query(
         `UPDATE files
          SET storage_delete_error = $2,
              updated_at = NOW()
          WHERE id = $1
            AND storage_deleted_at IS NULL`,
-        [fileId, error?.message || 'Unexpected cleanup failure'],
-      ).catch(updateError => logger.error('Failed to record retention cleanup error', { fileId, error: updateError }))
+        [fileId, 'Unexpected cleanup failure; retry pending'],
+      ).catch(() => logger.error('Failed to record retention cleanup error', { fileId }))
       return { kind: 'failed' }
     } finally {
       client.release()
@@ -222,14 +271,41 @@ export class StorageRetentionCleanupService {
     try {
       await client.query('BEGIN')
       transactionStarted = true
+      const identityResult = await client.query(
+        `SELECT ps.bucket, ps.storage_path
+         FROM post_soundtracks ps
+         JOIN posts p ON p.id = ps.post_id
+         WHERE ps.id = $1
+           AND ps.deleted_at IS NULL
+           AND p.status = 'executed'
+           AND p.executed_at IS NOT NULL
+           AND p.files_delete_after IS NOT NULL
+           AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
+           AND ps.storage_deleted_at IS NULL`,
+        [soundtrackId],
+      )
+      const identity = identityResult.rows[0]
+      if (!identity) {
+        await client.query('ROLLBACK')
+        transactionStarted = false
+        return { kind: 'skipped' }
+      }
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [identity.bucket && identity.storage_path ? `${identity.bucket}:${identity.storage_path}` : `soundtrack:${soundtrackId}`],
+      )
       const locked = await client.query(
         `SELECT ps.id, ps.bucket, ps.storage_path
          FROM post_soundtracks ps
          JOIN posts p ON p.id = ps.post_id
          WHERE ps.id = $1
            AND ps.deleted_at IS NULL
+           AND p.status = 'executed'
+           AND p.executed_at IS NOT NULL
            AND p.files_delete_after IS NOT NULL
            AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
            AND ps.storage_deleted_at IS NULL
          FOR UPDATE OF ps SKIP LOCKED`,
         [soundtrackId],
@@ -250,21 +326,24 @@ export class StorageRetentionCleanupService {
         return { kind: 'failed' }
       }
 
-      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${soundtrack.bucket}:${soundtrack.storage_path}`])
       const activeReference = await client.query(
         `SELECT 1 FROM (
            SELECT f.bucket, f.storage_path
            FROM files f
            JOIN posts p ON p.id = f.post_id
            WHERE f.bucket = $1 AND f.storage_path = $2 AND f.storage_deleted_at IS NULL
-             AND (p.files_delete_after IS NULL OR p.files_delete_after > NOW())
+             AND (p.status <> 'executed' OR p.executed_at IS NULL
+               OR p.files_delete_after IS NULL OR p.files_delete_after > NOW()
+               OR p.files_delete_after < p.executed_at)
            UNION ALL
            SELECT ps.bucket, ps.storage_path
            FROM post_soundtracks ps
            JOIN posts p ON p.id = ps.post_id
            WHERE ps.bucket = $1 AND ps.storage_path = $2 AND ps.storage_deleted_at IS NULL
              AND ps.deleted_at IS NULL AND ps.id <> $3
-             AND (p.files_delete_after IS NULL OR p.files_delete_after > NOW())
+             AND (p.status <> 'executed' OR p.executed_at IS NULL
+               OR p.files_delete_after IS NULL OR p.files_delete_after > NOW()
+               OR p.files_delete_after < p.executed_at)
          ) active_references LIMIT 1`,
         [soundtrack.bucket, soundtrack.storage_path, soundtrack.id],
       )
@@ -282,10 +361,14 @@ export class StorageRetentionCleanupService {
       if (!removal.removed) {
         await client.query(
           `UPDATE post_soundtracks SET storage_delete_error = $2, updated_at = NOW() WHERE id = $1`,
-          [soundtrack.id, removal.error || 'Storage deletion failed'],
+          [soundtrack.id, 'Storage deletion failed; retry pending'],
         )
         await client.query('COMMIT')
         transactionStarted = false
+        logger.error('Soundtrack retention cleanup failed', {
+          soundtrackId: soundtrack.id,
+          error: 'Storage deletion failed; retry pending',
+        })
         return { kind: 'failed' }
       }
 
@@ -295,7 +378,9 @@ export class StorageRetentionCleanupService {
          FROM posts p
          WHERE ps.post_id = p.id AND ps.bucket = $1 AND ps.storage_path = $2
            AND ps.storage_deleted_at IS NULL AND ps.deleted_at IS NULL
+           AND p.status = 'executed' AND p.executed_at IS NOT NULL
            AND p.files_delete_after IS NOT NULL AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
          RETURNING ps.id`,
         [soundtrack.bucket, soundtrack.storage_path],
       )
@@ -305,7 +390,9 @@ export class StorageRetentionCleanupService {
          FROM posts p
          WHERE f.post_id = p.id AND f.bucket = $1 AND f.storage_path = $2
            AND f.storage_deleted_at IS NULL
+           AND p.status = 'executed' AND p.executed_at IS NOT NULL
            AND p.files_delete_after IS NOT NULL AND p.files_delete_after <= NOW()
+           AND p.files_delete_after >= p.executed_at
          RETURNING f.id`,
         [soundtrack.bucket, soundtrack.storage_path],
       )
@@ -317,11 +404,14 @@ export class StorageRetentionCleanupService {
         : { kind: 'skipped' }
     } catch (error: any) {
       if (transactionStarted) await client.query('ROLLBACK')
-      logger.error('Unexpected soundtrack retention cleanup failure', { soundtrackId, error })
+      logger.error('Unexpected soundtrack retention cleanup failure', {
+        soundtrackId,
+        error: 'Unexpected cleanup failure; retry pending',
+      })
       await pool.query(
         `UPDATE post_soundtracks SET storage_delete_error = $2, updated_at = NOW()
          WHERE id = $1 AND storage_deleted_at IS NULL`,
-        [soundtrackId, error?.message || 'Unexpected cleanup failure'],
+        [soundtrackId, 'Unexpected cleanup failure; retry pending'],
       ).catch(() => {})
       return { kind: 'failed' }
     } finally {

@@ -11,13 +11,15 @@ import PageHeader from '../../components/ui/PageHeader'
 import { CLIENT_COLORS } from '../../utils/constants'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { usePlatformSettings } from '../../hooks/usePlatformSettings'
+import { isFieldRequired, isFieldVisible, putVisibleField, requiredFieldIsMissing } from '../../utils/fieldPolicies'
 import {
   buildClientDocumentPayload,
   formatClientDocument,
   isOptionalClientDocumentValid,
 } from '../../utils/clientDocument'
 
-function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, onViewPosts, onViewDetails }) {
+function ClientCard({ client, posts, fieldPolicies, onEdit, onArchive, onDelete, onActivate, onViewPosts, onViewDetails }) {
   const [actionsOpen, setActionsOpen] = useState(false)
   const inactive = client.is_active === false || client.isActive === false
   const cp  = posts.filter(p => p.client_id === client.id)
@@ -47,7 +49,9 @@ function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, on
             </div>
             <div className="text-xs text-neutral-400">{client.email}</div>
             <div className="text-xs text-neutral-400 mt-0.5">
-              {cp.length} posts{client.segment ? ` · ${client.segment}` : ''} · prazo: {client.deadline_days || 7}d
+              {cp.length} posts
+              {isFieldVisible(fieldPolicies.segment) && client.segment ? ` · ${client.segment}` : ''}
+              {isFieldVisible(fieldPolicies.deadline_days) ? ` · prazo: ${client.deadline_days || 7}d` : ''}
             </div>
           </div>
         </div>
@@ -99,9 +103,9 @@ function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, on
       </div>
 
       <div className="flex gap-2 flex-wrap">
-        <button onClick={openWA} disabled={inactive} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-45 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-green-500/20">
+        {isFieldVisible(fieldPolicies.whatsapp) ? <button onClick={openWA} disabled={inactive} className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-45 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-green-500/20">
           <MessageCircle size={12}/> WhatsApp
-        </button>
+        </button> : null}
         <button onClick={() => onViewDetails(client.id)} className="text-xs font-bold px-3.5 py-2 rounded-lg border border-neutral-200 bg-white dark:bg-neutral-950/40 dark:border-neutral-700 hover:border-teal-400 hover:text-teal-500 transition-all">
           Detalhes
         </button>
@@ -113,15 +117,23 @@ function ClientCard({ client, posts, onEdit, onArchive, onDelete, onActivate, on
   )
 }
 
-function ClientFormModal({ title, initial, open, onClose, onSave }) {
-  const [form, setForm] = useState(initial || { name:'', email:'', password:'', whatsapp:'', segment:'', deadlineDays:7, color: CLIENT_COLORS[0] })
+function ClientFormModal({ title, initial, open, onClose, onSave, fieldPolicies }) {
+  const emptyForm = { name:'', email:'', password:'', whatsapp:'', segment:'', deadlineDays:7, document:'', documentType:'cpf', color: CLIENT_COLORS[0] }
+  const [form, setForm] = useState(initial || emptyForm)
   const [loading, setLoading] = useState(false)
   useEffect(() => { if (initial) setForm(initial) }, [initial])
   const set = (k,v) => setForm(f => ({...f,[k]:v}))
 
   async function handleSave() {
     if (!form.name || !form.email) { toast.error('Preencha nome e e-mail.'); return }
-    if (initial && !isOptionalClientDocumentValid(form.documentType, form.document)) {
+    if (requiredFieldIsMissing(fieldPolicies.whatsapp, form.whatsapp)
+      || requiredFieldIsMissing(fieldPolicies.segment, form.segment)
+      || requiredFieldIsMissing(fieldPolicies.deadline_days, form.deadlineDays)
+      || requiredFieldIsMissing(fieldPolicies.document, form.document)) {
+      toast.error('Preencha todos os campos obrigatorios.')
+      return
+    }
+    if (isFieldVisible(fieldPolicies.document) && !isOptionalClientDocumentValid(form.documentType, form.document)) {
       toast.error('CPF/CNPJ inválido.')
       return
     }
@@ -138,9 +150,9 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
           <Input label="Nome *" name="client-name" autoComplete="off" value={form.name} onChange={e=>set('name',e.target.value)} placeholder="Nome ou empresa" />
           <Input label="E-mail *" name="client-email" type="email" autoComplete="off" value={form.email} onChange={e=>set('email',e.target.value)} />
           <Input label={initial ? 'Nova Senha (deixe vazio p/ manter)' : 'Senha *'} name="client-new-password" type="password" autoComplete="new-password" value={form.password||''} onChange={e=>set('password',e.target.value)} />
-          <Input label="WhatsApp" name="client-whatsapp" autoComplete="off" value={form.whatsapp||''} onChange={e=>set('whatsapp',e.target.value)} placeholder="(51) 9 9999-9999" />
+          {isFieldVisible(fieldPolicies.whatsapp) ? <Input label={`WhatsApp${isFieldRequired(fieldPolicies.whatsapp) ? ' *' : ''}`} name="client-whatsapp" autoComplete="off" value={form.whatsapp||''} onChange={e=>set('whatsapp',e.target.value)} placeholder="(51) 9 9999-9999" /> : null}
         </div>
-        {initial ? <div>
+        {isFieldVisible(fieldPolicies.document) ? <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 block mb-2">Documento</label>
           <div className="flex rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700 mb-2">
             {['cpf','cnpj'].map(t=>(
@@ -150,8 +162,8 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
           <Input name="client-document" inputMode="numeric" aria-label={`Número do ${form.documentType.toUpperCase()}`} autoComplete="off" value={form.document||''} onChange={e=>set('document',formatClientDocument(e.target.value, form.documentType))} placeholder={form.documentType==='cpf'?'000.000.000-00':'00.000.000/0000-00'} />
         </div> : null}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Input label="Segmento" value={form.segment||''} onChange={e=>set('segment',e.target.value)} placeholder="Ex: Restaurante" />
-          <Input label="Prazo de aceite (dias)" type="number" min="1" max="30" value={form.deadlineDays||7} onChange={e=>set('deadlineDays',parseInt(e.target.value)||7)} />
+          {isFieldVisible(fieldPolicies.segment) ? <Input label={`Segmento${isFieldRequired(fieldPolicies.segment) ? ' *' : ''}`} value={form.segment||''} onChange={e=>set('segment',e.target.value)} placeholder="Ex: Restaurante" /> : null}
+          {isFieldVisible(fieldPolicies.deadline_days) ? <Input label={`Prazo de aceite (dias)${isFieldRequired(fieldPolicies.deadline_days) ? ' *' : ''}`} type="number" min="1" max="30" value={form.deadlineDays||7} onChange={e=>set('deadlineDays',parseInt(e.target.value)||'')} /> : null}
         </div>
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 block mb-2">Cor do avatar</label>
@@ -170,7 +182,7 @@ function ClientFormModal({ title, initial, open, onClose, onSave }) {
   )
 }
 
-function VCFImport({ open, onClose, onImport }) {
+function VCFImport({ open, onClose, onImport, fieldPolicies }) {
   const [contacts, setContacts] = useState([])
   const fileRef = useRef()
 
@@ -184,8 +196,10 @@ function VCFImport({ open, onClose, onImport }) {
   async function handleImport() {
     const sel = contacts.filter(c=>c.selected)
     if (!sel.length) { toast.error('Selecione ao menos um contato.'); return }
-    const missing = sel.filter(c=>!c.email||!c.password)
-    if (missing.length) { toast.error('Preencha e-mail e senha de todos os selecionados.'); return }
+    const missing = sel.filter(c => !c.email || !c.password
+      || requiredFieldIsMissing(fieldPolicies.whatsapp, c.phone)
+      || requiredFieldIsMissing(fieldPolicies.segment, c.segment))
+    if (missing.length) { toast.error('Preencha todos os campos obrigatorios dos contatos selecionados.'); return }
     await onImport(sel)
     setContacts([])
     onClose()
@@ -204,17 +218,17 @@ function VCFImport({ open, onClose, onImport }) {
           <div className="overflow-auto max-h-72 rounded-lg border border-neutral-200 dark:border-neutral-700">
             <table className="w-full text-xs">
               <thead className="bg-neutral-50 dark:bg-neutral-800 sticky top-0">
-                <tr>{['✓','Nome','WhatsApp','E-mail *','Senha *','Segmento'].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-neutral-500">{h}</th>)}</tr>
+                <tr>{['✓', 'Nome', ...(isFieldVisible(fieldPolicies.whatsapp) ? ['WhatsApp'] : []), 'E-mail *', 'Senha *', ...(isFieldVisible(fieldPolicies.segment) ? ['Segmento'] : [])].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-neutral-500">{h}</th>)}</tr>
               </thead>
               <tbody>
                 {contacts.map((c,i)=>(
                   <tr key={i} className="border-t border-neutral-100 dark:border-neutral-800">
                     <td className="px-3 py-1.5"><input type="checkbox" checked={c.selected} onChange={e=>{const nc=[...contacts];nc[i].selected=e.target.checked;setContacts(nc)}} className="accent-mag-500" /></td>
                     <td className="px-3 py-1.5 font-medium">{c.name}</td>
-                    <td className="px-3 py-1.5 text-neutral-500">{c.phone}</td>
+                    {isFieldVisible(fieldPolicies.whatsapp) ? <td className="px-3 py-1.5 text-neutral-500">{c.phone}</td> : null}
                     <td className="px-3 py-1.5"><input name={`vcf-client-email-${i}`} autoComplete="off" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-36 bg-white dark:bg-neutral-800 outline-none" placeholder="email@..." onChange={e=>{const nc=[...contacts];nc[i].email=e.target.value;setContacts(nc)}} /></td>
                     <td className="px-3 py-1.5"><input name={`vcf-client-password-${i}`} type="password" autoComplete="new-password" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-28 bg-white dark:bg-neutral-800 outline-none" placeholder="Senha" onChange={e=>{const nc=[...contacts];nc[i].password=e.target.value;setContacts(nc)}} /></td>
-                    <td className="px-3 py-1.5"><input name={`vcf-client-segment-${i}`} autoComplete="off" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-28 bg-white dark:bg-neutral-800 outline-none" placeholder="Segmento" onChange={e=>{const nc=[...contacts];nc[i].segment=e.target.value;setContacts(nc)}} /></td>
+                    {isFieldVisible(fieldPolicies.segment) ? <td className="px-3 py-1.5"><input name={`vcf-client-segment-${i}`} autoComplete="off" className="border border-neutral-200 dark:border-neutral-700 rounded px-2 py-1 text-xs w-28 bg-white dark:bg-neutral-800 outline-none" placeholder="Segmento" onChange={e=>{const nc=[...contacts];nc[i].segment=e.target.value;setContacts(nc)}} /></td> : null}
                   </tr>
                 ))}
               </tbody>
@@ -239,6 +253,8 @@ export default function ClientsPage() {
   const [showNew, setShowNew] = useState(false)
   const [showVCF, setShowVCF] = useState(false)
   const [editClient, setEditClient] = useState(null)
+  const { settings } = usePlatformSettings()
+  const fieldPolicies = settings.client_fields
 
   useEffect(() => {
     Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ limit: 500 })])
@@ -248,15 +264,17 @@ export default function ClientsPage() {
   }, [])
 
   async function handleCreate(form) {
-    const client = await createClient({
+    const payload = {
       name: form.name,
       email: form.email,
       password: form.password,
-      whatsapp: form.whatsapp,
-      segment: form.segment,
-      deadline_days: form.deadlineDays,
       color: form.color || CLIENT_COLORS[clients.length % CLIENT_COLORS.length],
-    })
+    }
+    putVisibleField(payload, 'whatsapp', form.whatsapp, fieldPolicies.whatsapp)
+    putVisibleField(payload, 'segment', form.segment, fieldPolicies.segment)
+    putVisibleField(payload, 'deadline_days', form.deadlineDays, fieldPolicies.deadline_days)
+    if (isFieldVisible(fieldPolicies.document)) Object.assign(payload, buildClientDocumentPayload(form))
+    const client = await createClient(payload)
     setClients(c => [client, ...c])
     toast.success('Cliente criado!')
   }
@@ -265,12 +283,12 @@ export default function ClientsPage() {
     const updates = {
       name: form.name,
       email: form.email,
-      whatsapp: form.whatsapp,
-      segment: form.segment,
-      deadline_days: form.deadlineDays,
       color: form.color,
-      ...buildClientDocumentPayload(form),
     }
+    putVisibleField(updates, 'whatsapp', form.whatsapp, fieldPolicies.whatsapp)
+    putVisibleField(updates, 'segment', form.segment, fieldPolicies.segment)
+    putVisibleField(updates, 'deadline_days', form.deadlineDays, fieldPolicies.deadline_days)
+    if (isFieldVisible(fieldPolicies.document)) Object.assign(updates, buildClientDocumentPayload(form))
     if (form.password) updates.password_hash = form.password
     const updated = await updateClient(editClient.id, updates)
     setClients(c => c.map(x => x.id === editClient.id ? { ...x, ...updated } : x))
@@ -280,7 +298,11 @@ export default function ClientsPage() {
   async function handleVCFImport(contacts) {
     const created = []
     for (const c of contacts) {
-      const client = await createClient({ name:c.name, email:c.email, password:c.password, whatsapp:c.phone, segment:c.segment, deadline_days:7, color: CLIENT_COLORS[clients.length%CLIENT_COLORS.length] })
+      const payload = { name:c.name, email:c.email, password:c.password, color: CLIENT_COLORS[clients.length%CLIENT_COLORS.length] }
+      putVisibleField(payload, 'whatsapp', c.phone, fieldPolicies.whatsapp)
+      putVisibleField(payload, 'segment', c.segment, fieldPolicies.segment)
+      putVisibleField(payload, 'deadline_days', 7, fieldPolicies.deadline_days)
+      const client = await createClient(payload)
       created.push(client)
     }
     setClients(c => [...created, ...c])
@@ -354,21 +376,21 @@ export default function ClientsPage() {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-4">
           {clients.map(c => (
-            <ClientCard key={c.id} client={c} posts={posts}
+            <ClientCard key={c.id} client={c} posts={posts} fieldPolicies={fieldPolicies}
               onEdit={setEditClient} onArchive={handleArchive} onDelete={handlePermanentDelete} onActivate={handleActivate} onViewPosts={viewPosts} onViewDetails={viewDetails} />
           ))}
         </div>
       )}
 
-      <ClientFormModal title="Novo Cliente" open={showNew} onClose={()=>setShowNew(false)} onSave={handleCreate} />
+      <ClientFormModal title="Novo Cliente" open={showNew} onClose={()=>setShowNew(false)} onSave={handleCreate} fieldPolicies={fieldPolicies} />
       <ClientFormModal title="Editar Cliente" initial={editClient ? {
         name: editClient.name, email: editClient.email, password:'',
         whatsapp: editClient.whatsapp||'',
         document: formatClientDocument(editClient.document_number, editClient.document_type||'cpf'),
         documentType: editClient.document_type||'cpf', segment: editClient.segment||'',
         deadlineDays: editClient.deadline_days||7, color: editClient.color
-      } : null} open={!!editClient} onClose={()=>setEditClient(null)} onSave={handleEdit} />
-      <VCFImport open={showVCF} onClose={()=>setShowVCF(false)} onImport={handleVCFImport} />
+      } : null} open={!!editClient} onClose={()=>setEditClient(null)} onSave={handleEdit} fieldPolicies={fieldPolicies} />
+      <VCFImport open={showVCF} onClose={()=>setShowVCF(false)} onImport={handleVCFImport} fieldPolicies={fieldPolicies} />
     </div>
   )
 }

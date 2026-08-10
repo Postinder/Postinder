@@ -11,6 +11,8 @@ import EmptyState from '../../components/ui/EmptyState'
 import Skeleton from '../../components/ui/Skeleton'
 import toast from 'react-hot-toast'
 import { formatClientDocument } from '../../utils/clientDocument'
+import { usePlatformSettings } from '../../hooks/usePlatformSettings'
+import { isFieldVisible } from '../../utils/fieldPolicies'
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
@@ -91,6 +93,8 @@ export default function ClientDetailsPage() {
   const [portalDays, setPortalDays] = useState(15)
   const [portalLinkAccess, setPortalLinkAccess] = useState(true)
   const [preferenceBusy, setPreferenceBusy] = useState(false)
+  const { settings } = usePlatformSettings()
+  const fieldPolicies = settings.client_fields
 
   useEffect(() => {
     Promise.all([
@@ -217,13 +221,13 @@ export default function ClientDetailsPage() {
     }
   }
 
-  async function handleDetailedViewChange(event) {
-    const enabled = event.target.checked
+  async function handlePortalModeChange(event) {
+    const portalMode = event.target.value || null
     setPreferenceBusy(true)
     try {
-      const updated = await updateClient(id, { portal_detailed_view: enabled })
+      const updated = await updateClient(id, { portal_mode_override: portalMode })
       setClients(current => current.map(item => item.id === id ? { ...item, ...updated } : item))
-      toast.success(enabled ? 'Visualizacao detalhada ativada.' : 'Portal simplificado ativado.')
+      toast.success(portalMode ? 'Override do portal atualizado.' : 'O cliente agora usa a configuracao da plataforma.')
     } catch (error) {
       toast.error(error.message || 'Nao foi possivel atualizar o portal.')
     } finally {
@@ -276,14 +280,14 @@ export default function ClientDetailsPage() {
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 {client.email && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><Mail size={13} />{client.email}</span>}
-                {client.whatsapp && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><MessageCircle size={13} />{client.whatsapp}</span>}
-                <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">
+                {isFieldVisible(fieldPolicies.whatsapp) && client.whatsapp && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><MessageCircle size={13} />{client.whatsapp}</span>}
+                {isFieldVisible(fieldPolicies.document) ? <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">
                   <UserRound size={13} />
                   {client.document_number
                     ? `${String(client.document_type || 'documento').toUpperCase()}: ${formatClientDocument(client.document_number, client.document_type)}`
                     : 'Documento: —'}
-                </span>
-                {client.segment && <span className="rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">{client.segment}</span>}
+                </span> : null}
+                {isFieldVisible(fieldPolicies.segment) && client.segment && <span className="rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">{client.segment}</span>}
               </div>
             </div>
           </div>
@@ -325,18 +329,21 @@ export default function ClientDetailsPage() {
             <div className="mt-1 text-xs opacity-70">Criado ou substituido em {formatDate(portalLink.createdAt)} · valido ate {formatDate(portalLink.expiresAt)}.</div>
           </div>
         ) : null}
-        <label className="mt-4 flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/60">
+        <label className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/60">
           <span>
-            <span className="block text-sm font-bold text-neutral-900 dark:text-white">Visualizacao detalhada do portal</span>
-            <span className="mt-1 block text-xs leading-5 text-neutral-500 dark:text-neutral-300">Quando desligada, o cliente revisa uma fila sequencial sem escolher outra postagem.</span>
+            <span className="block text-sm font-bold text-neutral-900 dark:text-white">Experiencia do portal</span>
+            <span className="mt-1 block text-xs leading-5 text-neutral-500 dark:text-neutral-300">Use o padrao global ou escolha um comportamento explicito para este cliente.</span>
           </span>
-          <input
-            type="checkbox"
-            checked={client.portal_detailed_view === true || client.portalDetailedView === true}
-            onChange={handleDetailedViewChange}
+          <select
+            value={client.portal_mode_override || client.portalModeOverride || ((client.portal_detailed_view === true || client.portalDetailedView === true) ? 'detailed' : '')}
+            onChange={handlePortalModeChange}
             disabled={inactive || preferenceBusy}
-            className="mt-1 h-5 w-5 accent-mag-600"
-          />
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            <option value="">Usar configuracao da plataforma</option>
+            <option value="simplified">Portal simplificado</option>
+            <option value="detailed">Portal detalhado</option>
+          </select>
         </label>
       </div>
 

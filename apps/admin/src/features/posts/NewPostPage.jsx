@@ -15,6 +15,11 @@ import ChannelIcon from '../../components/posts/ChannelIcon'
 import { prepareUploadFiles } from '../../utils/uploadValidation'
 import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import toast from 'react-hot-toast'
+import { usePlatformSettings } from '../../hooks/usePlatformSettings'
+import { isFieldRequired, isFieldVisible, putVisibleField, requiredFieldIsMissing } from '../../utils/fieldPolicies'
+import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
+import { emptySoundtrackDraft, validateSoundtrackDraft } from '../../utils/soundtrack'
+import { getMediaKind } from '../../components/media/MediaPreview'
 
 function Section({ number, title, description, children }) {
   return (
@@ -48,6 +53,9 @@ export default function NewPostPage() {
   const [loading, setLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
   const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft' })
+  const [soundtrack, setSoundtrack] = useState(() => emptySoundtrackDraft())
+  const { settings } = usePlatformSettings()
+  const postFields = settings.post_fields
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {})
@@ -126,6 +134,25 @@ export default function NewPostPage() {
       toast.error('Adicione ao menos um arquivo.')
       return
     }
+    for (const [policy, value] of [
+      [postFields.description, form.caption],
+      [postFields.scheduled_date, form.scheduledDate],
+      [postFields.funnel_tag, funnelTag],
+    ]) {
+      if (requiredFieldIsMissing(policy, value)) {
+        toast.error('Preencha todos os campos obrigatorios da postagem.')
+        return
+      }
+    }
+    if (settings.features.soundtrack) {
+      const soundtrackError = validateSoundtrackDraft(soundtrack, files
+        .map((item, index) => ({ key: item.id || item.localId || `file-${index}`, isVideo: getMediaKind(item) === 'video' }))
+        .filter(item => item.isVideo))
+      if (soundtrackError) {
+        toast.error(soundtrackError)
+        return
+      }
+    }
 
     setLoading(true)
     setUploadProgress(null)
@@ -135,19 +162,21 @@ export default function NewPostPage() {
         if (selFormats[channel]?.length) formats[channel] = selFormats[channel]
       })
 
-      await createPost({
+      const payload = {
         title: form.title,
         status,
         channels,
         formats,
-        caption: form.caption,
-        scheduledDate: form.scheduledDate || null,
-        funnelTag: funnelTag || null,
         emailLink: isEmail ? normalizedEmailLink : null,
         clientId: form.clientId,
         createdById: user?.id,
-      }, files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
+      }
+      putVisibleField(payload, 'caption', form.caption, postFields.description)
+      putVisibleField(payload, 'scheduledDate', form.scheduledDate || null, postFields.scheduled_date)
+      putVisibleField(payload, 'funnelTag', funnelTag || null, postFields.funnel_tag)
+      await createPost(payload, files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
         onUploadProgress: setUploadProgress,
+        soundtrack: settings.features.soundtrack ? soundtrack : emptySoundtrackDraft(),
       })
 
       toast.success(status === 'ready' ? 'Postagem salva como pronta para envio.' : 'Rascunho salvo.')
@@ -171,6 +200,7 @@ export default function NewPostPage() {
     setSelFormats({})
     setFunnelTag('')
     setEmailLink('')
+    setSoundtrack(emptySoundtrackDraft())
     setUploadProgress(null)
   }
 
@@ -190,7 +220,7 @@ export default function NewPostPage() {
               <option key={client.id} value={client.id}>{client.name}</option>
             ))}
           </Select>
-          <Input label="Data de publicacao" type="date" value={form.scheduledDate} onChange={event => set('scheduledDate', event.target.value)} />
+          {isFieldVisible(postFields.scheduled_date) ? <Input label={`Data de publicacao${isFieldRequired(postFields.scheduled_date) ? ' *' : ''}`} type="date" value={form.scheduledDate} onChange={event => set('scheduledDate', event.target.value)} /> : null}
         </div>
       </Section>
 
@@ -198,7 +228,7 @@ export default function NewPostPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input label="Título *" value={form.title} onChange={event => set('title', event.target.value)} placeholder="Ex: Post Instagram Março #12" />
-            <div>
+            {isFieldVisible(postFields.funnel_tag) ? <div>
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Tag de Funil
               </label>
@@ -217,9 +247,9 @@ export default function NewPostPage() {
                   </button>
                 ))}
               </div>
-            </div>
+            </div> : null}
           </div>
-          <Textarea label="Legenda / Texto" value={form.caption} onChange={event => set('caption', event.target.value)} placeholder="Cole aqui o texto da publicação..." />
+          {isFieldVisible(postFields.description) ? <Textarea label={`Legenda / Texto${isFieldRequired(postFields.description) ? ' *' : ''}`} value={form.caption} onChange={event => set('caption', event.target.value)} placeholder="Cole aqui o texto da publicação..." /> : null}
         </div>
       </Section>
 
@@ -333,6 +363,10 @@ export default function NewPostPage() {
             </div>
           ) : null}
       </Section>
+
+      {settings.features.soundtrack ? (
+        <SoundtrackEditor value={soundtrack} onChange={setSoundtrack} attachments={files} />
+      ) : null}
 
       <div className="sticky bottom-0 z-10 -mx-4 border-t border-neutral-200 bg-neutral-100/95 px-4 py-3 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 md:-mx-6 md:px-6">
         <div className="flex flex-wrap justify-end gap-3">

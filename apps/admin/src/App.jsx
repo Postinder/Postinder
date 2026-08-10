@@ -18,6 +18,7 @@ import EmailPage from './features/settings/EmailPage'
 import IntegrationsPage from './features/settings/IntegrationsPage'
 import ResetDataPage from './features/settings/ResetDataPage'
 import BrandingPage from './features/settings/BrandingPage'
+import PlatformSettingsPage from './features/settings/PlatformSettingsPage'
 import ClientPortalPage from './features/portal/ClientPortalPage'
 import { BrandingProvider } from './components/branding/BrandingProvider'
 import { ROLE_PERMISSIONS } from './utils/constants'
@@ -82,6 +83,7 @@ export default function App() {
         <Route path="email" element={<RequirePermission permission="email"><EmailPage /></RequirePermission>} />
         <Route path="integrations" element={<RequirePermission permission="integrations"><IntegrationsPage /></RequirePermission>} />
         <Route path="branding" element={<RequirePermission permission="branding"><BrandingPage /></RequirePermission>} />
+        <Route path="platform-settings" element={<RequirePermission permission="platform-settings"><PlatformSettingsPage /></RequirePermission>} />
         <Route
           path="reset"
           element={demoResetVisible

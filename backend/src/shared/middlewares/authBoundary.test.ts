@@ -48,10 +48,11 @@ function bearer(token: string) {
 }
 
 before(async () => {
-  const [{ PortalRepository }, { ClientRepository }, { ActivityRepository }, poolModule] = await Promise.all([
+  const [{ PortalRepository }, { ClientRepository }, { ActivityRepository }, { PlatformSettingsRepository }, poolModule] = await Promise.all([
     import('../../modules/portal/infrastructure/repositories/PortalRepository'),
     import('../../modules/clients/infrastructure/repositories/ClientRepository'),
     import('../../modules/activities/infrastructure/repositories/ActivityRepository'),
+    import('../../modules/platformSettings/infrastructure/repositories/PlatformSettingsRepository'),
     import('../database/pool'),
   ])
 
@@ -108,6 +109,14 @@ before(async () => {
   ;(ActivityRepository.prototype as any).createForPost = async () => {
     calls.activity += 1
   }
+  ;(PlatformSettingsRepository.prototype as any).find = async () => ({
+    retention: { executed_attachment_hours: 24 },
+    features: { soundtrack: false },
+    client_fields: { whatsapp: 'optional', segment: 'optional', deadline_days: 'optional', document: 'hidden' },
+    post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
+    portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+    updated_at: null,
+  })
 
   const [{ JwtProvider }, { createApp }] = await Promise.all([
     import('../../modules/auth/infrastructure/JwtProvider'),

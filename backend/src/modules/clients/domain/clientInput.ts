@@ -94,3 +94,7 @@ export function normalizeDeadlineDays(value: unknown) {
 
   return deadlineDays
 }
+
+export function requiredClientFieldMissing(value: unknown) {
+  return value === undefined || value === null || (typeof value === 'string' && value.trim().length === 0)
+}

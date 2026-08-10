@@ -3,6 +3,7 @@ import { env } from './config/environment'
 import { getMigrationStatus } from './shared/database/migrationStatus'
 import { pool } from './shared/database/pool'
 import { logger } from './shared/utils/Logger'
+import { StorageRetentionScheduler } from './modules/posts/application/services/StorageRetentionScheduler'
 
 async function start() {
   const migrationStatus = await getMigrationStatus()
@@ -13,10 +14,19 @@ async function start() {
   }
 
   const app = createApp()
-  app.listen(env.PORT, () => {
+  const server = app.listen(env.PORT, () => {
     logger.info(`Server running on http://localhost:${env.PORT}`)
     logger.info(`Environment: ${env.NODE_ENV}`)
   })
+  const retentionScheduler = new StorageRetentionScheduler()
+  retentionScheduler.start()
+
+  const shutdown = () => {
+    retentionScheduler.stop()
+    server.close(() => void pool.end())
+  }
+  process.once('SIGTERM', shutdown)
+  process.once('SIGINT', shutdown)
 }
 
 start().catch(async error => {

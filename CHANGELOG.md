@@ -2,6 +2,16 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
+## Nao publicado — Configuracoes gerais da plataforma
+
+- Nova area administrativa separada para retencao, recursos, campos seguros e defaults do portal.
+- Migration `019_platform_settings.sql`, singleton global, schema fechado, atualizacao parcial atomica e capacidades `platform-settings:read/update`.
+- Retencao default de 24h com scheduler interno no startup/a cada hora, lote de 50, locks, retry e representacao de arquivo purgado sem apagar historico ou metricas.
+- Fundo sonoro como feature flag: desligado nao aparece nem bloqueia; ligado reutiliza criacao, edicao e aprovacao existentes; historico permanece legivel.
+- Politicas Oculto/Opcional/Obrigatorio para WhatsApp, segmento, prazo e documento de Cliente e descricao, data e tag de funil de postagem.
+- Portal com defaults globais e override anulavel por Cliente, compativel com `portal_detailed_view` da migration 018.
+- Nenhum commit, deploy ou acesso a producao integra este pacote local.
+
 ## Nao publicado - portal guiado e preparacao para testes com Clientes
 
 - O portal simplificado passou a ser o default, com fila ordenada no backend por data prevista, criacao e ID, itens sem data por ultimo, primeira pendencia em foco e estado final **Tudo em dia**. A preferencia `portal_detailed_view` restaura seletor e visao geral por Cliente nos dois tipos de acesso.

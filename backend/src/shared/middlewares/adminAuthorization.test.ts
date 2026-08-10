@@ -124,6 +124,10 @@ test('capability model is immutable, authoritative and deny-by-default', async t
     assert.equal(hasAdminCapability(identity('manager'), 'ai-insights:generate'), false)
     assert.equal(hasAdminCapability(identity('editor'), 'ai-insights:generate'), false)
     assert.equal(hasAdminCapability(identity('viewer'), 'ai-insights:generate'), false)
+    assert.equal(hasAdminCapability(identity('admin'), 'platform-settings:update'), true)
+    assert.equal(hasAdminCapability(identity('manager'), 'platform-settings:update'), false)
+    assert.equal(hasAdminCapability(identity('editor'), 'platform-settings:update'), false)
+    assert.equal(hasAdminCapability(identity('viewer'), 'platform-settings:update'), false)
   })
 
   await t.test('missing, invalid, client and private identities receive no capability', () => {
@@ -209,6 +213,7 @@ test('every mounted administrative route has exactly one explicit capability pol
     ['integrations', 'src/modules/integrations/presentation/routes/integrations.routes.ts'],
     ['maintenance', 'src/modules/maintenance/presentation/routes/maintenance.routes.ts'],
     ['branding', 'src/modules/branding/presentation/routes/branding.routes.ts', 'createAdminBrandingRoutes'],
+    ['platform-settings', 'src/modules/platformSettings/presentation/routes/platformSettings.routes.ts'],
   ] as const
 
   const mounted = new Set<string>()
@@ -280,6 +285,7 @@ before(async () => {
     { MaintenanceController },
     { AIInsightsController },
     { BrandingController },
+    { PlatformSettingsController },
     poolModule,
   ] = await Promise.all([
     import('../../modules/clients/presentation/controllers/ClientsController'),
@@ -293,6 +299,7 @@ before(async () => {
     import('../../modules/maintenance/presentation/controllers/MaintenanceController'),
     import('../../modules/integrations/presentation/controllers/AIInsightsController'),
     import('../../modules/branding/presentation/controllers/BrandingController'),
+    import('../../modules/platformSettings/presentation/controllers/PlatformSettingsController'),
     import('../database/pool'),
   ])
 
@@ -343,6 +350,7 @@ before(async () => {
   patch(MaintenanceController.prototype, ['resetDemoData'])
   patch(AIInsightsController.prototype, ['generate'])
   patch(BrandingController.prototype, ['uploadLogo', 'removeLogo'])
+  patch(PlatformSettingsController.prototype, ['get', 'update'])
 
   const [
     { createApp },
@@ -467,6 +475,29 @@ test('manager and editor follow the authoritative profile matrix', async t => {
       const response = await request(pathValue, token, {
         method,
         body: JSON.stringify({ role: 'admin' }),
+      })
+      assert.equal(response.status, expectedStatus)
+      assert.equal(handlerCalls, beforeCalls + (expectedStatus === 200 ? 1 : 0))
+    })
+  }
+})
+
+test('platform settings mutation is restricted to an authenticated admin', async t => {
+  const cases = [
+    ['admin', adminToken, 200],
+    ['manager', managerToken, 403],
+    ['editor', editorToken, 403],
+    ['viewer', viewerToken, 403],
+    ['client', clientToken, 403],
+    ['unauthenticated', undefined, 401],
+  ] as const
+
+  for (const [name, token, expectedStatus] of cases) {
+    await t.test(name, async () => {
+      const beforeCalls = handlerCalls
+      const response = await request('/api/v1/platform-settings', token, {
+        method: 'PATCH',
+        body: JSON.stringify({ retention: { executed_attachment_hours: 24 } }),
       })
       assert.equal(response.status, expectedStatus)
       assert.equal(handlerCalls, beforeCalls + (expectedStatus === 200 ? 1 : 0))

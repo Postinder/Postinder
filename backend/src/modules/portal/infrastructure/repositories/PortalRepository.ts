@@ -2,6 +2,8 @@ import crypto from 'crypto'
 import { pool, query } from '../../../../shared/database/pool'
 import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
 import { decryptPortalToken, encryptPortalToken } from '../portalTokenCipher'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
+import { resolvePortalSettings } from '../../../platformSettings/domain/PlatformSettings'
 
 function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex')
@@ -65,6 +67,13 @@ const clientReviewablePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent',
 
 export class PortalRepository {
   private readonly soundtrackRepository = new SoundtrackRepository()
+  constructor(private readonly settingsService = new PlatformSettingsService()) {}
+
+  private portalMode(row: any) {
+    return row.portal_mode_override
+      || (row.portal_detailed_view === true ? 'detailed' : null)
+  }
+
   async getClient(clientId: string, companyId?: string) {
     const params: any[] = [clientId]
     const conditions = ['id = $1', 'is_active = true']
@@ -74,7 +83,8 @@ export class PortalRepository {
     }
 
     const result = await query(
-      `SELECT id, name, email, whatsapp, segment, color, deadline_days, portal_detailed_view
+      `SELECT id, name, email, whatsapp, segment, color, deadline_days,
+         portal_detailed_view, portal_mode_override
        FROM clients
        WHERE ${conditions.join(' AND ')}`,
       params,
@@ -82,6 +92,8 @@ export class PortalRepository {
 
     const row = result.rows[0]
     if (!row) return null
+    const settings = await this.settingsService.get()
+    const portalModeOverride = this.portalMode(row)
     return {
       id: row.id,
       name: row.name,
@@ -90,7 +102,9 @@ export class PortalRepository {
       segment: row.segment,
       color: row.color,
       deadlineDays: row.deadline_days,
-      portalDetailedView: row.portal_detailed_view === true,
+      portalDetailedView: portalModeOverride === 'detailed',
+      portalModeOverride,
+      portalSettings: resolvePortalSettings(settings.portal, portalModeOverride),
     }
   }
 
@@ -238,6 +252,7 @@ export class PortalRepository {
          c.color,
          c.deadline_days,
          c.portal_detailed_view
+         ,c.portal_mode_override
        FROM client_portal_tokens t
        JOIN clients c ON c.id = t.client_id
        WHERE t.token_hash = $1
@@ -257,6 +272,8 @@ export class PortalRepository {
 
     await this.markClientAccess(row.client_id, row.company_id).catch(() => {})
 
+    const settings = await this.settingsService.get()
+    const portalModeOverride = this.portalMode(row)
     return {
       tokenId: row.token_id,
       clientId: row.client_id,
@@ -270,12 +287,15 @@ export class PortalRepository {
         segment: row.segment,
         color: row.color,
         deadlineDays: row.deadline_days,
-        portalDetailedView: row.portal_detailed_view === true,
+        portalDetailedView: portalModeOverride === 'detailed',
+        portalModeOverride,
+        portalSettings: resolvePortalSettings(settings.portal, portalModeOverride),
       },
     }
   }
 
   async listPosts(clientId: string, companyId?: string) {
+    const settings = await this.settingsService.get()
     const params: any[] = [clientId]
     const conditions = ['p.client_id = $1', 'p.deleted_at IS NULL', clientVisiblePostStatusSql]
     if (companyId) {
@@ -291,8 +311,8 @@ export class PortalRepository {
              json_build_object(
                'id', f.id,
                'name', COALESCE(f.original_name, f.url),
-               'storage_url', f.url,
-                'url', f.url,
+               'storage_url', CASE WHEN f.storage_deleted_at IS NULL THEN f.url ELSE NULL END,
+                'url', CASE WHEN f.storage_deleted_at IS NULL THEN f.url ELSE NULL END,
                 'file_type', f.file_type,
                 'mime_type', f.mime_type,
                 'size_bytes', f.size_bytes,
@@ -301,7 +321,8 @@ export class PortalRepository {
                'rejection_reason', f.rejection_reason,
                'rejection_tags', f.rejection_tags,
                'created_at', f.created_at,
-               'updated_at', f.updated_at
+               'updated_at', f.updated_at,
+               'storage_deleted_at', f.storage_deleted_at
              ) ORDER BY COALESCE(f.sort_order, 999999), f.created_at, f.id
            ) FILTER (WHERE f.id IS NOT NULL),
            '[]'
@@ -315,7 +336,9 @@ export class PortalRepository {
     )
 
     const posts = result.rows.map(normalizePost)
-    const soundtracks = await this.soundtrackRepository.findByPostIds(posts.map(post => post.id))
+    const soundtracks = settings.features.soundtrack
+      ? await this.soundtrackRepository.findByPostIds(posts.map(post => post.id))
+      : new Map<string, any>()
     posts.forEach(post => {
       ;(post as any).soundtrack = soundtracks.get(post.id) || null
       ;(post as any).soundtrackMode = (post as any).soundtrack?.mode || 'none'
@@ -334,7 +357,10 @@ export class PortalRepository {
     const post = await query(`SELECT id FROM posts p WHERE ${conditions.join(' AND ')} AND ${clientReviewablePostStatusSql}`, params)
     if (!post.rows[0]) return false
 
-    const soundtrack = await this.soundtrackRepository.findByPostId(postId)
+    const settings = await this.settingsService.get()
+    const soundtrack = settings.features.soundtrack
+      ? await this.soundtrackRepository.findByPostId(postId)
+      : null
     if (soundtrack) {
       await this.soundtrackRepository.decide(postId, 'approved', null, scope, 'client_portal')
     }
@@ -348,13 +374,18 @@ export class PortalRepository {
         [postId, scope.clientId],
       )
     } else {
-      await this.soundtrackRepository.recalculatePostStatus(postId, { includeSoundtrack: false })
+      await this.soundtrackRepository.recalculatePostStatus(postId, {
+        includeSoundtrack: settings.features.soundtrack,
+      })
     }
     return true
   }
 
   private async recalculatePostStatus(postId: string) {
-    await this.soundtrackRepository.recalculatePostStatus(postId, { includeSoundtrack: false })
+    const settings = await this.settingsService.get()
+    await this.soundtrackRepository.recalculatePostStatus(postId, {
+      includeSoundtrack: settings.features.soundtrack,
+    })
   }
 
   async approveFile(fileId: string, scope: { clientId: string; companyId?: string }) {

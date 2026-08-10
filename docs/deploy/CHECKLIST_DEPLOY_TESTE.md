@@ -94,4 +94,4 @@ ausencia de override remoto.
 
 ## Observacao
 
-O scheduler de Retencao, retries/outbox, bucket privado, signed URLs, upload direto/retomavel e transcodificacao ainda nao existem. Nao considere esses comportamentos validados ate a conclusao dos itens correspondentes no [ROADMAP](../../ROADMAP.md).
+O scheduler interno de Retencao e o retry por nova varredura existem no pacote local de configuracoes gerais, mas ainda exigem migration `019` e smoke test com dados descartaveis antes de publicacao. Fila distribuida/outbox, bucket privado, signed URLs, upload direto/retomavel e transcodificacao continuam inexistentes.

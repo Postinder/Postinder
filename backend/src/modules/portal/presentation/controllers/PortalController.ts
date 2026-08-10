@@ -4,6 +4,7 @@ import { ActivityRepository } from '../../../activities/infrastructure/repositor
 import { PortalRepository } from '../../infrastructure/repositories/PortalRepository'
 import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
 import { sanitizeForLogging } from '../../../../shared/utils/logSanitizer'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
 
 interface AuthRequest extends Request {
   user?: any
@@ -15,6 +16,7 @@ export class PortalController {
     private portalRepository = new PortalRepository(),
     private activityRepository = new ActivityRepository(),
     private soundtrackRepository = new SoundtrackRepository(),
+    private settingsService = new PlatformSettingsService(),
   ) {}
 
   private buildPortalUrl(token: string) {
@@ -109,6 +111,8 @@ export class PortalController {
 
     res.json({
       client: session.client,
+      portalSettings: session.client.portalSettings,
+      features: (await this.settingsService.get()).features,
       expiresAt: session.expiresAt,
       posts,
       feedbacks,
@@ -148,6 +152,8 @@ export class PortalController {
 
     res.json({
       client,
+      portalSettings: client.portalSettings,
+      features: (await this.settingsService.get()).features,
       expiresAt: null,
       posts,
       feedbacks,
@@ -463,6 +469,9 @@ export class PortalController {
     decision: 'approved' | 'adjustment_requested',
     actorRole: string,
   ) {
+    if (!(await this.settingsService.get()).features.soundtrack) {
+      return res.status(404).json({ error: 'Fundo sonoro indisponivel' })
+    }
     const comment = decision === 'adjustment_requested' ? String(req.body?.comment || '').trim() : null
     if (decision === 'adjustment_requested' && !comment) {
       return res.status(400).json({ error: 'comment is required' })

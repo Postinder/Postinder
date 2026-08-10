@@ -1,5 +1,16 @@
 # Decisoes de Produto do Postinder
 
+## Configuracoes operacionais globais
+
+- Ha uma unica configuracao por instalacao. Nao existem agencia, organizacao, tenant, selecao no login ou white label adicional. Branding permanece separado.
+- Defaults preservam a experiencia simplificada: retencao 24h; fundo sonoro desligado; documento de Cliente oculto; demais campos seguros opcionais; portal sem lista/informacoes complementares e com fluxo sequencial.
+- Campos configuraveis de Cliente: WhatsApp, segmento, prazo de aceite e CPF/CNPJ. Nome, e-mail, senha e identidade tecnica permanecem fixos; cor do avatar nao foi generalizada.
+- Campos configuraveis de postagem: legenda/descricao, data prevista e tag de funil. Cliente, titulo e canal continuam obrigatorios; formatos dependem do canal; preview HTTP(S) de E-mail Marketing e anexos seguem regras condicionais existentes.
+- Ocultar preserva valores historicos e impede envio/validacao desnecessarios. Obrigatorio exige o valor efetivo no backend, sem converter dados antigos.
+- A retencao e definida na transicao para `executed`. Mudancas do prazo valem para novas execucoes e nao antecipam retroativamente a remocao de objetos antigos.
+- `NULL` no override do Cliente herda o portal global; modos simplificado/detalhado permanecem estaveis quando o global muda.
+- A migration 018 nao registrava se `false` era escolha ou default. Sem reescrever Clientes, `true` legado continua detalhado e `false` legado herda ate um override explicito ser salvo.
+
 ## Rodada de testes com Clientes
 
 - O portal simplificado e o default. A ordem autoritativa e data prevista crescente, criacao crescente e ID crescente, com itens sem data por ultimo. O Cliente nao escolhe outra postagem nesse modo; apos aprovar ou solicitar ajuste, recebe o proximo item.

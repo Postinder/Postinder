@@ -58,6 +58,9 @@ export const ADMIN_ROUTE_POLICIES = Object.freeze<readonly AdminRoutePolicy[]>([
 
   { method: 'POST', path: '/api/v1/integrations/ai-insights', capability: 'ai-insights:generate' },
 
+  { method: 'GET', path: '/api/v1/platform-settings', capability: 'platform-settings:read' },
+  { method: 'PATCH', path: '/api/v1/platform-settings', capability: 'platform-settings:update' },
+
   { method: 'POST', path: '/api/v1/branding/logo', capability: 'branding:update' },
   { method: 'DELETE', path: '/api/v1/branding/logo', capability: 'branding:update' },
 

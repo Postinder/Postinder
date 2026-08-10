@@ -19,10 +19,13 @@ test('client portal strengthens secondary text hierarchy in dark mode', () => {
 })
 
 test('portal defaults to a guided queue and restores peripheral navigation only in detailed mode', () => {
-  assert.match(portalPageSource, /detailedView \? \(/)
+  assert.match(portalPageSource, /const showPostList = portalSettings\.show_post_list === true/)
+  assert.match(portalPageSource, /const sequentialApproval = portalSettings\.sequential_approval !== false/)
+  assert.match(portalPageSource, /showPostList=\{showPostList\}/)
+  assert.match(portalPageSource, /sequentialApproval=\{sequentialApproval\}/)
   assert.match(portalPageSource, /: projects\[0\]/)
   assert.match(portalPageSource, /Tudo em dia/)
-  assert.doesNotMatch(portalPageSource, /SoundtrackReviewCard/)
+  assert.match(portalPageSource, /soundtrackEnabled && selectedProject\.soundtrack/)
 })
 
 test('guided queue preserves backend order and advances after approval or adjustment', () => {

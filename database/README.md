@@ -1,5 +1,13 @@
 # Banco de dados
 
+## Migration 019 — configuracoes globais
+
+`019_platform_settings.sql` e aditiva e ainda nao publicada. Ela cria `platform_settings` com chave singleton, retencao de 24 horas, feature flag de fundo sonoro, JSONB controlado para politicas de campos e booleans do portal. Tambem adiciona `clients.portal_mode_override` anulavel com `simplified|detailed`; `NULL` significa herdar.
+
+A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017`, `018` e `019`, nessa ordem, antes de iniciar este backend.
+
+Nesta rodada, a execucao em PostgreSQL local efemero nao foi possivel: Docker estava inativo e o PostgreSQL instalado nao continha os arquivos do servidor. Nenhum banco remoto foi usado. Antes de publicar, execute `npm run db:migrate` duas vezes em banco local descartavel e confirme o no-op da segunda rodada.
+
 ## Fonte de verdade
 
 As migrations versionadas em `database/migrations` sao a unica fonte de verdade para a estrutura do banco. Elas sao aplicadas em ordem por `backend/scripts/migrate.ts` e registradas em `schema_migrations`.
@@ -20,7 +28,7 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `016`
 estao registradas. As migrations `012` a `015` foram aplicadas em 30/07/2026,
 e `016_client_documents.sql` foi aplicada em 31/07/2026. O banco publicado
-esta em `016`. Em relacao ao codigo local atual, `017` e `018` permanecem pendentes para uma futura publicacao.
+esta em `016`. Em relacao ao codigo local atual, `017`, `018` e `019` permanecem pendentes para uma futura publicacao.
 
 O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
 e posteriormente aplicou `012` a `015` em producao. Na publicacao da hotfix,

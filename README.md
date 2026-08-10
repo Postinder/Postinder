@@ -1,10 +1,18 @@
 # Postinder
 
+## Configuracoes da plataforma
+
+O pacote local atual adiciona uma configuracao operacional global da instalacao em `/admin/platform-settings`, sem multi-tenancy. Ela controla retencao de arquivos apos `executed`, fundo sonoro, politicas de campos seguros de Clientes/postagens e defaults do portal. Identidade visual continua separada em `/admin/branding`.
+
+Somente admin altera a configuracao. O backend valida um schema fechado, usa defaults de dominio quando ainda nao existe registro e persiste atualizacoes parciais de forma transacional no singleton criado por `019_platform_settings.sql`.
+
+A retencao usa 24 horas por default e grava o prazo no momento da execucao. Um scheduler interno varre no startup e a cada hora. Apenas objetos fisicos de postagens executadas com `executed_at` e prazo confiavel sao removidos; registros, metricas e historico permanecem.
+
 Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal oferece swipe equivalente para imagens e videos, botoes acessiveis, player nativo de video e legenda expansivel com hifenizacao em portugues.
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. Branding e a rodada de simplificacao do portal permanecem locais e nao publicados: `017_platform_branding.sql` e `018_client_portal_preferences_and_recoverable_links.sql` devem ser aplicadas pelo migrador oficial antes de uma futura publicacao. A validacao local atual possui 170 testes de backend, 52 testes frontend unitarios, 22 testes React reais e os dois builds aprovados.
+A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. Os pacotes locais nao publicados exigem `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql` e `019_platform_settings.sql`, nessa ordem, antes de uma futura publicacao. Os totais de validacao deste pacote sao registrados em `PROJECT_STATE.md` apos a rodada final.
 
 ## Interface atual
 
@@ -137,7 +145,7 @@ npm run db:migrate
 npm run db:seed-demo
 npm run db:bootstrap-admin
 
-# Retencao manual de arquivos
+# Retencao manual de arquivos (o scheduler interno tambem executa automaticamente)
 npm run storage:cleanup-retention
 ```
 

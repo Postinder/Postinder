@@ -2,11 +2,12 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { ClientsController } from '../controllers/ClientsController'
 import { ClientRepository } from '../../infrastructure/repositories/ClientRepository'
 import { PortalController } from '../../../portal/presentation/controllers/PortalController'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
 
 export function createClientsRoutes(): Router {
   const router = Router()
   const clientRepository = new ClientRepository()
-  const controller = new ClientsController(clientRepository)
+  const controller = new ClientsController(clientRepository, undefined, new PlatformSettingsService())
   const portalController = new PortalController()
 
   router.post('/', (req: Request, res: Response) =>

@@ -36,9 +36,11 @@ test('channel choices use controlled vector icons, remove 3A3R and preserve safe
   assert.match(managePostsSource, /<ChannelIcon channel=\{channel\}/)
 })
 
-test('soundtrack controls are hidden from creation and editing while attachment arrows remain', () => {
-  assert.doesNotMatch(newPostSource, /SoundtrackEditor/)
-  assert.doesNotMatch(managePostsSource, /SoundtrackEditor/)
+test('soundtrack controls follow the feature flag while attachment arrows remain', () => {
+  assert.match(newPostSource, /settings\.features\.soundtrack \? \(/)
+  assert.match(newPostSource, /<SoundtrackEditor/)
+  assert.match(managePostsSource, /settings\.features\.soundtrack \? \(/)
+  assert.match(managePostsSource, /<SoundtrackEditor/)
   assert.match(managePostsSource, /SortableAttachments/)
   assert.match(managePostsSource, /onMove=/)
   assert.doesNotMatch(feedPreviewSource, /SoundtrackEditor/)

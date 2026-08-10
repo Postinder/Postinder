@@ -7,6 +7,7 @@ import { PostRepository } from '../../infrastructure/repositories/PostRepository
 import { upload } from '../../../../shared/upload/multer'
 import { soundtrackUpload } from '../../../../shared/upload/multer'
 import { SoundtracksController } from '../../../soundtracks/presentation/controllers/SoundtracksController'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
 
 function wrap(fn: (req: any, res: Response) => Promise<any>) {
   return (req: Request, res: Response, next: NextFunction) => fn(req as any, res).catch(next)
@@ -15,13 +16,17 @@ function wrap(fn: (req: any, res: Response) => Promise<any>) {
 export function createPostsRoutes(): Router {
   const router = Router()
   const postRepo = new PostRepository()
+  const settingsService = new PlatformSettingsService()
   const controller = new PostsController(
     new CreatePostService(postRepo),
     new ListPostsService(postRepo),
     new GetPostService(postRepo),
     postRepo,
+    undefined,
+    undefined,
+    settingsService,
   )
-  const soundtracksController = new SoundtracksController()
+  const soundtracksController = new SoundtracksController(undefined, undefined, settingsService)
 
   router.get('/', wrap(controller.list.bind(controller)))
   router.post('/', wrap(controller.create.bind(controller)))

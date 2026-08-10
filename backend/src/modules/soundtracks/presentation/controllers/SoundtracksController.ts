@@ -4,6 +4,8 @@ import { normalizeSoundtrackInput, soundtrackInputSchema } from '../../applicati
 import { SoundtrackRepository } from '../../infrastructure/repositories/SoundtrackRepository'
 import { assertSoundtrackAudioFile } from '../../../../shared/upload/multer'
 import { removeStoredFile, storeUploadedFile } from '../../../../shared/upload/storage'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
+import { AppException } from '../../../../shared/exceptions/AppException'
 
 interface AuthRequest extends Request {
   user?: any
@@ -14,7 +16,14 @@ export class SoundtracksController {
   constructor(
     private readonly repository = new SoundtrackRepository(),
     private readonly activityRepository = new ActivityRepository(),
+    private readonly settingsService = new PlatformSettingsService(),
   ) {}
+
+  private async assertEnabled() {
+    if (!(await this.settingsService.get()).features.soundtrack) {
+      throw new AppException('Fundo sonoro esta desabilitado nas configuracoes da plataforma', 409, 'SOUNDTRACK_DISABLED')
+    }
+  }
 
   async get(req: AuthRequest, res: Response) {
     const soundtrack = await this.repository.findByPostId(req.params.id, req.tenantId)
@@ -22,6 +31,7 @@ export class SoundtracksController {
   }
 
   async update(req: AuthRequest, res: Response) {
+    await this.assertEnabled()
     const input = normalizeSoundtrackInput(soundtrackInputSchema.parse(req.body))
     const soundtrack = await this.repository.save(req.params.id, input, {
       id: req.user?.userId,
@@ -45,6 +55,7 @@ export class SoundtracksController {
   }
 
   async upload(req: AuthRequest, res: Response) {
+    await this.assertEnabled()
     const file = req.file as Express.Multer.File
     if (!file) return res.status(400).json({ error: 'Envie um arquivo de audio', code: 'SOUNDTRACK_FILE_REQUIRED' })
     await assertSoundtrackAudioFile(file)
