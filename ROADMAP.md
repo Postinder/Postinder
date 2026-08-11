@@ -12,6 +12,8 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 | Auditoria operacional do Render | concluida |
 | Auditoria operacional da Vercel | pendente |
 | Ajustes pontuais de layout definidos na rodada atual | concluidos e validados localmente |
+| Aprovacao configuravel `content|item`, UX do portal e rewind por postagem | concluidos, auditados e nao publicados |
+| Selecao contextual em lote | concluida, auditada e nao publicada |
 | Preparacao final de deploy | pendente |
 | Deploy | pendente e nao autorizado |
 | Validacao pos-deploy | pendente |
@@ -19,6 +21,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 ## P0 - Ajustes pontuais de interface
 
 - [x] Concluir a rodada definida de Previa do Feed com videos, paineis recolhiveis, swipe em videos, reorganizacao do portal, identidade da 20Cinco e contraste nos temas.
+- [x] Concluir aprovacao configuravel, navegacao livre por midias, conclusao explicita no modo `item`, UI simplificada e selecao contextual em lote.
 - Alinhar visualmente as acoes dos perfis `admin`, `manager`, `editor` e `viewer`.
 - Remover referencias visuais legadas a `gestor` e `equipe`.
 - Preservar C-01, C-02, H-02, H-03, H-04, contratos da API, acessibilidade, portal do Cliente e temas claro/escuro.
@@ -31,7 +34,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 - Configurar a demo publicada com `DEPLOYMENT_MODE=demo`, `ENABLE_DEMO_RESET=true` e `VITE_DEPLOYMENT_MODE=demo`.
 - Decidir se a IA sera habilitada; se for, configurar a credencial somente no backend.
 - Criar novo backup logico e executar novo preflight imediatamente antes do deploy.
-- Reconfirmar o impacto da migration `012` e configurar `npm run db:migrate` como release step bloqueante anterior ao Start Command.
+- [x] Revisar o diff final e criar o commit local autorizado. Antes do deploy, reconfirmar o preflight das migrations `017` a `020` e manter `npm run db:migrate` como release step bloqueante anterior ao Start Command.
 - Publicar primeiro o backend, confirmar migrations e startup, depois publicar o frontend.
 - Confirmar commits e bundles ativos e executar smoke tests, conferencia de logs sanitizados e teste controlado do reset demo.
 - Validar no ambiente publicado metadados de Storage, copia fisica e limpeza manual de Retencao somente com dados descartaveis.
@@ -68,8 +71,9 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 
 - Validar metricas em reenvios, Retencao, fusos horarios e multiplas rodadas de correcao.
 - Avaliar estrutura persistida para decisao inicial, versao e notificacoes.
+- Avaliar outbox ou transacao compartilhada para `activity_events`, hoje best-effort depois do commit transacional da decisao oficial no banco. A ressalva e baixa e nao afeta estado, revisao, feedback ou metricas.
 - Definir tratamento de Clientes desativados e exclusao definitiva em relatorios e exportacoes.
-- Definir o tratamento de postagens excluidas por `deleted_at`: separar metricas operacionais de registros ativos das metricas historicas, inclusive para postagem `approved` excluida, preservando primeira decisao e feedbacks em relatorios, insights, exportacoes e indicadores de aprovacao.
+- Definir o tratamento de postagens excluidas por `deleted_at`: separar metricas operacionais do estado canonico vigente das metricas e revisoes historicas, inclusive para postagem `approved` excluida, preservando feedbacks em relatorios, insights, exportacoes e indicadores de aprovacao.
 - Estudar prazo configuravel para manifestacao do Cliente, com lembretes antes do vencimento, tratamento da ausencia de resposta e eventual decisao explicita da agencia de publicar apos o prazo. Essa decisao nao equivalera a aprovacao do Cliente e devera registrar ator, prazo, data, justificativa e origem, refletir em notificacoes, metricas e historico e usar operacao especifica, sem reutilizar o endpoint generico de status.
 
 ## P2 - Itens sob revisao e qualidade
@@ -81,6 +85,9 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 - Configurar uma cadeia de lint coerente com JS/JSX/TS/TSX. O script atual existe, mas ESLint e sua configuracao ainda nao estao disponiveis; lint nao participa de CI nem das configuracoes versionadas/documentadas de Vercel e Render.
 - Cobrir upload e reproducao de video nos navegadores suportados, incluindo MP4 compativel, codec nao reproduzivel, arquivo acima de 200 MB, progresso, nova tentativa e controles de video sem acionamento do swipe.
 - Corrigir textos remanescentes com acentuacao/mojibake e avaliar code splitting do bundle Vite.
+- Avaliar tags de reprovacao configuraveis e eventual editor sem antecipar nova arquitetura.
+- Reavaliar a permanencia do soundtrack, hoje opcional e secundario, sem considerar sua remocao uma decisao ja tomada.
+- Considerar Super Like/"Adorei" e metricas de entusiasmo somente como hipotese futura de produto.
 
 ## P3 - Integracoes
 

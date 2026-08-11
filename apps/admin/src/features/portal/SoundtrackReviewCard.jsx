@@ -142,7 +142,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
 
       {status === 'pending' ? (
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={() => setAdjustOpen(true)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-bold text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 dark:border-red-900"><XCircle size={16} /> Solicitar ajuste</button>
+          <button type="button" onClick={() => setAdjustOpen(true)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-bold text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 dark:border-red-900"><XCircle size={16} /> Reprovar</button>
           <button type="button" onClick={onApprove} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"><CheckCircle size={16} /> Aprovar fundo sonoro</button>
         </div>
       ) : null}
@@ -154,12 +154,12 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
 
       {adjustOpen ? (
         <PortalDialog labelledBy="soundtrack-adjust-title" describedBy="soundtrack-adjust-description" onClose={() => setAdjustOpen(false)} initialFocusRef={commentRef}>
-          <h3 id="soundtrack-adjust-title" className="text-lg font-black">Solicitar ajuste no fundo sonoro</h3>
+          <h3 id="soundtrack-adjust-title" className="text-lg font-black">Reprovar fundo sonoro</h3>
           <p id="soundtrack-adjust-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Explique obrigatoriamente o que precisa ser alterado.</p>
           <textarea ref={commentRef} value={comment} onChange={event => setComment(event.target.value)} className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-neutral-700 dark:bg-neutral-950" aria-label="Comentario do ajuste do fundo sonoro" />
           <div className="mt-4 flex gap-3">
             <button type="button" onClick={() => setAdjustOpen(false)} className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold dark:border-neutral-700">Cancelar</button>
-            <button type="button" onClick={submitAdjustment} disabled={busy || !comment.trim()} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Enviar ajuste</button>
+            <button type="button" onClick={submitAdjustment} disabled={busy || !comment.trim()} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Reprovar</button>
           </div>
         </PortalDialog>
       ) : null}

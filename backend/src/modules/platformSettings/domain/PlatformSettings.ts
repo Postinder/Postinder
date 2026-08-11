@@ -20,6 +20,7 @@ export const portalSettingsSchema = z.object({
   show_post_list: z.boolean(),
   show_supplementary_info: z.boolean(),
   sequential_approval: z.boolean(),
+  approval_mode: z.enum(['content', 'item']),
 }).strict()
 
 export const platformSettingsSchema = z.object({
@@ -61,12 +62,13 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = Object.freeze({
   post_fields: Object.freeze({
     description: 'optional',
     scheduled_date: 'optional',
-    funnel_tag: 'optional',
+    funnel_tag: 'hidden',
   }),
   portal: Object.freeze({
     show_post_list: false,
     show_supplementary_info: false,
     sequential_approval: true,
+    approval_mode: 'content',
   }),
 })
 
@@ -77,10 +79,10 @@ export function resolvePortalSettings(
   override: PortalModeOverride,
 ) {
   if (override === 'detailed') {
-    return { show_post_list: true, show_supplementary_info: true, sequential_approval: false }
+    return { ...globalSettings, show_post_list: true, show_supplementary_info: true, sequential_approval: false }
   }
   if (override === 'simplified') {
-    return { show_post_list: false, show_supplementary_info: false, sequential_approval: true }
+    return { ...globalSettings, show_post_list: false, show_supplementary_info: false, sequential_approval: true }
   }
   return { ...globalSettings }
 }

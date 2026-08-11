@@ -21,6 +21,7 @@ function mapRow(row: any): PlatformSettingsRecord {
         show_post_list: row.portal_show_post_list === true,
         show_supplementary_info: row.portal_show_supplementary_info === true,
         sequential_approval: row.portal_sequential_approval === true,
+        approval_mode: row.portal_approval_mode === 'item' ? 'item' : 'content',
       },
     }),
     updated_at: row.updated_at || null,
@@ -50,8 +51,8 @@ export class PlatformSettingsRepository {
         `INSERT INTO platform_settings (
            singleton_key, executed_attachment_retention_hours, soundtrack_enabled,
            client_field_policies, post_field_policies, portal_show_post_list,
-           portal_show_supplementary_info, portal_sequential_approval, updated_at
-         ) VALUES (TRUE, $1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, NOW())
+           portal_show_supplementary_info, portal_sequential_approval, portal_approval_mode, updated_at
+         ) VALUES (TRUE, $1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, NOW())
          ON CONFLICT (singleton_key) DO UPDATE SET
            executed_attachment_retention_hours = EXCLUDED.executed_attachment_retention_hours,
            soundtrack_enabled = EXCLUDED.soundtrack_enabled,
@@ -60,6 +61,7 @@ export class PlatformSettingsRepository {
            portal_show_post_list = EXCLUDED.portal_show_post_list,
            portal_show_supplementary_info = EXCLUDED.portal_show_supplementary_info,
            portal_sequential_approval = EXCLUDED.portal_sequential_approval,
+           portal_approval_mode = EXCLUDED.portal_approval_mode,
            updated_at = NOW()
          RETURNING *`,
         [
@@ -70,6 +72,7 @@ export class PlatformSettingsRepository {
           settings.portal.show_post_list,
           settings.portal.show_supplementary_info,
           settings.portal.sequential_approval,
+          settings.portal.approval_mode,
         ],
       )
       await client.query('COMMIT')

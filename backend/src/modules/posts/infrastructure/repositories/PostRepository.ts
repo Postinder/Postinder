@@ -485,6 +485,8 @@ export class PostRepository implements IPostRepository {
 
     if (!result.rows[0]) return null
 
+    await query(`DELETE FROM portal_item_review_drafts WHERE post_id = $1 AND file_id = $2`, [postId, fileId])
+
     const previousReference = previous.rows[0]
     if (
       previousReference
@@ -508,22 +510,28 @@ export class PostRepository implements IPostRepository {
 
   async submitForApproval(id: string, companyId?: string, includeSoundtrack = true): Promise<boolean> {
     const { params, conditions } = this.buildPostScope(id, companyId)
-    const result = await query(
-      `UPDATE posts
-       SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
-           submitted_at = NOW(),
-           updated_at = NOW()
-       WHERE ${conditions.join(' AND ')}
-         AND status IN ('draft', 'ready', 'rejected')
-         AND (
-           EXISTS (SELECT 1 FROM files f WHERE f.post_id = posts.id)
-           OR (channels = ARRAY['E-mail Marketing']::text[] AND email_link IS NOT NULL)
-         )
-       RETURNING id`,
-      params,
-    )
-    if (result.rows[0]) {
-      await query(
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `UPDATE posts
+         SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
+             submitted_at = NOW(),
+             updated_at = NOW()
+         WHERE ${conditions.join(' AND ')}
+           AND status IN ('draft', 'ready', 'rejected')
+           AND (
+             EXISTS (SELECT 1 FROM files f WHERE f.post_id = posts.id)
+             OR (channels = ARRAY['E-mail Marketing']::text[] AND email_link IS NOT NULL)
+           )
+         RETURNING id`,
+        params,
+      )
+      if (!result.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      await client.query(
         `UPDATE files
          SET status = 'pending',
              rejection_reason = NULL,
@@ -533,15 +541,31 @@ export class PostRepository implements IPostRepository {
            AND status = 'rejected'`,
         [id],
       )
-      if (includeSoundtrack) await query(
+      await client.query(
+        `DELETE FROM portal_item_review_drafts d
+         USING files f
+         WHERE d.file_id = f.id AND d.post_id = $1 AND f.post_id = $1 AND f.status = 'pending'`,
+        [id],
+      )
+      await client.query(
+        `UPDATE portal_post_reviews SET rewind_used = FALSE, updated_at = NOW() WHERE post_id = $1`,
+        [id],
+      )
+      if (includeSoundtrack) await client.query(
         `UPDATE post_soundtracks
          SET approval_status = 'pending', approved_at = NULL,
              adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
          WHERE post_id = $1 AND deleted_at IS NULL AND approval_status = 'adjustment_requested'`,
         [id],
       )
+      await client.query('COMMIT')
+      return true
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
     }
-    return Boolean(result.rows[0])
   }
 
   async reorderFiles(postId: string, files: Array<{ id: string; sort_order: number }>, companyId?: string) {
@@ -670,38 +694,63 @@ export class PostRepository implements IPostRepository {
       conditions.push(`company_id = $${params.length}`)
     }
 
-    const result = await query(
-      `UPDATE posts
-       SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
-           submitted_at = NOW(),
-           updated_at = NOW()
-       WHERE ${conditions.join(' AND ')}
-       RETURNING id, client_id, title, channels, scheduled_date`,
-      params,
-    )
-    const sentIds = result.rows.map(row => row.id)
-    if (sentIds.length) {
-      await query(
-        `UPDATE files
-         SET status = 'pending',
-             rejection_reason = NULL,
-             rejection_tags = NULL,
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `UPDATE posts
+         SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
+             submitted_at = NOW(),
              updated_at = NOW()
-         WHERE post_id = ANY($1::uuid[])
-           AND status = 'rejected'`,
-        [sentIds],
+         WHERE ${conditions.join(' AND ')}
+         RETURNING id, client_id, title, channels, scheduled_date`,
+        params,
       )
-      if (includeSoundtrack) await query(
-        `UPDATE post_soundtracks
-         SET approval_status = 'pending', approved_at = NULL,
-             adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
-         WHERE post_id = ANY($1::uuid[])
-           AND deleted_at IS NULL
-           AND approval_status = 'adjustment_requested'`,
-        [sentIds],
-      )
+      const sentIds = result.rows.map(row => row.id)
+      if (sentIds.length) {
+        await client.query(
+          `UPDATE files
+           SET status = 'pending',
+               rejection_reason = NULL,
+               rejection_tags = NULL,
+               updated_at = NOW()
+           WHERE post_id = ANY($1::uuid[])
+             AND status = 'rejected'`,
+          [sentIds],
+        )
+        await client.query(
+          `DELETE FROM portal_item_review_drafts d
+           USING files f
+           WHERE d.file_id = f.id
+             AND d.post_id = f.post_id
+             AND f.post_id = ANY($1::uuid[])
+             AND f.status = 'pending'`,
+          [sentIds],
+        )
+        await client.query(
+          `UPDATE portal_post_reviews
+           SET rewind_used = FALSE, updated_at = NOW()
+           WHERE post_id = ANY($1::uuid[])`,
+          [sentIds],
+        )
+        if (includeSoundtrack) await client.query(
+          `UPDATE post_soundtracks
+           SET approval_status = 'pending', approved_at = NULL,
+               adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+           WHERE post_id = ANY($1::uuid[])
+             AND deleted_at IS NULL
+             AND approval_status = 'adjustment_requested'`,
+          [sentIds],
+        )
+      }
+      await client.query('COMMIT')
+      return result.rows
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
     }
-    return result.rows
   }
 
   async duplicate(id: string, companyId?: string, includeSoundtrack = true) {
@@ -921,25 +970,53 @@ export class PostRepository implements IPostRepository {
       conditions.push(`company_id = $${params.length}`)
     }
 
-    const result = await query(
-      `UPDATE posts SET ${updates.join(', ')}
-       WHERE ${conditions.join(' AND ')}
-       RETURNING id`,
-      params,
-    )
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `UPDATE posts SET ${updates.join(', ')}
+         WHERE ${conditions.join(' AND ')}
+         RETURNING id`,
+        params,
+      )
 
-    if (!result.rows[0]) return false
+      if (!result.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
 
-    await query(`UPDATE files SET status = 'pending' WHERE post_id = $1 AND status = 'rejected'`, [id])
-    if (includeSoundtrack) await query(
-      `UPDATE post_soundtracks
-       SET approval_status = 'pending', approved_at = NULL,
-           adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
-       WHERE post_id = $1 AND deleted_at IS NULL AND approval_status = 'adjustment_requested'`,
-      [id],
-    )
-
-    return true
+      const resetFiles = await client.query(
+        `UPDATE files SET status = 'pending', updated_at = NOW()
+         WHERE post_id = $1 AND status = 'rejected'
+         RETURNING id`,
+        [id],
+      )
+      if (resetFiles.rows.length) {
+        await client.query(
+          `DELETE FROM portal_item_review_drafts
+           WHERE post_id = $1 AND file_id = ANY($2::uuid[])`,
+          [id, resetFiles.rows.map(file => file.id)],
+        )
+      }
+      await client.query(
+        `UPDATE portal_post_reviews SET rewind_used = FALSE, updated_at = NOW() WHERE post_id = $1`,
+        [id],
+      )
+      if (includeSoundtrack) await client.query(
+        `UPDATE post_soundtracks
+         SET approval_status = 'pending', approved_at = NULL,
+             adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+         WHERE post_id = $1 AND deleted_at IS NULL AND approval_status = 'adjustment_requested'`,
+        [id],
+      )
+      await client.query('COMMIT')
+      return true
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async markExecuted(id: string, retentionHours = 24, companyId?: string) {

@@ -24,8 +24,8 @@ const settings = {
   retention: { executed_attachment_hours: 24 },
   features: { soundtrack: false },
   client_fields: { whatsapp: 'optional', segment: 'optional', deadline_days: 'optional', document: 'hidden' },
-  post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
-  portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+  post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'hidden' },
+  portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true, approval_mode: 'content' },
   updated_at: null,
 }
 
@@ -48,12 +48,12 @@ describe('platform settings real component flow', () => {
   it('renders independent loading and load-error states', () => {
     usePlatformSettings.mockReturnValue({ settings, isLoading: true, isError: false })
     const view = renderPage()
-    expect(screen.getByText('Carregando configuracoes...')).toBeTruthy()
+    expect(screen.getByText('Carregando configurações...')).toBeTruthy()
     view.unmount()
 
     usePlatformSettings.mockReturnValue({ settings, isLoading: false, isError: true })
     renderPage()
-    expect(screen.getByRole('alert').textContent).toContain('Nao foi possivel carregar')
+    expect(screen.getByRole('alert').textContent).toContain('Não foi possível carregar')
   })
 
   it('edits retention, feature, field and portal controls and saves one coherent payload', async () => {
@@ -61,16 +61,17 @@ describe('platform settings real component flow', () => {
     updatePlatformSettings.mockReturnValue(new Promise(resolve => { finishSave = resolve }))
     renderPage()
 
-    fireEvent.change(screen.getByLabelText('Retencao de arquivos apos execucao (horas)'), { target: { value: '48' } })
+    fireEvent.change(screen.getByLabelText('Retenção de arquivos após execução (horas)'), { target: { value: '48' } })
     fireEvent.click(screen.getByLabelText(/Habilitar fundo sonoro/))
 
     const clientSection = screen.getByRole('heading', { name: 'Cadastro de clientes' }).closest('div.rounded-lg')
     fireEvent.click(within(clientSection).getAllByRole('button', { name: 'Obrigatorio' })[0])
-    const postSection = screen.getByRole('heading', { name: 'Criacao de postagens' }).closest('div.rounded-lg')
+    const postSection = screen.getByRole('heading', { name: 'Criação de postagens' }).closest('div.rounded-lg')
     fireEvent.click(within(postSection).getAllByRole('button', { name: 'Oculto' })[0])
     fireEvent.click(screen.getByLabelText(/Mostrar lista de postagens/))
+    fireEvent.click(screen.getByRole('button', { name: /Aprovar item por item/ }))
 
-    const save = screen.getByRole('button', { name: 'Salvar configuracoes' })
+    const save = screen.getByRole('button', { name: 'Salvar configurações' })
     fireEvent.click(save)
     expect(save.disabled).toBe(true)
     expect(updatePlatformSettings).toHaveBeenCalledWith({
@@ -78,7 +79,7 @@ describe('platform settings real component flow', () => {
       features: { soundtrack: true },
       client_fields: { ...settings.client_fields, whatsapp: 'required' },
       post_fields: { ...settings.post_fields, description: 'hidden' },
-      portal: { ...settings.portal, show_post_list: true },
+      portal: { ...settings.portal, show_post_list: true, approval_mode: 'item' },
     })
 
     finishSave({ ...settings, retention: { executed_attachment_hours: 48 } })
@@ -89,7 +90,7 @@ describe('platform settings real component flow', () => {
   it('reports save failure and restores submission controls without claiming success', async () => {
     updatePlatformSettings.mockRejectedValue({ response: { data: { error: 'Configuracao invalida' } } })
     renderPage()
-    const save = screen.getByRole('button', { name: 'Salvar configuracoes' })
+    const save = screen.getByRole('button', { name: 'Salvar configurações' })
     fireEvent.click(save)
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Configuracao invalida'))
     expect(toast.success).not.toHaveBeenCalled()

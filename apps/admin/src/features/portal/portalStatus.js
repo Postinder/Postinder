@@ -53,10 +53,7 @@ export function isPendingEmailPreviewPost(post) {
 }
 
 export function getPendingPortalProjects(posts = []) {
-  return posts.filter(post => (
-    (post.files || []).some(isPendingFile)
-    || isPendingEmailPreviewPost(post)
-  ))
+  return posts.filter(post => ['sent', 'pending_approval'].includes(String(post?.status || '').toLowerCase()))
 }
 
 export function isCorrectionPost(post) {

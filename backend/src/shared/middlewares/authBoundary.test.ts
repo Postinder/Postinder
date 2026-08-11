@@ -95,11 +95,11 @@ before(async () => {
   ;(PortalRepository.prototype as any).markClientAccess = async () => undefined
   ;(PortalRepository.prototype as any).approvePost = async () => {
     calls.portalApprove += 1
-    return { id: 'post-id' }
+    return { kind: 'completed', status: 'approved', snapshot: [] }
   }
   ;(PortalRepository.prototype as any).rejectPost = async () => {
     calls.portalReject += 1
-    return { id: 'post-id' }
+    return { kind: 'completed', status: 'rejected', snapshot: [] }
   }
   ;(PortalRepository.prototype as any).saveFeedback = async () => ({ id: 'feedback-id' })
 
@@ -113,8 +113,8 @@ before(async () => {
     retention: { executed_attachment_hours: 24 },
     features: { soundtrack: false },
     client_fields: { whatsapp: 'optional', segment: 'optional', deadline_days: 'optional', document: 'hidden' },
-    post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
-    portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+    post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'hidden' },
+    portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true, approval_mode: 'content' },
     updated_at: null,
   })
 

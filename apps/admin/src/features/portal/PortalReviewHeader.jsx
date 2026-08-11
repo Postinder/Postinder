@@ -16,13 +16,13 @@ export default function PortalReviewHeader({ content, currentPosition, totalFile
             <RefreshCw size={12} aria-hidden="true" /> Correção
           </span>
         ) : null}
-        <h2 className="min-w-[7rem] flex-1 truncate text-base font-black leading-tight text-neutral-950 dark:text-white sm:text-lg">
+        <h2 className="min-w-[7rem] flex-1 whitespace-normal break-words text-base font-black leading-tight text-neutral-950 dark:text-white sm:text-lg">
           {content?.title || 'Conteúdo sem título'}
         </h2>
         <PortalChannelChips channels={content?.channels || []} compact />
         <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-300/80">
           <CalendarDays size={14} aria-hidden="true" />
-          {formatDate(date, 'Sem data prevista')}
+          Data de publicação: {formatDate(date, 'Sem data prevista')}
         </span>
         <button
           type="button"

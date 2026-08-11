@@ -12,12 +12,13 @@ export const DEFAULT_PLATFORM_SETTINGS = Object.freeze({
   post_fields: Object.freeze({
     description: 'optional',
     scheduled_date: 'optional',
-    funnel_tag: 'optional',
+    funnel_tag: 'hidden',
   }),
   portal: Object.freeze({
     show_post_list: false,
     show_supplementary_info: false,
     sequential_approval: true,
+    approval_mode: 'content',
   }),
   updated_at: null,
 })

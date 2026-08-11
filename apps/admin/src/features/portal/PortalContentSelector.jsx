@@ -1,14 +1,17 @@
 import { CalendarDays, CheckCircle, RefreshCw } from 'lucide-react'
 import PortalChannelChips from './PortalChannelChips'
-import { formatDate, hasSafeEmailPreview, isCorrectionPost, isPendingFile } from './portalStatus'
+import { formatDate, hasSafeEmailPreview, isCorrectionPost } from './portalStatus'
 
 function scheduledDate(content) {
   return content?.scheduledDate || content?.scheduled_date
 }
 
-function ContentOption({ content, active, interactive, onSelect }) {
-  const pendingCount = (content.files || []).filter(isPendingFile).length
-    + (!(content.files || []).length && hasSafeEmailPreview(content) ? 1 : 0)
+function ContentOption({ content, active, interactive, onSelect, approvalMode }) {
+  const pendingCount = approvalMode === 'item'
+    ? ((content.files || []).length
+      ? (content.files || []).filter(file => !['approved', 'rejected'].includes(file.review_decision)).length
+      : (hasSafeEmailPreview(content) ? 1 : 0))
+    : 1
   const correction = isCorrectionPost(content)
   const sharedClassName = `w-full min-w-[16rem] rounded-xl border p-3 text-left transition xl:min-w-0 xl:px-3 xl:py-2.5 ${
     active
@@ -19,7 +22,7 @@ function ContentOption({ content, active, interactive, onSelect }) {
   const contentBody = (
     <>
       <div className="flex items-start justify-between gap-3">
-        <h3 className="line-clamp-2 text-sm font-extrabold leading-5 text-neutral-950 dark:text-white">
+        <h3 className="whitespace-normal break-words text-sm font-extrabold leading-5 text-neutral-950 dark:text-white">
           {content.title || 'Conteúdo sem título'}
         </h3>
         {pendingCount ? (
@@ -38,7 +41,7 @@ function ContentOption({ content, active, interactive, onSelect }) {
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-neutral-500 dark:text-neutral-300/80 xl:mt-1.5">
         <span className="inline-flex items-center gap-1">
           <CalendarDays size={12} aria-hidden="true" />
-          {formatDate(scheduledDate(content), 'Sem data prevista')}
+          Data de publicação: {formatDate(scheduledDate(content), 'Sem data prevista')}
         </span>
         {correction ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-bold text-sky-700 dark:bg-sky-950 dark:text-sky-300">
@@ -65,7 +68,7 @@ function ContentOption({ content, active, interactive, onSelect }) {
   )
 }
 
-export default function PortalContentSelector({ contents, totalPendingItems, selectedContentId, onSelectContent }) {
+export default function PortalContentSelector({ contents, totalPendingItems, selectedContentId, onSelectContent, approvalMode = 'content' }) {
   const interactive = contents.length > 1
   const itemLabel = totalPendingItems === 1 ? 'item' : 'itens'
   const contentLabel = contents.length === 1 ? 'conteúdo' : 'conteúdos'
@@ -87,6 +90,7 @@ export default function PortalContentSelector({ contents, totalPendingItems, sel
               active={content.id === selectedContentId}
               interactive={interactive}
               onSelect={onSelectContent}
+              approvalMode={approvalMode}
             />
           </div>
         ))}

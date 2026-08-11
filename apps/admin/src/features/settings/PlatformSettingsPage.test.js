@@ -16,26 +16,31 @@ test('platform settings is a separate admin-only area with explicit save and no 
   assert.match(layout, /\{isAdmin && <NavItem to="\/admin\/platform-settings"/)
   assert.match(page, /onClick=\{save\}/)
   assert.match(page, /disabled=\{saving\}/)
-  assert.match(page, /Carregando configuracoes/)
+  assert.match(page, /Carregando configurações/)
   assert.match(page, /role="alert"/)
   assert.doesNotMatch(page, /Identidade visual|branding|logo/i)
 })
 
-test('the settings page exposes the five scoped groups and controlled field keys', () => {
+test('the settings page exposes scoped groups, approval mode and controlled field keys', () => {
   for (const label of [
-    'Operacao e retencao',
+    'Operação e retenção',
     'Recursos',
     'Cadastro de clientes',
-    'Criacao de postagens',
+    'Criação de postagens',
     'Portal do cliente',
+    'Forma de aprovação do cliente',
   ]) assert.match(page, new RegExp(label))
   for (const key of ['whatsapp', 'segment', 'deadline_days', 'document']) assert.match(page, new RegExp(`'${key}'`))
-  for (const key of ['description', 'scheduled_date', 'funnel_tag']) assert.match(page, new RegExp(`'${key}'`))
+  for (const key of ['description', 'scheduled_date']) assert.match(page, new RegExp(`'${key}'`))
+  assert.doesNotMatch(page, /'funnel_tag'/)
   assert.match(page, /executed_attachment_hours/)
   assert.match(page, /features\.soundtrack/)
   assert.match(page, /show_post_list/)
   assert.match(page, /show_supplementary_info/)
   assert.match(page, /sequential_approval/)
+  assert.match(page, /approval_mode/)
+  assert.match(page, /Aprovar o conteúdo inteiro/)
+  assert.match(page, /Aprovar item por item/)
 })
 
 test('configured client fields affect create, edit, import and detail views without weakening invariants', () => {

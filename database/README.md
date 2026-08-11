@@ -1,12 +1,26 @@
 # Banco de dados
 
+## Migration 020 - forma de aprovacao e revisoes do portal
+
+`020_portal_approval_mode_and_review_drafts.sql` e aditiva e ainda nao publicada. Ela:
+
+- adiciona `platform_settings.portal_approval_mode VARCHAR(20) NOT NULL DEFAULT 'content'`, limitado pela constraint a `content` ou `item`;
+- cria `portal_item_review_drafts` para escolhas provisórias por `(post_id, file_id)`, separadas do estado oficial;
+- cria `portal_post_reviews` para revisao concluida, numero de revisao e controle de rewind no nivel da postagem;
+- adiciona a FK composta `(post_id, file_id) -> files(post_id, id)`, impedindo draft associado a arquivo de outra postagem;
+- altera o default de `post_field_policies.funnel_tag` para `hidden`, sem remover a coluna ou os dados historicos de funil/formato.
+
+O autosave e a conclusao usam locks/transacoes; envio, reenvio e conclusao em modo `content` limpam drafts obsoletos aplicaveis. Posts anteriores a migration permanecem compativeis, e instalacoes sem valor explicito usam o fallback de dominio `content`.
+
+A auditoria aplicou a cadeia estrutural `001` e `003` a `020` em PostgreSQL local temporario pelo migrador oficial. A segunda execucao nao reaplicou migrations; constraints, cascatas e a FK composta foram exercitadas. Nenhum banco remoto foi acessado e o banco temporario foi removido.
+
 ## Migration 019 — configuracoes globais
 
 `019_platform_settings.sql` e aditiva e ainda nao publicada. Ela cria `platform_settings` com chave singleton, retencao de 24 horas, feature flag de fundo sonoro, JSONB controlado para politicas de campos e booleans do portal. Tambem adiciona `clients.portal_mode_override` anulavel com `simplified|detailed`; `NULL` significa herdar.
 
-A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017`, `018` e `019`, nessa ordem, antes de iniciar este backend.
+A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017`, `018`, `019` e `020`, nessa ordem, antes de iniciar o backend atual.
 
-Nesta rodada, a execucao em PostgreSQL local efemero nao foi possivel: Docker estava inativo e o PostgreSQL instalado nao continha os arquivos do servidor. Nenhum banco remoto foi usado. Antes de publicar, execute `npm run db:migrate` duas vezes em banco local descartavel e confirme o no-op da segunda rodada.
+A limitacao anterior de PostgreSQL local foi superada: a auditoria posterior aplicou toda a cadeia ate `020` em banco temporario e confirmou o no-op da segunda rodada. Antes do deploy, ainda sao obrigatorios backup e preflight novos do ambiente publicado.
 
 ## Fonte de verdade
 
@@ -28,7 +42,7 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `016`
 estao registradas. As migrations `012` a `015` foram aplicadas em 30/07/2026,
 e `016_client_documents.sql` foi aplicada em 31/07/2026. O banco publicado
-esta em `016`. Em relacao ao codigo local atual, `017`, `018` e `019` permanecem pendentes para uma futura publicacao.
+esta em `016`. Em relacao ao codigo local atual, `017`, `018`, `019` e `020` permanecem pendentes para uma futura publicacao.
 
 O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
 e posteriormente aplicou `012` a `015` em producao. Na publicacao da hotfix,

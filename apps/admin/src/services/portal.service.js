@@ -10,8 +10,23 @@ export async function approvePortalPost(token, postId) {
   return data
 }
 
-export async function rejectPortalPost(token, postId, comment) {
-  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/reject`, { comment })
+export async function rejectPortalPost(token, postId, comment, tags = []) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/reject`, { comment, tags })
+  return data
+}
+
+export async function savePortalItemDecision(token, postId, fileId, decision, comment = '', tags = []) {
+  const { data } = await apiClient.put(`/portal/${token}/posts/${postId}/items/${fileId}/decision`, { decision, comment, tags })
+  return data
+}
+
+export async function completePortalItemReview(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/complete-review`)
+  return data
+}
+
+export async function reopenPortalPost(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/reopen`)
   return data
 }
 

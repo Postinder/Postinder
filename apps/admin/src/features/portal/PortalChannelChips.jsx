@@ -1,3 +1,5 @@
+import ChannelIcon from '../../components/posts/ChannelIcon'
+
 export default function PortalChannelChips({ channels = [], compact = false }) {
   if (!channels.length) {
     return <span className="text-xs font-medium text-neutral-400 dark:text-neutral-300/80">Sem canais definidos</span>
@@ -8,8 +10,9 @@ export default function PortalChannelChips({ channels = [], compact = false }) {
       {channels.map(channel => (
         <span
           key={channel}
-          className={`rounded-full bg-neutral-100 font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-1 dark:ring-inset dark:ring-neutral-700/70 ${compact ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[var(--portal-brand-soft)] font-bold text-[var(--portal-brand-foreground)] ring-1 ring-inset ring-[var(--portal-brand-selection-ring)] dark:ring-neutral-700/70 ${compact ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'}`}
         >
+          <ChannelIcon channel={channel} size={compact ? 12 : 15} />
           {channel}
         </span>
       ))}

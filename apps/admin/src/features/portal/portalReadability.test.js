@@ -9,6 +9,7 @@ const contentSelectorSource = readFileSync(new URL('./PortalContentSelector.jsx'
 const metricsSource = readFileSync(new URL('./PortalMetricsBar.jsx', import.meta.url), 'utf8')
 const reviewHeaderSource = readFileSync(new URL('./PortalReviewHeader.jsx', import.meta.url), 'utf8')
 const reviewActionsSource = readFileSync(new URL('./PortalReviewActions.jsx', import.meta.url), 'utf8')
+const portalServicesSource = readFileSync(new URL('../../services/portal.service.js', import.meta.url), 'utf8')
 
 test('client portal strengthens secondary text hierarchy in dark mode', () => {
   assert.match(portalPageSource, /text-neutral-400 dark:text-neutral-300\/80/)
@@ -28,7 +29,7 @@ test('portal defaults to a guided queue and restores peripheral navigation only 
   assert.match(portalPageSource, /soundtrackEnabled && selectedProject\.soundtrack/)
 })
 
-test('guided queue preserves backend order and advances after approval or adjustment', () => {
+test('guided queue preserves backend order and advances only after the post is officially concluded', () => {
   const posts = [
     { id: 'first', status: 'sent', files: [{ id: 'file-1', status: 'pending' }] },
     { id: 'second', status: 'sent', files: [], emailLink: 'https://example.test/email' },
@@ -36,6 +37,8 @@ test('guided queue preserves backend order and advances after approval or adjust
   ]
   assert.deepEqual(getPendingPortalProjects(posts).map(post => post.id), ['first', 'second'])
   posts[0].files[0].status = 'approved'
+  assert.deepEqual(getPendingPortalProjects(posts).map(post => post.id), ['first', 'second'])
+  posts[0].status = 'approved'
   assert.deepEqual(getPendingPortalProjects(posts).map(post => post.id), ['second'])
   posts[1].status = 'rejected'
   assert.deepEqual(getPendingPortalProjects(posts), [])
@@ -58,4 +61,23 @@ test('client portal chips gain definition without changing semantic actions', ()
   assert.match(reviewActionsSource, /bg-green-600/)
   assert.match(reviewActionsSource, /bg-red-50/)
   assert.match(contentSelectorSource, /bg-amber-100/)
+})
+
+test('item review is editable, navigable and only concludes after every draft decision', () => {
+  assert.match(portalPageSource, /ReviewDots/)
+  assert.match(portalPageSource, /aria-current/)
+  assert.match(portalPageSource, /isItemReviewComplete\(files\)/)
+  assert.match(portalPageSource, /disabled=\{!canCompleteItemReview \|\| busy\}/)
+  assert.match(portalPageSource, /Concluir análise/)
+  assert.match(portalServicesSource, /complete-review/)
+  assert.match(reviewActionsSource, /aria-pressed=\{decision === 'approved'\}/)
+  assert.match(reviewActionsSource, /aria-pressed=\{decision === 'rejected'\}/)
+})
+
+test('portal presents complete client-facing content without technical filenames', () => {
+  assert.doesNotMatch(portalPageSource, />\{fileName\}</)
+  assert.doesNotMatch(portalPageSource, /Ver mais|line-clamp-2 md:line-clamp-1/)
+  assert.match(reviewHeaderSource, /Data de publicação:/)
+  assert.match(channelChipsSource, /import ChannelIcon/)
+  assert.match(reviewActionsSource, /'Reprovar'/)
 })

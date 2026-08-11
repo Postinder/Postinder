@@ -2,6 +2,41 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
+## Nao publicado - 11/08/2026 - aprovacao configuravel do Cliente
+
+### Added
+
+- Configuracao global **Forma de aprovacao do cliente**, com modos `content` e `item` e default/fallback `content`.
+- No modo `item`, drafts provisorios por midia, indicadores navegaveis de estado e consolidacao explicita em **Concluir analise**. Escolhas intermediarias permanecem editaveis e nao geram estado, metrica, feedback, atividade ou notificacao oficial.
+- Migration `020_portal_approval_mode_and_review_drafts.sql`, com `platform_settings.portal_approval_mode`, `portal_item_review_drafts`, `portal_post_reviews`, constraint `content|item` e FK composta entre postagem e arquivo.
+- Acao **Selecionar todos** no envio em lote, limitada a postagens elegiveis, carregadas e visiveis nos filtros atuais, com desmarcacao e estado `indeterminate`.
+
+### Changed
+
+- Navegacao por midias passou a ser livre e independente de rewind. O rewind agora reabre a postagem concluida elegivel mais recente, uma vez por ciclo, sem acoplamento a `fileId`.
+- A UI do portal passou a mostrar titulo e legenda completos, **Data de publicacao**, canais com icones compartilhados e **Reprovar**, sem filename tecnico ou **Ver mais**. Tags atuais: Design, Foto, Video, Legenda, Texto do conteudo, Titulo/chamada e Outro.
+- Funil e formato sairam do preenchimento manual, preservando schema, dados historicos e compatibilidade tecnica.
+- Contadores operacionais de aprovacao/reprovacao passaram a representar somente o estado canonico atual da postagem; drafts, cliques, arquivos e revisoes intermediarias nao multiplicam postagens. Analises historicas de Insights permanecem separadas.
+- Soundtrack foi mantido como recurso compativel, opcional e secundario. Ausencia, feature desabilitada ou modo `none` nunca bloqueiam; no modo `item`, uma decisao isolada da trilha nao conclui/reprova o post.
+
+### Fixed
+
+- Corrigido erro PostgreSQL `42P08` na conclusao em modo `content`.
+- Serializados autosave e conclusao para impedir draft atrasado depois do snapshot oficial; retries e conclusoes concorrentes permanecem idempotentes, com `already_completed` para a requisicao perdedora.
+- Removidos drafts obsoletos em troca de modo, envio e reenvio, inclusive no inicio de novos ciclos.
+- Alinhada a elegibilidade frontend/backend do envio em lote com a exigencia de conteudo revisavel.
+- Eliminado o estado oficial intermediario que soundtrack podia produzir no modo `item`.
+- Restaurado o reset de rewind em novo ciclo de E-mail Marketing sem arquivo.
+- Reforcada a integridade de drafts para impedir relacionamento com arquivo pertencente a outra postagem.
+- Ajustado o default de `funnel_tag` para oculto em novas configuracoes diretas.
+
+### Validation
+
+- Focalizados admin 26/26; focalizados backend 5/5; integracao PostgreSQL real 12/12; backend 202/202; admin 95/95; builds backend/admin e `git diff --check` aprovados.
+- Migrations `001` a `020` aplicadas em PostgreSQL temporario; a segunda execucao foi no-op. Nenhum banco remoto foi acessado e o banco temporario foi removido.
+- Auditoria independente aprovada com ressalva baixa: `activity_events` continua best-effort depois do commit transacional da decisao oficial no banco. Estado, revisao, feedback e metricas permanecem consistentes se esse evento secundario falhar.
+- Implementacao e auditoria ocorreram sem commits intermediarios; nenhum deploy foi realizado neste pacote.
+
 ## Nao publicado — Configuracoes gerais da plataforma
 
 - Nova area administrativa separada para retencao, recursos, campos seguros e defaults do portal.
@@ -10,7 +45,7 @@ Este changelog registra os principais marcos funcionais e arquiteturais do proje
 - Fundo sonoro como feature flag: desligado nao aparece nem bloqueia; ligado reutiliza criacao, edicao e aprovacao existentes; historico permanece legivel.
 - Politicas Oculto/Opcional/Obrigatorio para WhatsApp, segmento, prazo e documento de Cliente e descricao, data e tag de funil de postagem.
 - Portal com defaults globais e override anulavel por Cliente, compativel com `portal_detailed_view` da migration 018.
-- Nenhum commit, deploy ou acesso a producao integra este pacote local.
+- O pacote chegou a consolidacao final sem commit intermediario; nenhum deploy ou acesso a producao foi realizado.
 
 ## Nao publicado - portal guiado e preparacao para testes com Clientes
 

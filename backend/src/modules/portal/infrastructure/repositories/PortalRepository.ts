@@ -63,7 +63,7 @@ export function comparePortalQueueItems(left: any, right: any) {
 const pendingFileStatusSql = "LOWER(COALESCE(NULLIF(f.status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent')"
 const approvableFileStatusSql = "LOWER(COALESCE(NULLIF(f.status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent', 'rejected')"
 const clientVisiblePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval', 'rejected', 'approved', 'executed')"
-const clientReviewablePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval', 'rejected')"
+const clientReviewablePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval')"
 
 export class PortalRepository {
   private readonly soundtrackRepository = new SoundtrackRepository()
@@ -316,10 +316,14 @@ export class PortalRepository {
                 'file_type', f.file_type,
                 'mime_type', f.mime_type,
                 'size_bytes', f.size_bytes,
-                'status', f.status,
+               'status', f.status,
                'sort_order', f.sort_order,
                'rejection_reason', f.rejection_reason,
                'rejection_tags', f.rejection_tags,
+               'review_decision', d.decision,
+               'review_reason', d.rejection_reason,
+               'review_tags', d.rejection_tags,
+               'review_updated_at', d.updated_at,
                'created_at', f.created_at,
                'updated_at', f.updated_at,
                'storage_deleted_at', f.storage_deleted_at
@@ -329,6 +333,7 @@ export class PortalRepository {
          ) AS files
        FROM posts p
        LEFT JOIN files f ON f.post_id = p.id
+       LEFT JOIN portal_item_review_drafts d ON d.post_id = p.id AND d.file_id = f.id
        WHERE ${conditions.join(' AND ')}
        GROUP BY p.id
        ORDER BY p.scheduled_date ASC NULLS LAST, p.created_at ASC, p.id ASC`,
@@ -346,39 +351,117 @@ export class PortalRepository {
     return posts.sort(comparePortalQueueItems)
   }
 
-  async approvePost(postId: string, scope: { clientId: string; companyId?: string }) {
-    const params: any[] = [postId, scope.clientId]
-    const conditions = ['id = $1', 'client_id = $2', 'deleted_at IS NULL']
-    if (scope.companyId) {
-      params.push(scope.companyId)
-      conditions.push(`company_id = $${params.length}`)
-    }
+  private async saveOfficialReview(
+    client: any,
+    postId: string,
+    status: 'approved' | 'rejected',
+    resetRewind: boolean,
+  ) {
+    await client.query(
+      `INSERT INTO portal_post_reviews (
+         post_id, revision, completed_status, completed_at, rewind_used, updated_at
+       ) VALUES ($1, 1, $2, NOW(), FALSE, NOW())
+       ON CONFLICT (post_id) DO UPDATE SET
+         revision = portal_post_reviews.revision + 1,
+         completed_status = EXCLUDED.completed_status,
+         completed_at = NOW(),
+         rewind_used = CASE WHEN $3 THEN FALSE ELSE portal_post_reviews.rewind_used END,
+         updated_at = NOW()`,
+      [postId, status, resetRewind],
+    )
+  }
 
-    const post = await query(`SELECT id FROM posts p WHERE ${conditions.join(' AND ')} AND ${clientReviewablePostStatusSql}`, params)
-    if (!post.rows[0]) return false
-
+  private async completeContentReview(
+    postId: string,
+    decision: 'approved' | 'rejected',
+    comment: string | null,
+    tags: string[],
+    scope: { clientId: string; companyId?: string },
+  ) {
     const settings = await this.settingsService.get()
-    const soundtrack = settings.features.soundtrack
-      ? await this.soundtrackRepository.findByPostId(postId)
-      : null
-    if (soundtrack) {
-      await this.soundtrackRepository.decide(postId, 'approved', null, scope, 'client_portal')
-    }
-    await query(`UPDATE files SET status = 'approved', updated_at = NOW() WHERE post_id = $1`, [postId])
-    const fileCount = await query(`SELECT COUNT(*)::integer AS count FROM files WHERE post_id = $1`, [postId])
-    if (Number(fileCount.rows[0]?.count) === 0) {
-      await query(
-        `UPDATE posts
-         SET status = 'approved', approved_at = NOW(), updated_at = NOW()
-         WHERE id = $1 AND client_id = $2 AND email_link IS NOT NULL`,
-        [postId, scope.clientId],
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const params: any[] = [postId, scope.clientId]
+      const conditions = ['id = $1', 'client_id = $2', 'deleted_at IS NULL']
+      if (scope.companyId) {
+        params.push(scope.companyId)
+        conditions.push(`company_id = $${params.length}`)
+      }
+      const postResult = await client.query(
+        `SELECT id, status, email_link FROM posts
+         WHERE ${conditions.join(' AND ')}
+         FOR UPDATE`,
+        params,
       )
-    } else {
-      await this.soundtrackRepository.recalculatePostStatus(postId, {
-        includeSoundtrack: settings.features.soundtrack,
-      })
+      const post = postResult.rows[0]
+      if (!post) {
+        await client.query('ROLLBACK')
+        return { kind: 'not_found' as const }
+      }
+      if (!['sent', 'pending_approval'].includes(String(post.status).toLowerCase())) {
+        await client.query('ROLLBACK')
+        return { kind: 'already_completed' as const, status: post.status }
+      }
+      const fileState = await client.query(
+        `SELECT id, status FROM files WHERE post_id = $1 ORDER BY COALESCE(sort_order, 999999), created_at, id`,
+        [postId],
+      )
+      if (settings.portal.approval_mode === 'item' && fileState.rows.length) {
+        await client.query('ROLLBACK')
+        return { kind: 'wrong_mode' as const }
+      }
+      if (decision === 'approved' && settings.features.soundtrack) {
+        const soundtrack = await client.query(
+          `SELECT approval_status FROM post_soundtracks
+           WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
+           FOR UPDATE`,
+          [postId],
+        )
+        if (soundtrack.rows[0]?.approval_status === 'pending') {
+          await client.query('ROLLBACK')
+          return { kind: 'soundtrack_incomplete' as const }
+        }
+      }
+      const startsNewCycle = fileState.rows.some((file: any) => ['pending', 'pending_approval', 'sent'].includes(String(file.status).toLowerCase()))
+      await client.query(
+        `UPDATE files
+         SET status = $2::text,
+             rejection_reason = CASE WHEN $2::text = 'rejected' THEN $3::text ELSE NULL END,
+             rejection_tags = CASE WHEN $2::text = 'rejected' THEN $4::text[] ELSE NULL END,
+             updated_at = NOW()
+         WHERE post_id = $1`,
+        [postId, decision, comment, tags],
+      )
+      await client.query(
+        `UPDATE posts
+         SET status = $2::text,
+             approved_at = CASE WHEN $2::text = 'approved' THEN NOW() ELSE NULL END,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [postId, decision],
+      )
+      await client.query('DELETE FROM portal_item_review_drafts WHERE post_id = $1', [postId])
+      if (decision === 'rejected') {
+        await client.query(
+          `INSERT INTO feedback (client_id, post_id, text, month)
+           VALUES ($1, $2, $3, TO_CHAR(NOW(), 'YYYY-MM'))`,
+          [scope.clientId, postId, comment],
+        )
+      }
+      await this.saveOfficialReview(client, postId, decision, startsNewCycle)
+      await client.query('COMMIT')
+      return { kind: 'completed' as const, status: decision, snapshot: [] }
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
     }
-    return true
+  }
+
+  async approvePost(postId: string, scope: { clientId: string; companyId?: string }) {
+    return this.completeContentReview(postId, 'approved', null, [], scope)
   }
 
   private async recalculatePostStatus(postId: string) {
@@ -389,6 +472,8 @@ export class PortalRepository {
   }
 
   async approveFile(fileId: string, scope: { clientId: string; companyId?: string }) {
+    // Kept only for compatibility with old clients. New portal flows use saveItemDecision,
+    // which cannot mutate canonical state or create business side effects.
     const params: any[] = [fileId, scope.clientId]
     const conditions = ['f.id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL', clientReviewablePostStatusSql, approvableFileStatusSql]
     if (scope.companyId) {
@@ -508,28 +593,219 @@ export class PortalRepository {
     return { postId: result.rows[0].post_id }
   }
 
-  async rejectPost(postId: string, comment: string, scope: { clientId: string; companyId?: string }) {
-    const params: any[] = [postId, scope.clientId]
-    const conditions = ['id = $1', 'client_id = $2', 'deleted_at IS NULL']
-    if (scope.companyId) {
-      params.push(scope.companyId)
-      conditions.push(`company_id = $${params.length}`)
-    }
+  async rejectPost(postId: string, comment: string, tags: string[], scope: { clientId: string; companyId?: string }) {
+    return this.completeContentReview(postId, 'rejected', comment, tags, scope)
+  }
 
-    const post = await query(`SELECT id FROM posts p WHERE ${conditions.join(' AND ')} AND ${clientReviewablePostStatusSql}`, params)
-    if (!post.rows[0]) return false
-
-    await query(
-      `UPDATE files
-       SET status = 'rejected',
-           rejection_reason = $2,
+  async saveItemDecision(
+    postId: string,
+    fileId: string,
+    input: { decision: 'approved' | 'rejected'; comment?: string; tags?: string[] },
+    scope: { clientId: string; companyId?: string },
+  ) {
+    const settings = await this.settingsService.get()
+    if (settings.portal.approval_mode !== 'item') return { kind: 'wrong_mode' as const }
+    const comment = String(input.comment || '').trim()
+    if (input.decision === 'rejected' && !comment) return { kind: 'comment_required' as const }
+    const tags = Array.isArray(input.tags) ? input.tags : []
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const params: any[] = [postId, fileId, scope.clientId]
+      const conditions = ['p.id = $1', 'f.id = $2', 'p.client_id = $3', 'p.deleted_at IS NULL', clientReviewablePostStatusSql]
+      if (scope.companyId) {
+        params.push(scope.companyId)
+        conditions.push(`p.company_id = $${params.length}`)
+      }
+      const file = await client.query(
+        `SELECT f.id FROM files f JOIN posts p ON p.id = f.post_id
+         WHERE ${conditions.join(' AND ')}
+         FOR UPDATE OF p, f`,
+        params,
+      )
+      if (!file.rows[0]) {
+        await client.query('ROLLBACK')
+        return { kind: 'not_found' as const }
+      }
+      const saved = await client.query(
+        `INSERT INTO portal_item_review_drafts (
+           post_id, file_id, decision, rejection_reason, rejection_tags, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (post_id, file_id) DO UPDATE SET
+           decision = EXCLUDED.decision,
+           rejection_reason = EXCLUDED.rejection_reason,
+           rejection_tags = EXCLUDED.rejection_tags,
            updated_at = NOW()
-       WHERE post_id = $1
-         AND status <> 'approved'`,
-      [postId, comment],
-    )
-    await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1 AND client_id = $2`, [postId, scope.clientId])
-    return true
+         RETURNING decision, rejection_reason, rejection_tags, updated_at`,
+        [postId, fileId, input.decision, input.decision === 'rejected' ? comment : null, input.decision === 'rejected' ? tags : []],
+      )
+      await client.query('COMMIT')
+      return { kind: 'saved' as const, draft: saved.rows[0] }
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async completeItemReview(postId: string, scope: { clientId: string; companyId?: string }) {
+    const settings = await this.settingsService.get()
+    if (settings.portal.approval_mode !== 'item') return { kind: 'wrong_mode' as const }
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const params: any[] = [postId, scope.clientId]
+      const conditions = ['id = $1', 'client_id = $2', 'deleted_at IS NULL']
+      if (scope.companyId) {
+        params.push(scope.companyId)
+        conditions.push(`company_id = $${params.length}`)
+      }
+      const postResult = await client.query(
+        `SELECT id, status FROM posts WHERE ${conditions.join(' AND ')} FOR UPDATE`,
+        params,
+      )
+      const post = postResult.rows[0]
+      if (!post) {
+        await client.query('ROLLBACK')
+        return { kind: 'not_found' as const }
+      }
+      if (!['sent', 'pending_approval'].includes(String(post.status).toLowerCase())) {
+        await client.query('ROLLBACK')
+        return { kind: 'already_completed' as const, status: post.status }
+      }
+      const snapshotResult = await client.query(
+        `SELECT f.id AS file_id, f.sort_order, f.status AS canonical_status,
+                d.decision, d.rejection_reason, d.rejection_tags
+         FROM files f
+         LEFT JOIN portal_item_review_drafts d ON d.post_id = f.post_id AND d.file_id = f.id
+         WHERE f.post_id = $1
+         ORDER BY COALESCE(f.sort_order, 999999), f.created_at, f.id
+         FOR UPDATE OF f`,
+        [postId],
+      )
+      const snapshot = snapshotResult.rows
+      if (!snapshot.length || snapshot.some((item: any) => !['approved', 'rejected'].includes(item.decision))) {
+        await client.query('ROLLBACK')
+        return { kind: 'incomplete' as const }
+      }
+      const startsNewCycle = snapshot.some((item: any) => ['pending', 'pending_approval', 'sent'].includes(String(item.canonical_status).toLowerCase()))
+      const mediaStatus: 'approved' | 'rejected' = snapshot.some((item: any) => item.decision === 'rejected') ? 'rejected' : 'approved'
+      let soundtrackStatus: string | null = null
+      if (settings.features.soundtrack) {
+        const soundtrack = await client.query(
+          `SELECT approval_status FROM post_soundtracks
+           WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
+           LIMIT 1`,
+          [postId],
+        )
+        soundtrackStatus = soundtrack.rows[0]?.approval_status || null
+      }
+      if (mediaStatus === 'approved' && soundtrackStatus === 'pending') {
+        await client.query('ROLLBACK')
+        return { kind: 'soundtrack_incomplete' as const }
+      }
+      const status: 'approved' | 'rejected' = mediaStatus === 'rejected' || soundtrackStatus === 'adjustment_requested'
+        ? 'rejected'
+        : 'approved'
+      await client.query(
+        `UPDATE files f
+         SET status = d.decision,
+             rejection_reason = CASE WHEN d.decision = 'rejected' THEN d.rejection_reason ELSE NULL END,
+             rejection_tags = CASE WHEN d.decision = 'rejected' THEN d.rejection_tags ELSE NULL END,
+             updated_at = NOW()
+         FROM portal_item_review_drafts d
+         WHERE f.post_id = $1 AND d.post_id = f.post_id AND d.file_id = f.id`,
+        [postId],
+      )
+      await client.query(
+        `UPDATE posts
+         SET status = $2::text,
+             approved_at = CASE WHEN $2::text = 'approved' THEN NOW() ELSE NULL END,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [postId, status],
+      )
+      if (status === 'rejected') {
+        const summary = snapshot
+          .filter((item: any) => item.decision === 'rejected')
+          .map((item: any, index: number) => `Item ${item.sort_order || index + 1}: ${item.rejection_reason}`)
+          .join('\n')
+        await client.query(
+          `INSERT INTO feedback (client_id, post_id, text, month)
+           VALUES ($1, $2, $3, TO_CHAR(NOW(), 'YYYY-MM'))`,
+          [scope.clientId, postId, summary],
+        )
+      }
+      await this.saveOfficialReview(client, postId, status, startsNewCycle)
+      await client.query('COMMIT')
+      return {
+        kind: 'completed' as const,
+        status,
+        snapshot: snapshot.map((item: any) => ({
+          fileId: item.file_id,
+          decision: item.decision,
+          comment: item.decision === 'rejected' ? item.rejection_reason : null,
+          tags: item.decision === 'rejected' ? item.rejection_tags || [] : [],
+        })),
+      }
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async reopenPost(postId: string, scope: { clientId: string; companyId?: string }) {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const params: any[] = [postId, scope.clientId]
+      const company = scope.companyId ? 'AND p.company_id = $3' : ''
+      if (scope.companyId) params.push(scope.companyId)
+      const result = await client.query(
+        `SELECT p.id, p.status, r.completed_at, COALESCE(r.rewind_used, FALSE) AS rewind_used
+         FROM posts p
+         LEFT JOIN portal_post_reviews r ON r.post_id = p.id
+         WHERE p.id = $1 AND p.client_id = $2 ${company}
+           AND p.deleted_at IS NULL
+           AND p.status IN ('approved', 'rejected')
+           AND COALESCE(r.rewind_used, FALSE) = FALSE
+           AND COALESCE(r.completed_at, p.updated_at) = (
+             SELECT MAX(COALESCE(r2.completed_at, p2.updated_at))
+             FROM posts p2
+             LEFT JOIN portal_post_reviews r2 ON r2.post_id = p2.id
+             WHERE p2.client_id = p.client_id
+               AND p2.deleted_at IS NULL
+               AND p2.status IN ('approved', 'rejected')
+           )
+         FOR UPDATE OF p`,
+        params,
+      )
+      if (!result.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      await client.query(
+        `INSERT INTO portal_post_reviews (
+           post_id, revision, completed_status, completed_at, rewind_used, updated_at
+         ) VALUES ($1, 0, $2, COALESCE($3, NOW()), TRUE, NOW())
+         ON CONFLICT (post_id) DO UPDATE SET rewind_used = TRUE, updated_at = NOW()`,
+        [postId, result.rows[0].status, result.rows[0].completed_at],
+      )
+      await client.query(
+        `UPDATE posts SET status = 'pending_approval', approved_at = NULL, updated_at = NOW() WHERE id = $1`,
+        [postId],
+      )
+      await client.query('COMMIT')
+      return true
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async saveFeedback(input: { clientId: string; postId?: string; rating?: number; text: string; month?: string; companyId?: string }) {

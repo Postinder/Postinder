@@ -180,11 +180,11 @@ test('portal request matrix never emits or reflects the private token and preser
     },
     async approvePost() {
       state.approvalCalls += 1
-      return { id: 'post-id' }
+      return { kind: 'completed', status: 'approved', snapshot: [] }
     },
     async rejectPost(_postId: string, comment: string) {
       state.rejectionComments.push(comment)
-      return { id: 'post-id' }
+      return { kind: 'completed', status: 'rejected', snapshot: [] }
     },
     async saveFeedback() {
       return { id: 'feedback-id' }
@@ -227,8 +227,8 @@ test('portal request matrix never emits or reflects the private token and preser
           retention: { executed_attachment_hours: 24 },
           features: { soundtrack: false },
           client_fields: { whatsapp: 'optional', segment: 'optional', deadline_days: 'optional', document: 'hidden' },
-          post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'optional' },
-          portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true },
+          post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'hidden' },
+          portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true, approval_mode: 'content' },
         }
       },
     } as any,

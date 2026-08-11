@@ -51,8 +51,8 @@ export const FUNNEL_TAGS = [
 
 // ── Feedback rejection tags ──
 export const REJECTION_TAGS = [
-  'Cor', 'Luz', 'Qualidade', 'Composição',
-  'Texto errado', 'Produto errado', 'Outro',
+  'Design', 'Foto', 'Vídeo', 'Legenda',
+  'Texto do conteúdo', 'Título/chamada', 'Outro',
 ]
 
 // ── Permission screens ──

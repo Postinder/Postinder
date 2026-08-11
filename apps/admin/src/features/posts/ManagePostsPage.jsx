@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   CheckCircle,
@@ -25,7 +25,7 @@ import Input, { Select, Textarea } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import Skeleton from '../../components/ui/Skeleton'
-import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
+import { CHANNELS } from '../../utils/constants'
 import { prepareUploadFiles } from '../../utils/uploadValidation'
 import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import {
@@ -44,6 +44,13 @@ import {
   savePostSoundtrack,
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
+import {
+  getBulkSelectionState,
+  getBulkSendEligiblePosts,
+  getSelectedBulkSendPosts,
+  isBulkSendEligible,
+  toggleAllBulkSendPosts,
+} from './postBulkSelection'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
 import ChannelIcon from '../../components/posts/ChannelIcon'
 import MediaPreview, { getMediaKind, getMediaName } from '../../components/media/MediaPreview'
@@ -62,8 +69,6 @@ const STATUS_OPTIONS = [
   { value: 'pending_approval', label: 'Aguardando' },
   { value: 'rejected', label: 'Recusado' },
 ]
-
-const SENDABLE_STATUSES = ['draft', 'ready', 'rejected']
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
@@ -191,7 +196,7 @@ function CompactFeedPreview({ channels, files }) {
 }
 
 function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
-  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', funnelTag: '', emailLink: '' })
+  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', emailLink: '' })
   const [channels, setChannels] = useState({})
   const [existingFiles, setExistingFiles] = useState([])
   const [removedExistingFiles, setRemovedExistingFiles] = useState([])
@@ -219,7 +224,6 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
       title: post.title || '',
       caption: post.description || '',
       scheduledDate: toDateInput(getScheduledDate(post)),
-      funnelTag: post.funnelTag || post.funnel_tag || '',
       emailLink: post.emailLink || post.email_link || '',
     })
   }, [post])
@@ -248,7 +252,6 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
     for (const [policy, value] of [
       [settings.post_fields.description, form.caption],
       [settings.post_fields.scheduled_date, form.scheduledDate],
-      [settings.post_fields.funnel_tag, form.funnelTag],
     ]) {
       if (requiredFieldIsMissing(policy, value)) {
         toast.error('Preencha todos os campos obrigatorios da postagem.')
@@ -274,7 +277,6 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
       }
       putVisibleField(payload, 'description', form.caption, settings.post_fields.description)
       putVisibleField(payload, 'scheduledDate', form.scheduledDate || null, settings.post_fields.scheduled_date)
-      putVisibleField(payload, 'funnelTag', form.funnelTag || null, settings.post_fields.funnel_tag)
       await updatePost(post.id, payload)
       let uploadedFiles = []
       if (files.length) {
@@ -346,21 +348,6 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
           />
         ) : null}
 
-        {isFieldVisible(settings.post_fields.funnel_tag) ? <div>
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Tag de funil</label>
-          <div className="flex flex-wrap gap-2">
-            {FUNNEL_TAGS.map(tag => (
-              <button
-                key={tag.value}
-                type="button"
-                onClick={() => setForm(current => ({ ...current, funnelTag: current.funnelTag === tag.value ? '' : tag.value }))}
-                className={`rounded-lg border px-3 py-2 text-xs font-bold ${form.funnelTag === tag.value ? `${tag.color} border-current` : 'border-neutral-200 text-neutral-500 dark:border-neutral-700'}`}
-              >
-                {tag.label}
-              </button>
-            ))}
-          </div>
-        </div> : null}
 
         <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Canais</label>
@@ -548,6 +535,7 @@ export default function ManagePostsPage() {
   const [executeLoading, setExecuteLoading] = useState(false)
   const [postToDelete, setPostToDelete] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const selectAllRef = useRef(null)
 
   const clientsById = useMemo(() => new Map(clients.map(client => [client.id, client])), [clients])
 
@@ -604,11 +592,29 @@ export default function ManagePostsPage() {
   const completedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'approved').length
   const executedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'executed').length
 
-  const selectedPosts = filtered.filter(post => selected.includes(post.id))
-  const sendableSelected = selectedPosts.filter(post => SENDABLE_STATUSES.includes(computePostStatus(post)))
+  const eligibleVisiblePosts = useMemo(
+    () => getBulkSendEligiblePosts(filtered, computePostStatus),
+    [filtered],
+  )
+  const sendableSelected = useMemo(
+    () => getSelectedBulkSendPosts(filtered, selected, computePostStatus),
+    [filtered, selected],
+  )
+  const bulkSelectionState = useMemo(
+    () => getBulkSelectionState(eligibleVisiblePosts, selected),
+    [eligibleVisiblePosts, selected],
+  )
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = bulkSelectionState.indeterminate
+  }, [bulkSelectionState.indeterminate])
 
   function toggleSelected(postId) {
     setSelected(current => current.includes(postId) ? current.filter(id => id !== postId) : [...current, postId])
+  }
+
+  function toggleAllSelected() {
+    setSelected(current => toggleAllBulkSendPosts(current, eligibleVisiblePosts, !bulkSelectionState.checked))
   }
 
   async function runAction(action, successMessage) {
@@ -740,12 +746,27 @@ export default function ManagePostsPage() {
           <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-300">
             <Filter size={16} />
             {filtered.length} postagem(ns) {view === 'executed' ? 'postada(s) na rede' : view === 'completed' ? 'aprovada(s) pelo cliente' : 'em andamento'} encontrada(s)
-            {view === 'active' && selected.length ? <span className="font-bold text-mag-600 dark:text-mag-300">- {selected.length} selecionada(s)</span> : null}
+            {view === 'active' && sendableSelected.length ? <span className="font-bold text-mag-600 dark:text-mag-300">- {sendableSelected.length} selecionada(s) nesta lista</span> : null}
           </div>
           {view === 'active' ? (
-            <Button disabled={!sendableSelected.length} onClick={() => setBatchOpen(true)} icon={<Send size={16} />} className="dark:disabled:opacity-60">
-              Enviar lote para aprovacao
-            </Button>
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:justify-end">
+              <label className={`flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold ${eligibleVisiblePosts.length ? 'cursor-pointer border-neutral-200 text-neutral-700 hover:border-mag-300 dark:border-neutral-700 dark:text-neutral-200' : 'cursor-not-allowed border-neutral-100 text-neutral-400 dark:border-neutral-800 dark:text-neutral-600'}`}>
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={bulkSelectionState.checked}
+                  onChange={toggleAllSelected}
+                  disabled={!eligibleVisiblePosts.length}
+                  aria-label={bulkSelectionState.checked ? 'Desmarcar todos os elegíveis nesta lista' : 'Selecionar todos os elegíveis nesta lista'}
+                  className="h-4 w-4 accent-mag-600"
+                />
+                <span>{bulkSelectionState.checked ? 'Desmarcar todos' : 'Selecionar todos'}</span>
+                <span className="font-medium text-neutral-400">({eligibleVisiblePosts.length} elegíveis nesta lista)</span>
+              </label>
+              <Button disabled={!sendableSelected.length} onClick={() => setBatchOpen(true)} icon={<Send size={16} />} className="dark:disabled:opacity-60">
+                Enviar lote para aprovacao
+              </Button>
+            </div>
           ) : null}
         </div>
       </Card>
@@ -759,7 +780,7 @@ export default function ManagePostsPage() {
           {filtered.map(post => {
             const client = clientsById.get(getPostClientId(post)) || {}
             const status = computePostStatus(post)
-            const canSend = SENDABLE_STATUSES.includes(status)
+            const canSend = isBulkSendEligible(post, computePostStatus)
             const canExecute = status === 'approved'
             const canDelete = canDeletePost(status, user?.role)
             return (

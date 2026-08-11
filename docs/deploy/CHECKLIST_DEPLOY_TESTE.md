@@ -4,8 +4,8 @@ Consulte [../DEPLOYMENT.md](../DEPLOYMENT.md) para configuracao de Render, Verce
 
 A hotfix de Clientes foi publicada e validada em 31/07/2026. O banco publicado
 esta em `016`, e o ambiente demo esta disponivel para avaliacao da 20Cinco em
-`https://portal-20cinco.vercel.app`. A `017_platform_branding.sql` e a
-microcorrecao pos-auditoria continuam locais e devem integrar uma publicacao futura.
+`https://portal-20cinco.vercel.app`. As migrations `017` a `020` e os pacotes
+locais subsequentes continuam nao publicados e devem integrar uma publicacao futura autorizada.
 
 ## Consolidacao e verificacao
 
@@ -39,16 +39,16 @@ microcorrecao pos-auditoria continuam locais e devem integrar uma publicacao fut
 18. [x] Publicar o frontend.
 19. [x] Confirmar commits e bundles ativos.
 
-### Proxima publicacao do branding
+### Proxima publicacao do pacote local consolidado
 
 - [ ] Criar backup e executar preflight somente leitura.
 - [ ] Confirmar os tres lockfiles v3, `engine-strict=true` na raiz/backend/frontend, instalacao limpa com `npm ci`, Node 24 no Vercel e `NODE_VERSION=24.16.0` no Render; nao presumir que o painel ja esta correto.
-- [ ] Confirmar que o release step aplicara somente a `017_platform_branding.sql` sobre o banco publicado em `016`.
-- [ ] Publicar o backend somente depois da migration e validar leitura, upload, substituicao e remocao de PNG/JPEG/WebP estatico; WebP animado, APNG e CRC PNG invalido devem falhar antes do Storage.
+- [ ] Confirmar que o release step aplicara, em ordem, `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql`, `019_platform_settings.sql` e `020_portal_approval_mode_and_review_drafts.sql` sobre o banco publicado em `016`.
+- [ ] Publicar o backend somente depois das migrations. Validar branding, configuracoes globais, modos `content|item`, drafts, conclusao, rewind e E-mail Marketing sem arquivo antes de publicar o frontend.
 - [ ] Concluir health checks e smoke tests do backend antes de publicar o frontend.
 - [ ] Publicar o frontend e confirmar que login/recuperacao nao consultam branding, enquanto admin e portais exibem o logo configuravel.
-- [ ] Reexecutar 161 testes de backend, 45 testes frontend legados, 22 testes React reais, builds e `git diff --check` no artefato final.
-- [ ] Em rollback, retornar frontend e depois backend; manter a migration aditiva `017`.
+- [ ] Reexecutar pelo menos backend 202/202, admin 95/95, integracao PostgreSQL 12/12, builds e `git diff --check` no artefato final; atualizar os totais se novos testes forem adicionados.
+- [ ] Em rollback, retornar frontend e depois backend; manter as migrations aditivas `017` a `020` e decidir qualquer estrategia posterior sem editar `schema_migrations` manualmente.
 
 ## Depois do deploy
 
@@ -82,6 +82,10 @@ Validacoes da interface consolidada:
 
 - [ ] Dashboard inicia **Atividade recente** e **Postagens** recolhidas e permite expansao independente.
 - [ ] Portal mantem a aprovacao prioritaria e a **Visao geral** recolhida por padrao, sem perder aba ou filtros ao reabrir.
+- [ ] Modo `content` consolida uma decisao por postagem; modo `item` permite navegacao livre, preserva drafts e somente oficializa em **Concluir analise**.
+- [ ] Rewind reabre a postagem elegivel mais recente uma vez por ciclo, sem ser consumido por navegacao de midia.
+- [ ] **Selecionar todos** respeita filtros e envia somente postagens elegiveis e visiveis; registros ocultos ou sem conteudo revisavel ficam fora.
+- [ ] Soundtrack ausente, desabilitado ou `none` nao bloqueia; no modo `item`, sua decisao isolada nao conclui o post.
 - [ ] Identidade da 20Cinco, contraste, foco e cores semanticas permanecem corretos nos temas claro e escuro.
 - [x] Cliente pode ser criado e editado com ou sem CPF/CNPJ; documento pode ser removido e prazo diferente de 7 dias persiste.
 
@@ -94,4 +98,4 @@ ausencia de override remoto.
 
 ## Observacao
 
-O scheduler interno de Retencao e o retry por nova varredura existem no pacote local de configuracoes gerais, mas ainda exigem migration `019` e smoke test com dados descartaveis antes de publicacao. Fila distribuida/outbox, bucket privado, signed URLs, upload direto/retomavel e transcodificacao continuam inexistentes.
+O scheduler interno de Retencao e o retry por nova varredura existem no pacote local de configuracoes gerais, mas ainda exigem migration `019` e smoke test com dados descartaveis antes de publicacao. O fluxo de aprovacao exige tambem a migration `020`. Outbox para `activity_events`, fila distribuida, bucket privado, signed URLs, upload direto/retomavel e transcodificacao continuam inexistentes.

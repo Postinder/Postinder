@@ -20,28 +20,26 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
-  approvePortalFile,
   approvePortalPost,
   fetchPortal,
-  rejectPortalFile,
   rejectPortalPost,
-  resetPortalFile,
   sendPortalFeedback,
-  updatePortalFileFeedback,
   approvePortalSoundtrack,
   adjustPortalSoundtrack,
+  savePortalItemDecision,
+  completePortalItemReview,
+  reopenPortalPost,
 } from '../../services/portal.service'
 import {
-  approveAuthenticatedPortalFile,
   approveAuthenticatedPortalPost,
   fetchAuthenticatedPortal,
-  rejectAuthenticatedPortalFile,
   rejectAuthenticatedPortalPost,
-  resetAuthenticatedPortalFile,
   sendAuthenticatedPortalFeedback,
-  updateAuthenticatedPortalFileFeedback,
   approveAuthenticatedPortalSoundtrack,
   adjustAuthenticatedPortalSoundtrack,
+  saveAuthenticatedPortalItemDecision,
+  completeAuthenticatedPortalItemReview,
+  reopenAuthenticatedPortalPost,
 } from '../../services/clientPortal.service'
 import { useAuthStore } from '../../store/authStore'
 import { REJECTION_TAGS } from '../../utils/constants'
@@ -64,7 +62,6 @@ import {
   getPostStatus,
   hasSafeEmailPreview,
   isPendingEmailPreviewPost,
-  isPendingFile,
 } from './portalStatus'
 import {
   countApprovedInMonth,
@@ -78,6 +75,7 @@ import {
   getPortalSwipeIntent,
   isVideoControlsArea,
 } from './portalSwipe'
+import { getItemReviewDecision, hasPendingApplicableSoundtrack, isItemReviewComplete, selectReviewMedia } from './portalReview'
 import './portalBrand.css'
 
 const tabs = [
@@ -97,10 +95,9 @@ function getSafeEmailPreviewUrl(post) {
   return normalizeEmailPreviewUrl(post?.emailLink || post?.email_link)
 }
 
-function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, canPrevious, canNext, busy }) {
+function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, canPrevious, canNext, busy, decision, currentPosition, totalFiles }) {
   const [dragX, setDragX] = useState(0)
   const [dragging, setDragging] = useState(false)
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false)
   const cardRef = useRef(null)
   const pointerIdRef = useRef(null)
   const startXRef = useRef(0)
@@ -114,10 +111,9 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
   const isImage = fileType === 'IMAGE' || /\.(jpe?g|png|gif|webp|svg)$/i.test(fileName)
   const isVideo = getMediaKind(file) === 'video'
   const description = String(post?.description || '')
-  const canExpandDescription = description.length > 110 || description.split('\n').length > 1
+  const mediaLabel = `Mídia ${currentPosition} de ${totalFiles}`
 
   useEffect(() => {
-    setDescriptionExpanded(false)
     pointerIdRef.current = null
     dragXRef.current = 0
     gestureIntentRef.current = null
@@ -252,7 +248,7 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
       >
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-between px-6">
           <span className={`rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white transition-opacity motion-reduce:transition-none ${dragX < -35 ? 'opacity-100' : 'opacity-0'}`}>
-            AJUSTAR
+            REPROVAR
           </span>
           <span className={`rounded-full bg-green-600 px-4 py-2 text-sm font-black text-white transition-opacity motion-reduce:transition-none ${dragX > 35 ? 'opacity-100' : 'opacity-0'}`}>
             APROVAR
@@ -270,14 +266,14 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
           ) : isImage && mediaUrl ? (
             <img
               src={mediaUrl}
-              alt={fileName}
+              alt={mediaLabel}
               draggable={false}
               className="pointer-events-none h-[min(500px,56vh)] w-full object-contain md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]"
             />
           ) : mediaUrl ? (
             <div className="flex h-[min(500px,56vh)] flex-col items-center justify-center gap-4 px-6 text-center text-neutral-500 dark:text-neutral-300 md:h-[min(480px,calc(100vh-24rem))] xl:h-[min(528px,calc(100vh-16.25rem))]">
               <FileText size={52} />
-              <p className="max-w-full truncate text-sm font-semibold">{fileName}</p>
+              <p className="text-sm font-semibold">Arquivo do conteúdo</p>
               <a
                 href={mediaUrl}
                 target="_blank"
@@ -330,34 +326,19 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
             </a>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex min-w-0 items-center gap-2 md:max-w-[14rem] xl:max-w-xs">
-              <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-300/80">Arquivo</span>
-              <h3 className="truncate text-sm font-black text-neutral-950 dark:text-white">{fileName}</h3>
-            </div>
-            <PortalStatusBadge status={file.status || 'pending'} />
+            <span className="text-xs font-black text-neutral-500 dark:text-neutral-300">{mediaLabel}</span>
             <p className="w-full text-center text-[11px] font-semibold text-neutral-400 dark:text-neutral-300/80 sm:ml-auto sm:w-auto sm:text-right">
-              Arraste: esquerda para ajustar · direita para aprovar
+              Arraste: esquerda para reprovar · direita para aprovar
             </p>
           </div>
 
           <div className="mt-2 flex min-w-0 items-start gap-3 border-t border-neutral-100 pt-2 dark:border-neutral-800">
             {description ? (
-              <div className="flex min-w-0 flex-1 items-start gap-2 overflow-hidden">
+              <div className="flex min-w-0 flex-1 items-start gap-2">
                 <span className="shrink-0 pt-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-300/80">Legenda</span>
-                <p lang="pt-BR" className={`min-w-0 flex-1 break-words hyphens-auto text-xs leading-5 text-neutral-600 dark:text-neutral-300 ${descriptionExpanded ? 'whitespace-pre-wrap' : canExpandDescription ? 'line-clamp-2 md:line-clamp-1' : 'whitespace-pre-wrap'}`}>
+                <p lang="pt-BR" className="min-w-0 flex-1 whitespace-pre-wrap break-words hyphens-auto text-xs leading-5 text-neutral-600 dark:text-neutral-300">
                   {description}
                 </p>
-                {canExpandDescription ? (
-                  <button
-                    type="button"
-                    onClick={() => setDescriptionExpanded(value => !value)}
-                    onPointerDown={event => event.stopPropagation()}
-                    aria-expanded={descriptionExpanded}
-                    className="shrink-0 rounded-sm pt-0.5 text-[11px] font-bold text-[var(--portal-brand-foreground)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)]"
-                  >
-                    {descriptionExpanded ? 'Ver menos' : 'Ver mais'}
-                  </button>
-                ) : null}
               </div>
             ) : (
               <p className="min-w-0 flex-1 text-xs text-neutral-400 dark:text-neutral-300/80">Sem legenda informada.</p>
@@ -367,6 +348,7 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
               onReject={onReject}
               onApprove={onApprove}
               busy={busy}
+              decision={decision}
               compact
               className="hidden shrink-0 self-start md:flex"
             />
@@ -379,6 +361,7 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
         onReject={onReject}
         onApprove={onApprove}
         busy={busy}
+        decision={decision}
         className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(0,0,0,0.08)] backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 md:hidden"
       />
     </div>
@@ -406,14 +389,39 @@ function EmailPreviewReviewCard({ post, onApprove, onReject, busy }) {
   )
 }
 
-function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onApproveFile, onRejectFile, onApprovePost, onRejectPost, onApproveSoundtrack, onAdjustSoundtrack, onUndo, canUndoLastAction, showPostList, sequentialApproval, soundtrackEnabled, busy }) {
+function ReviewDots({ files, activeFileId, onSelect, approvalMode }) {
+  if (files.length < 2) return null
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-center gap-2" aria-label="Navegação entre mídias">
+      {files.map((file, index) => {
+        const decision = approvalMode === 'item' ? getItemReviewDecision(file) : null
+        const current = file.id === activeFileId
+        const label = decision === 'approved' ? 'aprovado' : decision === 'rejected' ? 'reprovado' : 'pendente'
+        return (
+          <button
+            key={file.id}
+            type="button"
+            onClick={() => onSelect(selectReviewMedia(files, activeFileId, file.id))}
+            aria-label={`Ir para mídia ${index + 1}: ${label}${current ? ', atual' : ''}`}
+            aria-current={current ? 'true' : undefined}
+            className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-[11px] font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] ${current ? 'scale-110 border-[var(--portal-brand-primary)] ring-2 ring-[var(--portal-brand-selection-ring)]' : 'border-neutral-300 dark:border-neutral-700'} ${decision === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200' : decision === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200' : 'bg-white text-neutral-500 dark:bg-neutral-900 dark:text-neutral-300'}`}
+          >
+            {decision === 'approved' ? '✓' : decision === 'rejected' ? '!' : index + 1}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onSaveItemDecision, onCompleteItemReview, onApprovePost, onRejectPost, onApproveSoundtrack, onAdjustSoundtrack, onUndo, canUndoLastAction, showPostList, sequentialApproval, soundtrackEnabled, approvalMode, busy }) {
   const selectedProject = !sequentialApproval
     ? projects.find(post => post.id === selectedProjectId) || projects[0]
     : projects[0]
-  const pendingFiles = selectedProject ? (selectedProject.files || []).filter(isPendingFile) : []
+  const files = selectedProject?.files || []
   const [activeFileId, setActiveFileId] = useState('')
-  const pendingFileIndex = Math.max(pendingFiles.findIndex(file => file.id === activeFileId), 0)
-  const currentFile = pendingFiles[pendingFileIndex]
+  const currentFileIndex = Math.max(files.findIndex(file => file.id === activeFileId), 0)
+  const currentFile = files[currentFileIndex]
   const emailPreviewOnly = Boolean(
     selectedProject
     && isPendingEmailPreviewPost(selectedProject),
@@ -428,21 +436,27 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
   }, [selectedProject, projects, onSelectProject])
 
   useEffect(() => {
-    if (!pendingFiles.length) {
+    if (!files.length) {
       setActiveFileId('')
       return
     }
-    if (!pendingFiles.some(file => file.id === activeFileId)) setActiveFileId(pendingFiles[0].id)
-  }, [selectedProject?.id, pendingFiles, activeFileId])
+    if (!files.some(file => file.id === activeFileId)) setActiveFileId(files[0].id)
+  }, [selectedProject?.id, files, activeFileId])
+
+  function openRejectDialog() {
+    setComment(approvalMode === 'item' ? currentFile?.review_reason || '' : '')
+    setSelectedTags(approvalMode === 'item' ? currentFile?.review_tags || [] : [])
+    setRejectOpen(true)
+  }
 
   function submitReject() {
     if (!comment.trim()) {
       toast.error('Escreva o ajuste solicitado para este item.')
       return
     }
-    const decision = currentFile
-      ? onRejectFile(selectedProject.id, currentFile.id, comment.trim(), selectedTags)
-      : onRejectPost(selectedProject.id, comment.trim())
+    const decision = currentFile && approvalMode === 'item'
+      ? onSaveItemDecision(selectedProject.id, currentFile.id, 'rejected', comment.trim(), selectedTags)
+      : onRejectPost(selectedProject.id, comment.trim(), selectedTags)
     decision.then(() => {
       setComment('')
       setSelectedTags([])
@@ -479,9 +493,11 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
     )
   }
 
-  const currentFilePosition = currentFile
-    ? (selectedProject.files || []).findIndex(file => file.id === currentFile.id)
-    : -1
+  const allItemsDecided = isItemReviewComplete(files)
+  const currentDecision = approvalMode === 'item' ? getItemReviewDecision(currentFile) : null
+  const hasRejectedItem = files.some(file => getItemReviewDecision(file) === 'rejected')
+  const hasPendingSoundtrackDecision = hasPendingApplicableSoundtrack(soundtrackEnabled, selectedProject.soundtrack)
+  const canCompleteItemReview = allItemsDecided && (hasRejectedItem || !hasPendingSoundtrackDecision)
 
   return (
     <div className="min-w-0 space-y-3 xl:flex xl:items-start xl:gap-4 xl:space-y-0">
@@ -491,30 +507,38 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
           totalPendingItems={pendingItemsCount}
           selectedContentId={selectedProject.id}
           onSelectContent={onSelectProject}
+          approvalMode={approvalMode}
         />
       ) : null}
 
       <section className="min-w-0 flex-1">
         <PortalReviewHeader
           content={selectedProject}
-          currentPosition={currentFile ? currentFilePosition + 1 : 1}
-          totalFiles={Math.max((selectedProject.files || []).length, emailPreviewOnly ? 1 : 0)}
+          currentPosition={currentFile ? currentFileIndex + 1 : 1}
+          totalFiles={Math.max(files.length, emailPreviewOnly ? 1 : 0)}
           onUndo={onUndo}
           canUndo={canUndoLastAction}
           busy={busy}
         />
+
+        <ReviewDots files={files} activeFileId={currentFile?.id} onSelect={setActiveFileId} approvalMode={approvalMode} />
 
         {currentFile ? (
           <SwipeReviewCard
             post={selectedProject}
             file={currentFile}
             busy={busy}
-            onApprove={() => onApproveFile(selectedProject.id, currentFile.id)}
-            onReject={() => setRejectOpen(true)}
-            onPrevious={() => setActiveFileId(pendingFiles[pendingFileIndex - 1]?.id || currentFile.id)}
-            onNext={() => setActiveFileId(pendingFiles[pendingFileIndex + 1]?.id || currentFile.id)}
-            canPrevious={pendingFileIndex > 0}
-            canNext={pendingFileIndex < pendingFiles.length - 1}
+            onApprove={() => approvalMode === 'item'
+              ? onSaveItemDecision(selectedProject.id, currentFile.id, 'approved')
+              : onApprovePost(selectedProject.id)}
+            onReject={openRejectDialog}
+            onPrevious={() => setActiveFileId(files[currentFileIndex - 1]?.id || currentFile.id)}
+            onNext={() => setActiveFileId(files[currentFileIndex + 1]?.id || currentFile.id)}
+            canPrevious={currentFileIndex > 0}
+            canNext={currentFileIndex < files.length - 1}
+            decision={currentDecision}
+            currentPosition={currentFileIndex + 1}
+            totalFiles={files.length}
           />
         ) : emailPreviewOnly ? (
           <EmailPreviewReviewCard
@@ -530,6 +554,20 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             <p className="mt-1 text-sm text-green-700/80 dark:text-green-300/80">Todos os arquivos deste conteúdo foram analisados.</p>
           </div>
         )}
+
+        {approvalMode === 'item' && files.length ? (
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              onClick={() => onCompleteItemReview(selectedProject.id)}
+              disabled={!canCompleteItemReview || busy}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--portal-brand-primary)] px-6 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[var(--portal-brand-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+              Concluir análise
+            </button>
+          </div>
+        ) : null}
 
         {soundtrackEnabled && selectedProject.soundtrack && selectedProject.soundtrack.mode !== 'none' ? (
           <SoundtrackReviewCard
@@ -548,8 +586,8 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             onClose={closeRejectDialog}
             initialFocusRef={rejectTextareaRef}
           >
-              <h3 id="portal-reject-title" className="text-lg font-black">Solicitar ajuste</h3>
-              <p id="portal-reject-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Selecione as tags e descreva o que precisa mudar neste item.</p>
+              <h3 id="portal-reject-title" className="text-lg font-black">Reprovar</h3>
+              <p id="portal-reject-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Selecione as tags e descreva o ajuste necessário.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {REJECTION_TAGS.map(tag => {
                   const active = selectedTags.includes(tag)
@@ -570,7 +608,7 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
                 ref={rejectTextareaRef}
                 value={comment}
                 onChange={event => setComment(event.target.value)}
-                aria-label="Descrição do ajuste solicitado"
+                aria-label="Comentário da reprovação"
                 className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-[var(--portal-brand-border)] focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:bg-neutral-950"
                 placeholder="Ex: trocar imagem, ajustar texto, revisar cor..."
               />
@@ -579,7 +617,7 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
                   Cancelar
                 </button>
                 <button type="button" onClick={submitReject} disabled={busy} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-neutral-900">
-                  Enviar ajuste
+                  Reprovar
                 </button>
               </div>
           </PortalDialog>
@@ -612,8 +650,6 @@ export default function ClientPortalPage({ mode = 'token' }) {
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [isOverviewExpanded, dispatchPortalOverview] = useReducer(togglePortalOverview, PORTAL_OVERVIEW_INITIAL_STATE)
   const [lastAction, setLastAction] = useState(null)
-  const [editingFeedback, setEditingFeedback] = useState(null)
-  const feedbackTextareaRef = useRef(null)
   const tabRefs = useRef({})
 
   const isAuthenticatedMode = mode === 'auth'
@@ -644,10 +680,12 @@ export default function ClientPortalPage({ mode = 'token' }) {
     show_post_list: legacyDetailedView,
     show_supplementary_info: legacyDetailedView,
     sequential_approval: !legacyDetailedView,
+    approval_mode: 'content',
   }
   const showPostList = portalSettings.show_post_list === true
   const showSupplementaryInfo = portalSettings.show_supplementary_info === true
   const sequentialApproval = portalSettings.sequential_approval !== false
+  const approvalMode = portalSettings.approval_mode === 'item' ? 'item' : 'content'
   const soundtrackEnabled = payload?.features?.soundtrack === true
   const lastActionKey = useMemo(
     () => `postinder.portal.lastAction.${isAuthenticatedMode ? client?.id || 'auth' : token || 'token'}`,
@@ -661,10 +699,13 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
   const pendingItemsCount = useMemo(
     () => pendingProjects.reduce((total, post) => total
-      + (post.files || []).filter(isPendingFile).length
-      + (!(post.files || []).length && hasSafeEmailPreview(post) ? 1 : 0)
-      + (soundtrackEnabled && (post.soundtrack?.approvalStatus || post.soundtrack?.approval_status) === 'pending' ? 1 : 0), 0),
-    [pendingProjects, soundtrackEnabled],
+      + (approvalMode === 'item'
+        ? ((post.files || []).length
+          ? (post.files || []).filter(file => !['approved', 'rejected'].includes(file.review_decision)).length
+          : (hasSafeEmailPreview(post) ? 1 : 0))
+        : 1)
+      + (hasPendingApplicableSoundtrack(soundtrackEnabled, post.soundtrack) ? 1 : 0), 0),
+    [approvalMode, pendingProjects, soundtrackEnabled],
   )
 
   useEffect(() => {
@@ -707,15 +748,19 @@ export default function ClientPortalPage({ mode = 'token' }) {
   )
 
   const rejectedFiles = useMemo(
-    () => files.filter(file => String(file.status || '').toLowerCase() === 'rejected'),
-    [files],
+    () => approvalMode === 'item'
+      ? files.filter(file => String(file.status || '').toLowerCase() === 'rejected')
+      : posts
+        .filter(post => getPostStatus(post) === 'rejected')
+        .map(post => ({ ...(post.files?.[0] || {}), id: `content-${post.id}`, post, status: 'rejected' })),
+    [approvalMode, files, posts],
   )
 
   const canUndoLastAction = useMemo(() => {
     if (!lastAction) return false
     const project = posts.find(post => post.id === lastAction.projectId)
     if (!project) return false
-    return !['approved', 'executed'].includes(getPostStatus(project))
+    return ['approved', 'rejected'].includes(getPostStatus(project))
   }, [lastAction, posts])
 
   const feedbackItems = useMemo(() => {
@@ -750,22 +795,19 @@ export default function ClientPortalPage({ mode = 'token' }) {
   useEffect(() => {
     if (!lastAction) return
     const project = posts.find(post => post.id === lastAction.projectId)
-    if (project && ['approved', 'executed'].includes(getPostStatus(project))) {
+    if (!project || !['approved', 'rejected'].includes(getPostStatus(project))) {
       setLastAction(null)
       localStorage.removeItem(lastActionKey)
     }
   }, [lastAction, lastActionKey, posts])
 
-  async function handleApproveFile(projectId, fileId) {
+  async function handleSaveItemDecision(projectId, fileId, decision, comment = '', tags = []) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await approveAuthenticatedPortalFile(fileId)
-      else await approvePortalFile(token, fileId)
-      const action = { projectId, fileId, type: 'approved' }
-      setLastAction(action)
-      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      if (isAuthenticatedMode) await saveAuthenticatedPortalItemDecision(projectId, fileId, decision, comment, tags)
+      else await savePortalItemDecision(token, projectId, fileId, decision, comment, tags)
       await reload()
-      toast.success('Item aprovado.')
+      toast.success(decision === 'approved' ? 'Item marcado como aprovado.' : 'Item marcado como reprovado.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
     } finally {
@@ -773,16 +815,16 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleRejectFile(projectId, fileId, comment, tags = []) {
+  async function handleCompleteItemReview(projectId) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await rejectAuthenticatedPortalFile(fileId, comment, tags)
-      else await rejectPortalFile(token, fileId, comment, tags)
-      const action = { projectId, fileId, type: 'rejected' }
+      if (isAuthenticatedMode) await completeAuthenticatedPortalItemReview(projectId)
+      else await completePortalItemReview(token, projectId)
+      const action = { projectId, type: 'completed' }
       setLastAction(action)
       localStorage.setItem(lastActionKey, JSON.stringify(action))
       await reload()
-      toast.success('Ajuste enviado.')
+      toast.success('Análise concluída.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
     } finally {
@@ -795,8 +837,11 @@ export default function ClientPortalPage({ mode = 'token' }) {
     try {
       if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId)
       else await approvePortalPost(token, projectId)
+      const action = { projectId, type: 'completed' }
+      setLastAction(action)
+      localStorage.setItem(lastActionKey, JSON.stringify(action))
       await reload()
-      toast.success('E-mail aprovado.')
+      toast.success('Conteúdo aprovado.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
     } finally {
@@ -834,13 +879,16 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleRejectPost(projectId, comment) {
+  async function handleRejectPost(projectId, comment, tags = []) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await rejectAuthenticatedPortalPost(projectId, comment)
-      else await rejectPortalPost(token, projectId, comment)
+      if (isAuthenticatedMode) await rejectAuthenticatedPortalPost(projectId, comment, tags)
+      else await rejectPortalPost(token, projectId, comment, tags)
+      const action = { projectId, type: 'completed' }
+      setLastAction(action)
+      localStorage.setItem(lastActionKey, JSON.stringify(action))
       await reload()
-      toast.success('Ajuste do e-mail enviado.')
+      toast.success('Conteúdo reprovado.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
     } finally {
@@ -852,35 +900,13 @@ export default function ClientPortalPage({ mode = 'token' }) {
     if (!lastAction || !canUndoLastAction) return
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await resetAuthenticatedPortalFile(lastAction.fileId)
-      else await resetPortalFile(token, lastAction.fileId)
+      if (isAuthenticatedMode) await reopenAuthenticatedPortalPost(lastAction.projectId)
+      else await reopenPortalPost(token, lastAction.projectId)
       setSelectedProjectId(lastAction.projectId)
       setLastAction(null)
       localStorage.removeItem(lastActionKey)
       await reload()
-      toast.success('Última ação desfeita.')
-    } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleUpdateRejectedFeedback() {
-    const comment = String(editingFeedback?.comment || '').trim()
-    if (!editingFeedback?.file?.id) return
-    if (!comment) {
-      toast.error('Escreva um comentario antes de salvar.')
-      return
-    }
-
-    setBusy(true)
-    try {
-      if (isAuthenticatedMode) await updateAuthenticatedPortalFileFeedback(editingFeedback.file.id, comment, editingFeedback.tags || [])
-      else await updatePortalFileFeedback(token, editingFeedback.file.id, comment, editingFeedback.tags || [])
-      setEditingFeedback(null)
-      await reload()
-      toast.success('Feedback atualizado.')
+      toast.success('Conteúdo reaberto para revisão.')
     } catch (error) {
       toast.error(error.response?.data?.error || error.message)
     } finally {
@@ -974,8 +1000,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
             pendingItemsCount={pendingItemsCount}
             selectedProjectId={selectedProjectId}
             onSelectProject={setSelectedProjectId}
-            onApproveFile={handleApproveFile}
-            onRejectFile={handleRejectFile}
+            onSaveItemDecision={handleSaveItemDecision}
+            onCompleteItemReview={handleCompleteItemReview}
             onApprovePost={handleApprovePost}
             onRejectPost={handleRejectPost}
             onApproveSoundtrack={handleApproveSoundtrack}
@@ -985,6 +1011,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
             showPostList={showPostList}
             sequentialApproval={sequentialApproval}
             soundtrackEnabled={soundtrackEnabled}
+            approvalMode={approvalMode}
             busy={busy}
           />
         </section>
@@ -1061,7 +1088,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                   {items.map(post => (
                     <div key={post.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-neutral-50 px-3 py-3 dark:bg-neutral-800">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-bold">{post.title || 'Conteúdo sem título'}</div>
+                        <div className="whitespace-normal break-words text-sm font-bold">{post.title || 'Conteúdo sem título'}</div>
                         <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-300/80">{(post.channels || []).join(', ') || 'Sem canais definidos'}</div>
                       </div>
                       <PortalStatusBadge status={getPostStatus(post)} />
@@ -1083,9 +1110,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-black uppercase tracking-wider text-red-500">Item recusado</div>
-                      <h3 className="mt-1 truncate text-lg font-black text-neutral-950 dark:text-white">{file.post?.title || 'Conteúdo sem título'}</h3>
-                      <p className="mt-1 truncate text-sm font-semibold text-neutral-500 dark:text-neutral-300">{file.name || 'Arquivo'}</p>
+                      <div className="text-xs font-black uppercase tracking-wider text-red-500">{approvalMode === 'item' ? 'Item reprovado' : 'Conteúdo reprovado'}</div>
+                      <h3 className="mt-1 whitespace-normal break-words text-lg font-black text-neutral-950 dark:text-white">{file.post?.title || 'Conteúdo sem título'}</h3>
                     </div>
                     <PortalStatusBadge status="rejected" />
                   </div>
@@ -1102,24 +1128,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                     {file.rejection_reason || 'Sem comentario detalhado.'}
                   </p>
 
-                  <div className="mt-4 flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingFeedback({ file, comment: file.rejection_reason || '', tags: file.rejection_tags || [] })}
-                      disabled={busy}
-                      className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-bold text-neutral-600 transition hover:border-[var(--portal-brand-border)] hover:text-[var(--portal-brand-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                    >
-                      Editar feedback
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleApproveFile(file.post?.id, file.id)}
-                      disabled={busy}
-                      className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700 disabled:opacity-60"
-                    >
-                      <CheckCircle size={16} /> Aprovar este item
-                    </button>
-                  </div>
+                  <p className="mt-4 text-xs font-semibold text-neutral-400">Para alterar esta decisão, use Desfazer na revisão do conteúdo.</p>
                 </div>
               </article>
             )) : <EmptyPanel title="Nenhum item recusado" description="Itens recusados ficarão aqui caso você queira revisar e aprovar depois." />}
@@ -1157,15 +1166,15 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
           {activeTab === 'files' && (
           <section id="portal-panel-files" role="tabpanel" aria-labelledby="portal-tab-files" tabIndex={0} className="grid gap-4 focus:outline-none md:grid-cols-2 xl:grid-cols-3">
-            {files.length ? files.map(file => (
+            {files.length ? files.map((file, index) => (
               <article key={file.id} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm transition hover:border-[var(--portal-brand-border)] dark:border-neutral-800 dark:bg-neutral-900">
                 <FilePreview file={file} />
                 <div className="mt-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-bold">{file.name || 'Arquivo'}</div>
-                    <div className="mt-1 truncate text-xs text-neutral-500 dark:text-neutral-300/80">{file.post?.title || 'Conteúdo sem título'}</div>
+                    <div className="text-sm font-bold">Mídia {index + 1}</div>
+                    <div className="mt-1 whitespace-normal break-words text-xs text-neutral-500 dark:text-neutral-300/80">{file.post?.title || 'Conteúdo sem título'}</div>
                   </div>
-                  <PortalStatusBadge status={file.status || getPostStatus(file.post)} />
+                  <PortalStatusBadge status={approvalMode === 'item' ? file.status : getPostStatus(file.post)} />
                 </div>
                 {isStoragePurged(file) ? <span className="mt-3 inline-flex text-xs font-bold text-neutral-400">Arquivo removido pela politica de retencao</span> : <a href={resolveMediaUrl(file.storage_url || file.url)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 rounded-sm text-xs font-bold text-[var(--portal-brand-foreground)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)]">
                   <ExternalLink size={13} /> Abrir arquivo original
@@ -1209,66 +1218,6 @@ export default function ClientPortalPage({ mode = 'token' }) {
           </div>
         </section> : null}
 
-        {editingFeedback ? (
-          <PortalDialog
-            labelledBy="portal-feedback-title"
-            describedBy="portal-feedback-description"
-            onClose={() => setEditingFeedback(null)}
-            initialFocusRef={feedbackTextareaRef}
-          >
-              <h3 id="portal-feedback-title" className="text-lg font-black">Editar feedback</h3>
-              <p id="portal-feedback-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Atualize as tags e o comentário do item recusado.</p>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {REJECTION_TAGS.map(tag => {
-                  const active = (editingFeedback.tags || []).includes(tag)
-                  return (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => setEditingFeedback(current => ({
-                        ...current,
-                        tags: active
-                          ? (current.tags || []).filter(item => item !== tag)
-                          : [...(current.tags || []), tag],
-                      }))}
-                      aria-pressed={active}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 ${active ? 'border-red-500 bg-red-500 text-white' : 'border-neutral-200 text-neutral-600 hover:border-red-300 hover:text-red-600 dark:border-neutral-700 dark:text-neutral-300'}`}
-                    >
-                      {tag}
-                    </button>
-                  )
-                })}
-              </div>
-
-              <textarea
-                ref={feedbackTextareaRef}
-                value={editingFeedback.comment}
-                onChange={event => setEditingFeedback(current => ({ ...current, comment: event.target.value }))}
-                aria-label="Comentário do feedback"
-                className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-[var(--portal-brand-border)] focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:bg-neutral-950"
-                placeholder="Descreva o que precisa ser ajustado..."
-              />
-
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setEditingFeedback(null)}
-                  className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:text-neutral-300"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUpdateRejectedFeedback}
-                  disabled={busy}
-                  className="flex-1 rounded-lg bg-[var(--portal-brand-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--portal-brand-primary-hover)] active:bg-[var(--portal-brand-primary-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-neutral-900"
-                >
-                  Salvar feedback
-                </button>
-              </div>
-          </PortalDialog>
-        ) : null}
       </main>
     </div>
   )

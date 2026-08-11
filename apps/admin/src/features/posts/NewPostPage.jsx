@@ -4,7 +4,7 @@ import { PlusSquare, UploadCloud } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { createPost } from '../../services/posts.service'
 import { fetchClients } from '../../services/clients.service'
-import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
+import { CHANNELS } from '../../utils/constants'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input, { Textarea, Select } from '../../components/ui/Input'
@@ -46,8 +46,6 @@ export default function NewPostPage() {
   const [clients, setClients] = useState([])
   const [files, setFiles] = useState([])
   const [selChannels, setSelChannels] = useState({})
-  const [selFormats, setSelFormats] = useState({})
-  const [funnelTag, setFunnelTag] = useState('')
   const [emailLink, setEmailLink] = useState('')
   const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
   const [loading, setLoading] = useState(false)
@@ -76,7 +74,6 @@ export default function NewPostPage() {
         setSelChannels(next)
       } else {
         setSelChannels({ [channel]: true })
-        setSelFormats({})
       }
       return
     }
@@ -84,23 +81,10 @@ export default function NewPostPage() {
     const nextChannels = { ...selChannels }
     if (nextChannels[channel]) {
       delete nextChannels[channel]
-      const nextFormats = { ...selFormats }
-      delete nextFormats[channel]
-      setSelFormats(nextFormats)
     } else {
       nextChannels[channel] = true
     }
     setSelChannels(nextChannels)
-  }
-
-  function toggleFormat(channel, format) {
-    const current = selFormats[channel] || []
-    setSelFormats(formats => ({
-      ...formats,
-      [channel]: current.includes(format)
-        ? current.filter(item => item !== format)
-        : [...current, format],
-    }))
   }
 
   function addFiles(fileList) {
@@ -137,7 +121,6 @@ export default function NewPostPage() {
     for (const [policy, value] of [
       [postFields.description, form.caption],
       [postFields.scheduled_date, form.scheduledDate],
-      [postFields.funnel_tag, funnelTag],
     ]) {
       if (requiredFieldIsMissing(policy, value)) {
         toast.error('Preencha todos os campos obrigatorios da postagem.')
@@ -157,23 +140,16 @@ export default function NewPostPage() {
     setLoading(true)
     setUploadProgress(null)
     try {
-      const formats = {}
-      channels.forEach(channel => {
-        if (selFormats[channel]?.length) formats[channel] = selFormats[channel]
-      })
-
       const payload = {
         title: form.title,
         status,
         channels,
-        formats,
         emailLink: isEmail ? normalizedEmailLink : null,
         clientId: form.clientId,
         createdById: user?.id,
       }
       putVisibleField(payload, 'caption', form.caption, postFields.description)
       putVisibleField(payload, 'scheduledDate', form.scheduledDate || null, postFields.scheduled_date)
-      putVisibleField(payload, 'funnelTag', funnelTag || null, postFields.funnel_tag)
       await createPost(payload, files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
         onUploadProgress: setUploadProgress,
         soundtrack: settings.features.soundtrack ? soundtrack : emptySoundtrackDraft(),
@@ -197,8 +173,6 @@ export default function NewPostPage() {
     setForm({ title: '', clientId: '', scheduledDate: '', caption: '' })
     setFiles([])
     setSelChannels({})
-    setSelFormats({})
-    setFunnelTag('')
     setEmailLink('')
     setSoundtrack(emptySoundtrackDraft())
     setUploadProgress(null)
@@ -226,34 +200,12 @@ export default function NewPostPage() {
 
       <Section number="2" title="Conteúdo" description="Nomeie a postagem e adicione o texto que será revisado.">
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Título *" value={form.title} onChange={event => set('title', event.target.value)} placeholder="Ex: Post Instagram Março #12" />
-            {isFieldVisible(postFields.funnel_tag) ? <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                Tag de Funil
-              </label>
-              <div className="flex gap-2">
-                {FUNNEL_TAGS.map(tag => (
-                  <button
-                    key={tag.value}
-                    onClick={() => setFunnelTag(funnelTag === tag.value ? '' : tag.value)}
-                    className={`flex-1 rounded-lg border py-2.5 text-xs font-bold transition-all ${
-                      funnelTag === tag.value
-                        ? `${tag.color} border-current`
-                        : 'border-neutral-200 text-neutral-400 hover:border-mag-300 dark:border-neutral-700'
-                    }`}
-                  >
-                    {tag.label}
-                  </button>
-                ))}
-              </div>
-            </div> : null}
-          </div>
+          <Input label="Título *" value={form.title} onChange={event => set('title', event.target.value)} placeholder="Ex: Post Instagram Março #12" />
           {isFieldVisible(postFields.description) ? <Textarea label={`Legenda / Texto${isFieldRequired(postFields.description) ? ' *' : ''}`} value={form.caption} onChange={event => set('caption', event.target.value)} placeholder="Cole aqui o texto da publicação..." /> : null}
         </div>
       </Section>
 
-      <Section number="3" title="Canais e formatos" description="Escolha onde o conteúdo será publicado.">
+      <Section number="3" title="Canais" description="Escolha onde o conteúdo será publicado.">
         <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
           Canais *
         </label>
@@ -273,27 +225,6 @@ export default function NewPostPage() {
             </button>
           ))}
         </div>
-
-        {Object.keys(selChannels).filter(channel => CHANNELS[channel]?.formats?.length).map(channel => (
-          <div key={channel} className="mb-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-            <span className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-mag-500"><ChannelIcon channel={channel} size={14} /> {channel} - Formato</span>
-            <div className="flex flex-wrap gap-1.5">
-              {(CHANNELS[channel]?.formats || []).map(format => (
-                <button
-                  key={format}
-                  onClick={() => toggleFormat(channel, format)}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${
-                    (selFormats[channel] || []).includes(format)
-                      ? 'border-mag-500 bg-mag-500 text-white'
-                      : 'border-neutral-200 text-neutral-500 hover:border-mag-300 dark:border-neutral-700'
-                  }`}
-                >
-                  {format}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
       </Section>
 
       {isEmail ? (

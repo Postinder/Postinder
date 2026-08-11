@@ -29,12 +29,13 @@ test('platform settings domain owns safe installation defaults', () => {
   assert.deepEqual(DEFAULT_PLATFORM_SETTINGS.post_fields, {
     description: 'optional',
     scheduled_date: 'optional',
-    funnel_tag: 'optional',
+    funnel_tag: 'hidden',
   })
   assert.deepEqual(DEFAULT_PLATFORM_SETTINGS.portal, {
     show_post_list: false,
     show_supplementary_info: false,
     sequential_approval: true,
+    approval_mode: 'content',
   })
 })
 
@@ -50,6 +51,7 @@ test('strict patch schema accepts partial known settings and rejects invalid or 
     { features: { soundtrack: 'yes' } },
     { client_fields: { unknown: 'optional' } },
     { post_fields: { description: 'sometimes' } },
+    { portal: { approval_mode: 'file' } },
     { arbitrary: true },
   ]) {
     assert.equal(platformSettingsPatchSchema.safeParse(input).success, false)
@@ -73,14 +75,19 @@ test('portal resolution centralizes global inheritance and explicit client overr
     show_post_list: true,
     show_supplementary_info: true,
     sequential_approval: false,
+    approval_mode: 'item' as const,
   }
   assert.deepEqual(resolvePortalSettings(globalDetailed, null), globalDetailed)
   assert.deepEqual(resolvePortalSettings(globalDetailed, 'simplified'), {
     show_post_list: false,
     show_supplementary_info: false,
     sequential_approval: true,
+    approval_mode: 'item',
   })
-  assert.deepEqual(resolvePortalSettings(DEFAULT_PLATFORM_SETTINGS.portal, 'detailed'), globalDetailed)
+  assert.deepEqual(resolvePortalSettings(DEFAULT_PLATFORM_SETTINGS.portal, 'detailed'), {
+    ...globalDetailed,
+    approval_mode: 'content',
+  })
   assert.deepEqual(
     resolvePortalSettings({ ...globalDetailed, sequential_approval: true }, 'simplified'),
     resolvePortalSettings(globalDetailed, 'simplified'),
@@ -108,6 +115,7 @@ test('service delegates a validated partial patch to one atomic repository updat
 
 test('migration and repository enforce one additive singleton and an atomic merge', () => {
   const migration = readFileSync(path.resolve(process.cwd(), '../database/migrations/019_platform_settings.sql'), 'utf8')
+  const approvalMigration = readFileSync(path.resolve(process.cwd(), '../database/migrations/020_portal_approval_mode_and_review_drafts.sql'), 'utf8')
   const repository = readFileSync(path.resolve(process.cwd(), 'src/modules/platformSettings/infrastructure/repositories/PlatformSettingsRepository.ts'), 'utf8')
   assert.match(migration, /CREATE TABLE IF NOT EXISTS platform_settings/)
   assert.match(migration, /singleton_key BOOLEAN PRIMARY KEY[^\n]*CHECK \(singleton_key\)/)
@@ -120,6 +128,9 @@ test('migration and repository enforce one additive singleton and an atomic merg
   assert.doesNotMatch(migration, /UPDATE\s+(clients|posts)/i)
   assert.match(repository, /pg_advisory_xact_lock/)
   assert.match(repository, /SELECT \* FROM platform_settings[\s\S]*mergePlatformSettings[\s\S]*ON CONFLICT \(singleton_key\)/)
+  assert.match(approvalMigration, /portal_approval_mode VARCHAR\(20\) NOT NULL DEFAULT 'content'/)
+  assert.match(approvalMigration, /portal_approval_mode IN \('content', 'item'\)/)
+  assert.match(repository, /row\.portal_approval_mode === 'item' \? 'item' : 'content'/)
 })
 
 test('post field policies omit hidden input, allow optional blanks and enforce required effective values', () => {
@@ -179,7 +190,7 @@ test('portal status recalculation includes soundtrack only when the global featu
   const repository = readFileSync(path.resolve(process.cwd(), 'src/modules/portal/infrastructure/repositories/PortalRepository.ts'), 'utf8')
   assert.match(repository, /includeSoundtrack: settings\.features\.soundtrack/)
   assert.match(repository, /settings\.features\.soundtrack[\s\S]*findByPostIds/)
-  assert.match(repository, /settings\.features\.soundtrack[\s\S]*findByPostId/)
+  assert.match(repository, /decision === 'approved' && settings\.features\.soundtrack[\s\S]*FROM post_soundtracks/)
 })
 
 test('disabled soundtrack does not mutate or block ordinary post operations', () => {
@@ -190,5 +201,5 @@ test('disabled soundtrack does not mutate or block ordinary post operations', ()
   assert.match(controller, /submitForApproval\([\s\S]*settings\.features\.soundtrack/)
   assert.match(repository, /enforceSoundtrackSource && await this\.soundtrackRepository\.isEmbeddedSource/)
   assert.match(repository, /const originalSoundtrack = includeSoundtrack \? await client\.query/)
-  assert.match(repository, /if \(includeSoundtrack\) await query\([\s\S]*UPDATE post_soundtracks/)
+  assert.match(repository, /if \(includeSoundtrack\) await client\.query\([\s\S]*UPDATE post_soundtracks/)
 })

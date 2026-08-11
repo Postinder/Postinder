@@ -2,28 +2,30 @@
 
 ## Configuracoes da plataforma
 
-O pacote local atual adiciona uma configuracao operacional global da instalacao em `/admin/platform-settings`, sem multi-tenancy. Ela controla retencao de arquivos apos `executed`, fundo sonoro, politicas de campos seguros de Clientes/postagens e defaults do portal. Identidade visual continua separada em `/admin/branding`.
+O pacote local atual adiciona uma configuracao operacional global da instalacao em `/admin/platform-settings`, sem multi-tenancy. Ela controla retencao de arquivos apos `executed`, fundo sonoro, politicas de campos seguros de Clientes/postagens, defaults do portal e a forma de aprovacao do Cliente (`content` ou `item`, com default `content`). Identidade visual continua separada em `/admin/branding`.
 
 Somente admin altera a configuracao. O backend valida um schema fechado, usa defaults de dominio quando ainda nao existe registro e persiste atualizacoes parciais de forma transacional no singleton criado por `019_platform_settings.sql`.
 
 A retencao usa 24 horas por default e grava o prazo no momento da execucao. Um scheduler interno varre no startup e a cada hora. Apenas objetos fisicos de postagens executadas com `executed_at` e prazo confiavel sao removidos; registros, metricas e historico permanecem.
 
-Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal oferece swipe equivalente para imagens e videos, botoes acessiveis, player nativo de video e legenda expansivel com hifenizacao em portugues.
+Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal permite uma decisao por postagem (`content`) ou escolhas provisórias por midia consolidadas em **Concluir analise** (`item`), sempre com navegacao livre entre as midias.
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. Os pacotes locais nao publicados exigem `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql` e `019_platform_settings.sql`, nessa ordem, antes de uma futura publicacao. Os totais de validacao deste pacote sao registrados em `PROJECT_STATE.md` apos a rodada final.
+A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. Os pacotes locais nao publicados exigem `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql`, `019_platform_settings.sql` e `020_portal_approval_mode_and_review_drafts.sql`, nessa ordem, antes de uma futura publicacao. Os totais de validacao do pacote atual estao registrados em `PROJECT_STATE.md`. Nenhum deploy deste pacote foi realizado.
 
 ## Interface atual
 
 - A Previa do Feed usa o componente compartilhado de midia para imagens e videos, com player e fallback neutro quando necessario.
 - **Atividade recente** e **Postagens** iniciam recolhidas no Dashboard e podem ser expandidas independentemente.
 - O portal simplificado mostra uma fila guiada ordenada pela data prevista e avanca automaticamente depois de cada decisao. A configuracao por Cliente **Visualizacao detalhada do portal** restaura o seletor e a visao geral quando necessario.
-- O layout do portal reserva mais espaco para a midia principal, preserva videos verticais com `object-contain`, responsividade e botoes acessiveis.
+- A forma de aprovacao e global: `content` consolida uma decisao para a postagem inteira; `item` salva escolhas provisórias por midia e somente as oficializa quando o Cliente conclui a analise.
+- O layout do portal reserva mais espaco para a midia principal, preserva videos verticais com `object-contain`, responsividade e botoes acessiveis. O Cliente ve titulo e legenda completos, data de publicacao e canais, sem filename tecnico; a acao negativa usa **Reprovar**.
 - Login e recuperacao permanecem identificados como Postinder e nao montam nem consultam o branding configuravel. Um administrador pode configurar em **Identidade visual** o logo institucional exibido dinamicamente na area interna da empresa e no portal do Cliente, sem rebuild; na ausencia ou falha da imagem, o fallback Postinder permanece funcional.
 - Novos Clientes sao cadastrados sem CPF/CNPJ. Documentos antigos continuam preservados e editaveis, sem limpeza retroativa nem remocao de colunas.
 - O link ativo do portal e recuperavel pelo administrador autorizado; copiar ou abrir nao gera outro token, e substituir exige confirmacao. E-mail Marketing aceita aprovacao por preview web seguro e dispensa anexo quando for o unico canal.
-- `3A3R` foi removido das novas selecoes, o fundo sonoro ficou oculto sem remover sua infraestrutura e os anexos ganharam navegacao anterior/proximo no viewer.
+- `3A3R` foi removido das novas selecoes. Fundo sonoro permanece atras de feature flag, compativel e secundario; desligado, ausente ou `none` nao bloqueia a aprovacao.
+- Na lista administrativa, **Selecionar todos** inclui somente postagens elegiveis, carregadas e visiveis nos filtros atuais; checkbox individual, checkbox mestre e envio usam o mesmo conjunto contextual.
 
 ## Arquitetura
 
@@ -106,7 +108,7 @@ cd backend
 npm run db:migrate
 ```
 
-O startup nao cria nem corrige schema. A migration `002_development_seed.sql` e historica e nao faz parte do migrador estrutural. A `018` adiciona somente a preferencia de portal do Cliente, a copia cifrada recuperavel do token e um indice de consulta; nao altera dados historicos.
+O startup nao cria nem corrige schema. A migration `002_development_seed.sql` e historica e nao faz parte do migrador estrutural. A `018` adiciona a preferencia de portal do Cliente e a copia cifrada recuperavel do token; a `020` adiciona o modo de aprovacao, drafts provisórios por item e o controle oficial de revisao/rewind sem reescrever posts antigos.
 
 Em deploy, `npm run db:migrate` deve ser um Pre-Deploy Command/release step bloqueante anterior ao Start Command. Backup logico e preflight do banco sao obrigatorios antes de migrations em producao.
 

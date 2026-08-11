@@ -24,10 +24,13 @@ export function applyPostFieldPolicies(
   current?: any,
 ) {
   const result = { ...input }
+  // Funnel data is retained on existing posts for compatibility, but it is no longer
+  // accepted or required as an operational field.
+  delete result.funnelTag
+  delete result.funnel_tag
   const definitions = [
     { policy: settings.post_fields.description, keys: ['description', 'caption'], current: current?.description },
     { policy: settings.post_fields.scheduled_date, keys: ['scheduledDate', 'scheduled_date'], current: current?.scheduledDate },
-    { policy: settings.post_fields.funnel_tag, keys: ['funnelTag', 'funnel_tag'], current: current?.funnelTag },
   ] as const
 
   for (const definition of definitions) {

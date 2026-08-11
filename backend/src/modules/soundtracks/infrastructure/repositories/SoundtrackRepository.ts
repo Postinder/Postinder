@@ -443,7 +443,14 @@ export class SoundtrackRepository {
     }
   }
 
-  async decide(postId: string, decision: 'approved' | 'adjustment_requested', comment: string | null, scope: SoundtrackScope, actorRole: string) {
+  async decide(
+    postId: string,
+    decision: 'approved' | 'adjustment_requested',
+    comment: string | null,
+    scope: SoundtrackScope,
+    actorRole: string,
+    options: { recalculatePostStatus?: boolean } = {},
+  ) {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -491,7 +498,9 @@ export class SoundtrackRepository {
          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [soundtrack.id, postId, soundtrack.revision_number, decision, cleanText(comment), scope.clientId, actorRole],
       )
-      await this.recalculatePostStatusWithClient(client, postId)
+      if (options.recalculatePostStatus !== false) {
+        await this.recalculatePostStatusWithClient(client, postId)
+      }
       await client.query('COMMIT')
       return this.findByPostId(postId)
     } catch (error) {

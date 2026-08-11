@@ -3,9 +3,9 @@
 ## Configuracoes operacionais globais
 
 - Ha uma unica configuracao por instalacao. Nao existem agencia, organizacao, tenant, selecao no login ou white label adicional. Branding permanece separado.
-- Defaults preservam a experiencia simplificada: retencao 24h; fundo sonoro desligado; documento de Cliente oculto; demais campos seguros opcionais; portal sem lista/informacoes complementares e com fluxo sequencial.
+- Defaults preservam a experiencia simplificada: retencao 24h; fundo sonoro desligado; documento de Cliente oculto; demais campos seguros opcionais; portal sem lista/informacoes complementares, com fluxo sequencial e aprovacao `content`.
 - Campos configuraveis de Cliente: WhatsApp, segmento, prazo de aceite e CPF/CNPJ. Nome, e-mail, senha e identidade tecnica permanecem fixos; cor do avatar nao foi generalizada.
-- Campos configuraveis de postagem: legenda/descricao, data prevista e tag de funil. Cliente, titulo e canal continuam obrigatorios; formatos dependem do canal; preview HTTP(S) de E-mail Marketing e anexos seguem regras condicionais existentes.
+- Campos configuraveis de postagem: legenda/descricao e data prevista. Cliente, titulo e canal continuam obrigatorios; preview HTTP(S) de E-mail Marketing e anexos seguem regras condicionais existentes. Funil e formato sairam do preenchimento manual porque nao justificavam o custo operacional, mas schema, dados historicos e contratos de compatibilidade foram preservados.
 - Ocultar preserva valores historicos e impede envio/validacao desnecessarios. Obrigatorio exige o valor efetivo no backend, sem converter dados antigos.
 - A retencao e definida na transicao para `executed`. Mudancas do prazo valem para novas execucoes e nao antecipam retroativamente a remocao de objetos antigos.
 - `NULL` no override do Cliente herda o portal global; modos simplificado/detalhado permanecem estaveis quando o global muda.
@@ -18,8 +18,8 @@
 - Cada Cliente possui um link principal ativo. Consulta e copia reutilizam o mesmo segredo; substituicao e acao separada, confirmada e atomica. Hash continua autoritativo para autenticacao, e a copia recuperavel fica cifrada para o endpoint administrativo autorizado.
 - E-mail Marketing sempre exige URL HTTP(S) validada. Como canal unico, a URL substitui a obrigatoriedade de anexo; em combinacoes, as regras de arquivo dos outros canais permanecem. A previa abre externamente e nunca e carregada ou buscada pelo Postinder.
 - Novos cadastros de Cliente nao coletam CPF/CNPJ. Campos e valores historicos permanecem para compatibilidade de leitura e edicao.
-- `3A3R` nao integra novas selecoes. Fundo sonoro permanece implementado no dominio, mas oculto de criacao, edicao e aprovacao nesta rodada.
-- Setas anterior/proximo navegam pelos anexos pendentes sem disparar decisoes e preservam swipe, controles de video e botoes de aprovacao.
+- `3A3R` nao integra novas selecoes. Fundo sonoro permanece implementado no dominio e controlado por feature flag, sempre como recurso opcional e secundario.
+- Setas e indicadores navegam livremente por todas as midias da postagem sem disparar decisoes, preservando swipe, controles de video e botoes de aprovacao/reprovacao.
 - Novos formatos de Instagram sao Card, Carrossel, Stories, Reels e Foto; valores antigos nao sao convertidos. Drag-and-drop fica adiado e as setas de ordenacao continuam como mecanismo oficial.
 
 ## Fluxo e responsabilidade
@@ -47,17 +47,28 @@
 
 ## Portal e aprovacao
 
-- Cada arquivo e revisado individualmente; swipe e a interacao principal, com botoes como alternativa acessivel. E-mail Marketing sem anexos e a excecao deliberada: a decisao ocorre na postagem depois da abertura opcional do preview externo.
+- A instalacao escolhe uma forma global de aprovacao do Cliente. `content`, o default, trata a postagem inteira como uma unica unidade de decisao. `item` permite uma escolha provisoria por midia e exige a acao explicita **Concluir analise** para oficializar o snapshot final.
+- No modo `content`, navegar entre imagens e videos nao multiplica aprovacoes: o Cliente toma uma unica decisao de aprovar ou reprovar a postagem. No modo `item`, cada midia permanece no carrossel, pode ser revisitada e ter sua escolha alterada ate a conclusao.
+- Navegacao interna e rewind sao conceitos separados. Avancar, voltar ou selecionar livremente qualquer midia da postagem nao consome rewind e nao altera o estado oficial. O rewind opera no nivel da postagem concluida e permite reabrir somente a conclusao elegivel mais recente do Cliente, uma vez por ciclo; envio ou reenvio inicia novo ciclo.
+- Escolhas provisórias no modo `item` nao alimentam estado canonico, metricas, feedback, atividade ou notificacao oficial. Na conclusao, todos os itens aplicaveis precisam estar resolvidos; todos aprovados resultam em postagem `approved`, e qualquer item reprovado resulta em `rejected`. Nao existe estado de produto "parcialmente aprovado".
+- E-mail Marketing sem anexos permanece uma excecao deliberada de conteudo revisavel: quando for o unico canal e tiver URL HTTP(S), a decisao ocorre na postagem depois da abertura opcional do preview externo.
 - O portal deve priorizar o conteudo que exige decisao do Cliente. Metricas, calendario, historico, arquivos e feedbacks sao informacoes complementares e iniciam recolhidos, permanecendo disponiveis sob demanda.
 - Swipe deve oferecer experiencia equivalente em imagens e videos sem substituir os botoes explicitos.
 - O gesto horizontal nao deve bloquear rolagem vertical nem acionar arraste nativo da imagem.
 - Controles interativos e fullscreen de video prevalecem em suas areas e nao participam do gesto de swipe. Reproduzir, pausar, alterar volume ou navegar no video nao pode aprovar nem reprovar o arquivo.
 - Imagens e videos devem ser visualizados no proprio fluxo de revisao. Para video, o padrao e player nativo sem reproducao automatica, com `playsInline`, `preload="metadata"` e acesso ao arquivo original como alternativa.
-- A legenda permanece alinhada a esquerda. Textos extensos usam expansao explicita, quebras preservadas e hifenizacao automatica com idioma `pt-BR`; justificacao nao e usada em colunas estreitas por prejudicar a regularidade dos espacos.
-- O primeiro viewport deve priorizar a decisao: contexto da postagem, midia, identificacao do arquivo, instrucao, legenda e acoes devem caber juntos sempre que a altura disponivel permitir, sem comprimir controles essenciais.
-- O Cliente pode desfazer somente a ultima decisao quando o fluxo permitir. Pode editar feedback e reconsiderar uma recusa antes de uma nova correcao.
+- A legenda permanece alinhada a esquerda, completa por padrao, com quebras preservadas e hifenizacao automatica com idioma `pt-BR`; o portal nao usa **Ver mais** no contexto atual. O titulo tambem e completo, o filename tecnico fica oculto, a data usa o rotulo **Data de publicacao**, os canais recebem destaque e reutilizam o componente compartilhado de icone.
+- A acao negativa apresentada ao Cliente e **Reprovar**. Os motivos atuais sao Design, Foto, Video, Legenda, Texto do conteudo, Titulo/chamada e Outro; no modo `item`, comentario obrigatorio e tags ficam associados a midia reprovada.
+- O primeiro viewport deve priorizar a decisao: contexto da postagem, midia, titulo, estado, instrucao, legenda e acoes devem caber juntos sempre que a altura disponivel permitir, sem comprimir controles essenciais.
+- No modo `item`, indicadores navegaveis mostram item atual, pendentes e escolhas aprovadas/reprovadas sem depender somente de cor. O Cliente pode alterar escolhas durante a revisao; depois da conclusao, o rewind controlado substitui o antigo desfazer por arquivo.
 - Uma nova versao enviada pela agencia deve ser identificada como `Correcao`.
 - A ordem dos anexos e dado de negocio, persistida por `sort_order` e mantida em todas as telas.
+
+## Selecao contextual em lote
+
+- **Selecionar todos** reutiliza a mesma fonte de verdade dos checkboxes individuais e do conjunto enviado. A selecao mestre pode ser desfeita e apresenta estado intermediario quando somente parte dos elegiveis esta marcada.
+- O escopo e a lista carregada e visivel nos filtros atuais; registros ocultos pelo filtro ou nao carregados nao entram silenciosamente no envio atual.
+- Sao elegiveis postagens com status efetivo `draft`, `ready` ou `rejected` e conteudo revisavel: ao menos uma midia, ou exclusivamente E-mail Marketing com URL nao vazia. Registros imutaveis ou incompatíveis permanecem fora.
 
 ## Interface administrativa
 
@@ -76,20 +87,20 @@
 
 ## Fundo sonoro
 
-- Nesta rodada o recurso esta dormente: nenhuma interface cria, edita, reproduz ou decide trilha, e a decisao de arquivos no portal nao fica bloqueada por estado de fundo sonoro. As regras abaixo permanecem preservadas no dominio para uma futura reativacao deliberada.
+- Fundo sonoro permanece compativel, mas e opcional, secundario, de baixa prioridade e pode ser reavaliado ou removido futuramente. Ele nao define a arquitetura principal de aprovacao, centrada na postagem e nas midias visuais.
 - O fundo sonoro e uma parte independente da postagem e nao pertence a lista ordenavel de anexos. Suas modalidades sao `none`, `embedded`, `uploaded` e `external_reference`; nenhuma modalidade e inferida automaticamente a partir dos anexos.
-- `none` nao cria requisito adicional. Nos demais modos, somente o Cliente pode aprovar ou solicitar ajuste do fundo sonoro, com comentario obrigatorio no ajuste. Reproduzir, pausar, silenciar ou reativar audio serve apenas para a previa e nunca representa uma decisao.
-- A aprovacao integral exige todos os anexos obrigatorios e, quando houver fundo sonoro, a decisao `approved` da revisao vigente. Fundo sonoro `pending` ou `adjustment_requested` impede que a postagem seja considerada aprovada.
+- Ausencia, feature desabilitada ou modalidade `none` nunca cria pendencia nem bloqueia a conclusao. Quando a feature esta ativa e existe uma trilha aplicavel cuja regra vigente exige decisao, somente o Cliente decide; comentario continua obrigatorio ao solicitar ajuste.
+- No modo `item`, uma decisao isolada de soundtrack nao conclui nem reprova a postagem. Se o snapshot visual resultar em aprovacao, uma trilha aplicavel ainda pendente precisa ser resolvida; se a midia visual ja determina reprovacao, a trilha secundaria nao impede a conclusao. O modo `content` preserva a compatibilidade existente.
 - `embedded` referencia exclusivamente um video ativo da mesma postagem e possui decisao semantica propria, mesmo quando audio e imagem estao no mesmo arquivo. `uploaded` aceita um unico arquivo de audio ativo. `external_reference` registra apenas a indicacao e nao simula player quando nao existe arquivo local.
 - Alteracao material, substituicao ou troca de modalidade invalida a aprovacao vigente, abre nova revisao e preserva versoes e decisoes anteriores. Postagens `executed` nao podem ter o fundo sonoro alterado.
 - Na primeira versao nao existem busca, download de fonte externa, integracao com plataformas, multiplas opcoes, mixagem, renderizacao definitiva nem controle avancado de volume.
 
 ## Historico e comunicacao
 
-- Metricas preservam a primeira decisao e feedbacks historicos; uma correcao aprovada nao apaga uma recusa anterior.
+- Contadores operacionais de aprovacao/reprovacao representam o estado canonico atual da postagem depois da consolidacao. Quantidade de arquivos, cliques, drafts e escolhas intermediarias nao multiplicam posts nesses contadores; `approved -> rewind -> rejected`, por exemplo, aparece somente no estado vigente. Analises historicas explicitamente separadas em Insights podem preservar primeira decisao, arquivos, revisoes e feedbacks para rastreabilidade.
 - `draft` e `ready` nao geram notificacao de espera nem aparecem ao Cliente.
 - Notificacoes de espera surgem somente depois do envio; recusa e correcao usam eventos distintos.
-- `activity_events` e a base de rastreabilidade do ciclo operacional.
+- `activity_events` complementa a rastreabilidade do ciclo operacional, mas nao e a fonte das metricas nem do estado oficial.
 
 ## Identidade e seguranca
 

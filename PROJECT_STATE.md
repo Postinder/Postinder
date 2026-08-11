@@ -1,24 +1,41 @@
 # Estado Atual do Postinder
 
+## Fluxo configuravel de aprovacao do Cliente - pacote local auditado e nao publicado
+
+- Branch atual: `configuracoes-gerais-plataforma`. Implementacao e auditoria ocorreram sem commits intermediarios; o pacote esta consolidado por este commit local de revisao final e permanece sem deploy.
+- A configuracao global **Forma de aprovacao do cliente** aceita `content` e `item`. O default e fallback para instalacoes antigas e `content`; overrides simplificado/detalhado do portal nao alteram essa escolha global.
+- Em `content`, a postagem inteira recebe uma unica decisao. Em `item`, cada midia recebe um draft provisorio editavel e todas as escolhas so se tornam oficiais em **Concluir analise**. Todos aprovados resultam em `approved`; qualquer reprovado resulta em `rejected`.
+- Navegacao dentro da postagem e livre, inclusive por indicadores clicaveis, e nunca consome rewind. O rewind reabre no nivel da postagem apenas a conclusao elegivel mais recente do Cliente, uma vez por ciclo; um novo envio/reenvio reseta a permissao do novo ciclo.
+- A conclusao oficial aplica um snapshot sob lock e transacao. Retry e duplo submit sao idempotentes; uma conclusao concorrente prevalece e a outra recebe `already_completed`. Autosave usa os mesmos locks para nao atravessar a conclusao.
+- Drafts item a item nao alimentam estado canonico, metricas, feedback, atividade ou notificacao. Conclusao em modo `content`, envio e reenvio removem drafts obsoletos aplicaveis.
+- Contadores operacionais por estado representam o estado canonico atual da postagem. Quantidade de arquivos, cliques, drafts ou revisoes intermediarias nao multiplica o total de posts aprovados/reprovados; analises historicas de primeira decisao, arquivos e feedbacks continuam separadas em Insights.
+- **Selecionar todos** usa a lista carregada e visivel nos filtros atuais e inclui somente `draft`, `ready` ou `rejected` com ao menos uma midia, ou E-mail Marketing como unico canal com URL nao vazia. Checkbox individual, mestre, estado `indeterminate`, modal e API usam o mesmo conjunto contextual.
+- Soundtrack permanece compativel, opcional e secundario. Ausente, desabilitado ou `none` nunca bloqueia. No modo `item`, sua decisao isolada nao conclui/reprova a postagem; uma trilha aplicavel pendente so bloqueia quando o snapshot visual resultaria em aprovacao.
+- A migration local mais recente e `020_portal_approval_mode_and_review_drafts.sql`. Ela adiciona `platform_settings.portal_approval_mode`, `portal_item_review_drafts`, `portal_post_reviews`, a constraint `content|item` e a FK composta que impede draft ligado a arquivo de outra postagem.
+- A auditoria independente corrigiu: SQL PostgreSQL `42P08`, corrida autosave/conclusao, drafts obsoletos, elegibilidade divergente no lote, estado intermediario causado por soundtrack, reset de rewind em E-mail Marketing sem arquivo, integridade cruzada de drafts e default legado de funil.
+- Validacao final do pacote: admin focalizado 26/26; backend focalizado 5/5; integracao PostgreSQL real 12/12; backend 202/202; admin 95/95; builds backend/admin e `git diff --check` aprovados. Migrations `001` a `020` foram aplicadas em PostgreSQL temporario e a segunda rodada foi no-op; nenhum banco remoto foi acessado e o banco temporario foi removido.
+- Ressalva tecnica baixa: estado oficial, revisao e feedback sao atomicos, mas `activity_events` e gravado pelo controller depois do commit transacional da decisao oficial no banco, em modo best-effort. Uma falha pode omitir esse evento secundario sem corromper postagem, revisao, feedback ou metricas. Outbox/transacao compartilhada nao foi implementada.
+- Depois do commit local desta revisao, o proximo passo seguro e planejar um deploy manual explicitamente autorizado, com migration 020 e smoke test no ambiente publicado.
+
 ## Configuracoes gerais da plataforma — pacote local nao publicado
 
 - A instalacao passa a ter um singleton `platform_settings`, separado de `platform_branding` e sem `agency_id`, `tenant_id` ou arquitetura multiagencia. A area `/admin/platform-settings` e exclusiva do admin na interface; `GET /api/v1/platform-settings` possui leitura administrativa e `PATCH` exige a capacidade exclusiva `platform-settings:update`.
-- Defaults de dominio: retencao de 24 horas, fundo sonoro desligado, WhatsApp/segmento/prazo opcionais, documento oculto, legenda/data/tag de funil opcionais e portal global simplificado com aprovacao sequencial. Nome, e-mail e senha de Cliente e cliente/titulo/canal de postagem permanecem invariantes.
+- Defaults de dominio: retencao de 24 horas, fundo sonoro desligado, WhatsApp/segmento/prazo opcionais, documento oculto, legenda/data opcionais, funil oculto e portal global simplificado com aprovacao sequencial em modo `content`. Nome, e-mail e senha de Cliente e cliente/titulo/canal de postagem permanecem invariantes.
 - Ao marcar uma postagem aprovada como `executed`, o backend grava `executed_at` e prazo calculado com a configuracao vigente. Somente registros executados com timestamp confiavel e prazo vencido sao elegiveis. Postagens historicas sem prazo seguro nao recebem backfill.
 - A limpeza roda no startup e a cada hora, em lotes globais de ate 50, com lock por objeto, rechecagem transacional e retry. Remove apenas o objeto fisico; registros, decisoes, historico e metricas permanecem. `storage_deleted_at` marca sucesso e a interface mostra o arquivo removido sem URL quebrada.
-- O toggle de fundo sonoro controla criacao, edicao, duplicacao, reenvio e portal sem remover tabelas ou historico. Desligado, novas postagens usam `none` e a trilha nao bloqueia arquivos/status; ligado, a infraestrutura existente volta a participar da aprovacao.
-- O portal usa tres defaults globais. `clients.portal_mode_override` e anulavel: `NULL` herda imediatamente a plataforma; `simplified` e `detailed` sao overrides. O booleano legado da migration 018 continua aceito e `true` historico permanece detalhado.
-- A migration aditiva local `019_platform_settings.sql` cria o singleton e o override sem backfill. Ela nao foi aplicada em producao. O teste em banco efemero local foi impedido porque o Docker estava inativo e a instalacao PostgreSQL continha apenas clientes, sem servidor para `initdb`; o diretorio temporario vazio foi removido.
+- O toggle de fundo sonoro preserva tabelas e historico. Desligado, novas postagens usam `none` e a trilha nao bloqueia; ligado, somente uma trilha existente e aplicavel participa como condicao secundaria conforme o modo de aprovacao.
+- O portal usa defaults globais de lista, informacoes complementares, sequencia e forma de aprovacao. `clients.portal_mode_override` e anulavel: `NULL` herda imediatamente a plataforma; `simplified` e `detailed` alteram apresentacao/sequencia sem substituir `approval_mode`. O booleano legado da migration 018 continua aceito e `true` historico permanece detalhado.
+- `019_platform_settings.sql` cria o singleton e o override sem backfill; `020_portal_approval_mode_and_review_drafts.sql` amplia esse singleton e cria a persistencia da revisao. Ambas permanecem nao publicadas. A cadeia completa ate 020 foi posteriormente validada em PostgreSQL local temporario.
 - Branding permanece em area, tabela e endpoints proprios; cores, white label e multiempresa nao foram adicionados.
 
 ## Status da auditoria e da publicacao
 
 - A auditoria tecnica pre-deploy foi concluida.
 - Os bloqueadores tecnicos C-01, C-02, H-02, H-03 e H-04 foram corrigidos e validados localmente.
-- O pacote local de configuracoes gerais possui 197 testes de backend, 58 testes frontend unitarios e 25 testes React reais aprovados. Os dois builds e a validacao final do diff tambem foram aprovados.
+- O pacote local auditado possui 202 testes de backend e 95 testes admin aprovados, alem de 12 testes de integracao PostgreSQL do fluxo de aprovacao. Os dois builds e a validacao final do diff tambem foram aprovados.
 - As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; no codigo local, `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql` e `019_platform_settings.sql` permanecem pendentes.
+- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; no codigo local, `017`, `018`, `019` e `020` permanecem pendentes.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Rodada local para novos testes com Clientes
@@ -28,7 +45,7 @@
 - O link principal do portal pode ser consultado, copiado e aberto novamente. Tokens novos continuam validados pelo hash e recebem copia cifrada AES-256-GCM somente para recuperacao administrativa autorizada. Criacao nao substitui link ativo; substituicao e explicita, confirmada e transacional. Links antigos baseados apenas em hash continuam validos, embora nao recuperaveis.
 - E-mail Marketing exige preview `http://` ou `https://`. Quando for o unico canal, anexos sao opcionais e a decisao ocorre pela postagem; combinacoes com outros canais mantem a exigencia normal de arquivos. O portal abre a previa em nova aba, sem iframe nem fetch backend.
 - A criacao de Cliente deixou de exibir, validar ou enviar CPF/CNPJ; leitura e edicao de registros antigos continuam compativeis e nenhuma coluna ou dado historico foi removido.
-- Canais usam icones vetoriais; `3A3R` nao e oferecido nem aceito em novas postagens, mas valores historicos podem ser preservados em edicao. Fundo sonoro ficou oculto nos fluxos operacionais, mantendo tabelas, services e historico dormentes.
+- Canais usam icones vetoriais; `3A3R` nao e oferecido nem aceito em novas postagens, mas valores historicos podem ser preservados em edicao. Fundo sonoro permanece sob feature flag, mantendo tabelas, services e historico compativeis sem assumir papel central na aprovacao.
 - O viewer preserva swipe e botoes de decisao e adiciona anterior/proximo entre anexos pendentes, com indicador, estados desabilitados e bloqueio de propagacao. A Previa do Feed usa o texto **Todos status**.
 - Instagram oferece Card, Carrossel, Stories, Reels e Foto para novas selecoes; valores historicos continuam legiveis. Drag-and-drop foi adiado porque nao ha infraestrutura leve reutilizavel; as setas de ordenacao e `sort_order` permanecem.
 - A migration aditiva `018_client_portal_preferences_and_recoverable_links.sql` foi aplicada em PostgreSQL 18.4 local temporario pelo migrador oficial e a segunda execucao foi no-op. Nenhuma publicacao ou acesso a producao foi realizado.
@@ -48,8 +65,8 @@
 
 - A Previa do Feed reconhece videos pelo mecanismo compartilhado de midia e usa `MediaPreview`, sem enviar URL de video para `<img>`. Imagens preservam o comportamento anterior, a primeira midia continua seguindo a ordenacao oficial dos arquivos e nao houve alteracao de Storage, API ou backend para gerar thumbnails.
 - No Dashboard, **Atividade recente** e **Postagens** iniciam recolhidas, expandem de forma independente e mantem seus conteudos montados. O estado e local a cada carregamento, e os controles expõem `aria-expanded`, `aria-controls` e regioes associadas.
-- No portal do Cliente, a area principal de aprovacao permanece prioritaria. No modo detalhado, **Visao geral / Acompanhamento do conteudo** inicia recolhida e preserva aba ativa, filtros e dados; no modo simplificado default, esse conjunto periferico fica oculto. O `localStorage` existente continua reservado ao desfazer da ultima decisao de arquivo.
-- Imagens e videos compartilham o fluxo de swipe: esquerda solicita ajuste e direita aprova. O video reconhece a intencao horizontal antes da captura, preserva rolagem vertical, protege clique residual, controles nativos e fullscreen padrao/WebKit, e nao e remontado durante o gesto. Os botoes explicitos continuam disponiveis.
+- No portal do Cliente, a area principal de aprovacao permanece prioritaria. No modo detalhado, **Visao geral / Acompanhamento do conteudo** inicia recolhida e preserva aba ativa, filtros e dados; no modo simplificado default, esse conjunto periferico fica oculto. O antigo desfazer por arquivo foi substituido pelo rewind controlado da postagem concluida.
+- Imagens e videos compartilham navegacao e interacoes de decisao: o gesto horizontal preserva rolagem vertical, protege clique residual, controles nativos e fullscreen padrao/WebKit, e nao remonta o video. Os botoes explicitos **Aprovar** e **Reprovar** continuam disponiveis; no modo `item`, a escolha permanece provisoria ate **Concluir analise**.
 - A tela principal do portal ganhou coluna lateral responsiva mais estreita, cards compactos, cabecalho e resumo centralizados e mais espaco para a midia principal. `object-contain`, videos verticais, breakpoints e experiencia movel foram preservados.
 - O portal do Cliente adotou a identidade visual da 20Cinco em temas claro e escuro, com tokens restritos ao portal, magenta em navegacao, selecao, foco e destaques nao semanticos, e contraste reforcado. Verde, vermelho e amarelo/laranja continuam reservados a aprovacao, ajuste/recusa e pendencia.
 - O cabecalho usa, nesta etapa, uma adaptacao vetorial SVG da marca aprovada visualmente. Ela nao e descrita como o asset oficial fornecido; a troca por asset vetorial oficial ou variante oficial para fundos escuros permanece melhoria futura. O PNG horizontal recebido esta preservado no repositorio, mas nao e o asset renderizado atualmente.
@@ -102,24 +119,23 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 ## Postagens, anexos e metricas
 
-- A agencia cria, edita, ordena anexos, duplica e envia postagens individualmente ou em lote.
-- O portal oferece swipe equivalente para imagens e videos, botoes acessiveis, feedback por arquivo, tags, edicao de feedback e desfazer apenas da ultima decisao no fluxo permitido. Em dispositivos moveis, as acoes permanecem fixas na parte inferior; em telas maiores, ficam junto da legenda.
+- A agencia cria, edita, ordena anexos, duplica e envia postagens individualmente ou em lote. Na lista atual, **Selecionar todos** respeita filtros e considera apenas o conjunto carregado de ate 500 registros, sem selecao global de itens ocultos ou nao carregados.
+- O portal oferece navegacao livre equivalente para imagens e videos, botoes acessiveis, feedback e tags. No modo `item`, os indicadores distinguem atual, pendente, aprovado e reprovado e permitem acesso direto sem remover midias do carrossel. Em dispositivos moveis, as acoes permanecem acessiveis; a auditoria verificou oito midias em `375x812` sem overflow horizontal.
 - Imagens e videos usam uma previa reutilizavel nas telas administrativas e no portal. Videos possuem player nativo com controles, `playsInline`, carregamento por metadados e alternativa para abrir o arquivo original quando o navegador nao reproduz o codec.
-- Os controles do video sao isolados do gesto horizontal de decisao. Legendas permanecem alinhadas a esquerda, preservam quebras, usam hifenizacao automatica em portugues e podem ser expandidas por `Ver mais` sem sobrepor as acoes.
-- O primeiro quadro de revisao foi compactado para priorizar, na abertura, faixa de contexto, midia, nome, estado, instrucao de swipe, legenda e acoes. A altura da midia responde ao viewport e usa limite menor em telas grandes para manter a borda inferior visivel.
+- Os controles do video sao isolados do gesto horizontal de decisao. Titulo e legenda aparecem completos, com quebras e hifenizacao; o portal atual nao usa **Ver mais** nem exibe filename tecnico. **Data de publicacao**, canais com icones compartilhados e a nomenclatura **Reprovar** compoem o contexto da decisao.
+- As tags de reprovacao atuais sao Design, Foto, Video, Legenda, Texto do conteudo, Titulo/chamada e Outro. Comentario permanece obrigatorio; no modo `item`, motivo e tags ficam associados a midia reprovada.
 - A ordem dos anexos e persistida por `files.sort_order` e usada em criacao, edicao, portal e previews.
 - A edicao administrativa possui previa compacta navegavel do feed.
-- Metricas preservam a primeira decisao, inclusive quando uma correcao posterior e aprovada. Dashboard, feed e insights tratam Clientes ativos como escopo padrao e oferecem visao geral quando aplicavel.
+- Contadores operacionais de aprovacao/reprovacao usam o estado canonico vigente de cada postagem depois da conclusao. Arquivos, drafts, cliques e revisoes intermediarias nao sao contados como postagens adicionais. Insights preserva analises historicas distintas de primeira decisao e arquivos; Dashboard, feed e insights tratam Clientes ativos como escopo padrao.
 - Notificacoes nao sao criadas para `draft` ou `ready`; eventos de envio, recusa e correcao permanecem distintos.
 
 ## Fundo sonoro
 
-- A infraestrutura de fundo sonoro preserva as modalidades sem fundo, incorporado a um video, arquivo de audio enviado e referencia externa, mas seus controles estao ocultos na criacao, edicao e aprovacao desta rodada. A trilha nunca participa de `files.sort_order`.
+- A infraestrutura de fundo sonoro preserva as modalidades sem fundo, incorporado a um video, arquivo de audio enviado e referencia externa. A feature e opcional, secundaria, de baixa prioridade e potencialmente removivel; a trilha nunca participa de `files.sort_order` nem define a arquitetura principal de aprovacao.
 - Postagens anteriores a esta capacidade carregam normalmente como `none`, sem migracao retroativa de conteudo ou historico.
 - O modo incorporado vincula um video ativo da propria postagem. O modo enviado aceita um unico audio ativo e metadados de faixa, origem, ponto inicial e observacoes. Referencias externas exibem somente seus dados e link quando nao ha audio local.
-- Enquanto o recurso esta dormente, decisoes de arquivo realizadas no portal recalculam a postagem sem exigir estado da trilha. O estado e o historico do fundo sonoro nao sao apagados nem convertidos.
-- Os players e controles de fundo sonoro nao sao montados nesta rodada. O som original e os controles nativos dos videos permanecem intactos.
-- Cada alteracao material gera nova revisao pendente. Versoes e decisoes anteriores permanecem nas tabelas de auditoria, e `activity_events` registra configuracao, aprovacao, ajuste, substituicao e reenvio. Postagens `executed` permanecem somente leitura.
+- Ausente, desabilitada ou em modo `none`, a trilha nunca cria pendencia. Se estiver ativa e houver trilha aplicavel, a compatibilidade de decisao e preservada; no modo `item`, decisao isolada da trilha nao conclui/reprova o post, e trilha pendente nao bloqueia um snapshot visual que ja resulte em reprovacao.
+- Versoes e decisoes anteriores permanecem nas tabelas de auditoria. `activity_events` continua best-effort depois do commit transacional da decisao oficial no banco; postagens `executed` permanecem somente leitura.
 
 ## Clientes, usuarios e e-mail
 
@@ -134,18 +150,18 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 `database/migrations` e a unica fonte de verdade do schema. O migrador registra aplicacoes em `schema_migrations`; o startup nao cria nem repara tabelas, colunas, indices ou dados.
 
-Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais locais vigentes vao de `001` e `003` a `019`, incluindo branding, preferencias do portal e configuracoes operacionais globais.
+Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais locais vigentes vao de `001` e `003` a `020`, incluindo branding, preferencias do portal, configuracoes operacionais globais e revisoes do portal.
 
 O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da publicacao da hotfix em 31/07/2026 e:
 
 - `001`, a `002` historica e `003` a `016` estao registradas;
 - `016_client_documents.sql` foi aplicada com sucesso;
 - o banco publicado esta em `016`;
-- aquele deploy terminou sem migration pendente; `017`, `018` e `019`, criadas depois, continuam ausentes do banco publicado.
+- aquele deploy terminou sem migration pendente; `017`, `018`, `019` e `020`, criadas depois, continuam ausentes do banco publicado.
 
 O backup logico foi criado, preservado e validado. A restauracao foi comprovada em stack Supabase local compativel, em transacao unica, usando copia de `roles.sql` com somente a instrucao de `statement_timeout` de `supabase_admin` comentada; schema e dados permaneceram identicos. O backup e restauravel com esse procedimento documentado de compatibilidade, mas nao inclui objetos fisicos do Supabase Storage.
 
-Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. `017`, `018` e `019` ainda nao integram o banco publicado.
+Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. `017`, `018`, `019` e `020` ainda nao integram o banco publicado. Em validacao local posterior, a cadeia `001` a `020` foi aplicada em PostgreSQL temporario e a segunda execucao foi no-op.
 
 ## Seguranca e demonstracao
 
@@ -180,9 +196,9 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 
 ## Estado operacional e limitacoes
 
-- As correcoes, a rodada visual e a hotfix de Clientes foram validadas com 151/151 testes de backend, 40/40 de frontend, builds dos dois projetos e `git diff --check`. Depois da publicacao, os tres health checks e os cenarios especificos de CPF/CNPJ, remocao, compatibilidade legada e prazo personalizado foram aprovados.
+- O pacote local mais recente foi validado com backend 202/202, admin 95/95, integracao PostgreSQL 12/12, focalizados admin 26/26 e backend 5/5, alem dos builds dos dois projetos e `git diff --check`. As validacoes publicadas anteriores e seus health checks permanecem historicamente registradas.
 - O script `npm run lint` do frontend existe, mas ESLint e sua configuracao nao estao disponiveis. O comando nao foi aprovado. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; por isso, a pendencia e tecnica e nao bloqueante para a publicacao atual. A verificacao administrativa da Vercel continua necessaria para confirmar que nao existe override remoto.
-- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado continua em `016`; a `017` presente no codigo atual ainda deve ser aplicada antes de uma futura publicacao do branding.
+- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado continua em `016`; as migrations locais `017` a `020` devem integrar, em ordem, um futuro deploy autorizado.
 - A verificacao manual da Vercel continua pendente para nomes de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews. Eventual segredo historico exigira rotacao ou invalidacao em etapa separada.
 - A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend da hotfix foi publicado em 31/07/2026 e os tres endpoints de health responderam com sucesso.
 - O ambiente publicado continua em modo demo, disponivel em `https://portal-20cinco.vercel.app` e preparado para testes pela 20Cinco.
@@ -193,6 +209,7 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 - A seed explicita continua condicionada a `APP_MODE=demo`; o reset e protegido separadamente por `DEPLOYMENT_MODE` e `ENABLE_DEMO_RESET`.
 - Multiempresa, identidade global de contas e entidades proprias de Projeto/Campanha ainda nao foram implementadas.
 - Fundo sonoro nao inclui busca ou download externo, integracoes com plataformas, escolha entre varias trilhas, editor, mixagem, renderizacao final ou metricas musicais.
+- Super Like/"Adorei", metricas de entusiasmo, tags de reprovacao configuraveis/editor de tags, integracao ClickUp, limpeza agressiva do schema legado, remocao definitiva de soundtrack e outbox de atividades nao foram implementados.
 
 Consulte [DEPLOYMENT.md](docs/DEPLOYMENT.md) para instalacao e ambientes, [STORAGE_ARCHITECTURE.md](docs/STORAGE_ARCHITECTURE.md) para arquivos e Retencao, e [ROADMAP.md](ROADMAP.md) para o trabalho futuro.
 
