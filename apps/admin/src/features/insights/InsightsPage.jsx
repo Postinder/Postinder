@@ -343,10 +343,6 @@ function buildPeriodOptions(posts, period, selectedValue) {
 
 function getStatus(post) {
   if (post?.status === 'executed') return 'approved'
-  if (post?.status === 'archived') {
-    const fileStatus = computePostStatus(post.files || [])
-    return fileStatus === 'draft' ? 'archived' : fileStatus
-  }
   const status = computePostStatus(post)
   if (status !== 'draft' || !post?.files?.length) return status
   return computePostStatus(post.files)
@@ -657,7 +653,7 @@ export default function InsightsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ includeArchived: true, limit: 500 }), fetchMonthlyFeedbacks()])
+    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ limit: 500 }), fetchMonthlyFeedbacks()])
       .then(([c, p, hf]) => { setClients(c); setPosts(p); setHistoricalFeedbacks(hf) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))

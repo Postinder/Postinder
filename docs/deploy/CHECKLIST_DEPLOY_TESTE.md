@@ -1,117 +1,101 @@
-# Checklist de Deploy para Teste
+# Checklist de deploy de teste
 
-## 1. Banco PostgreSQL online
+Consulte [../DEPLOYMENT.md](../DEPLOYMENT.md) para configuracao de Render, Vercel, Supabase e migrations.
 
-Crie um banco PostgreSQL hospedado e copie a connection string.
+A hotfix de Clientes foi publicada e validada em 31/07/2026. O banco publicado
+esta em `016`, e o ambiente demo esta disponivel para avaliacao da 20Cinco em
+`https://portal-20cinco.vercel.app`. As migrations `017` a `020` e os pacotes
+locais subsequentes continuam nao publicados e devem integrar uma publicacao futura autorizada.
 
-No ambiente do backend, configure:
+## Consolidacao e verificacao
 
-```env
-DATABASE_URL=postgresql://...
-NODE_ENV=production
-JWT_SECRET=uma-chave-longa-e-segura
-```
+1. [x] Concluir os ajustes pontuais de layout definidos na rodada atual.
+2. [ ] Alinhar visualmente `admin`, `manager`, `editor` e `viewer`.
+3. [ ] Remover referencias visuais legadas a `gestor` e `equipe`.
+4. [x] Executar validacao local final, incluindo 151 testes de backend, 40 de
+   frontend, builds, bundle scan e `git diff --check`.
+5. [ ] Concluir a verificacao manual da Vercel: nomes, escopos, ambientes,
+   commit ativo, deployments historicos e previews, sempre sem abrir valores.
+6. [ ] Rotacionar ou invalidar credenciais somente se exposicao historica for
+   confirmada ou presumida.
+7. [ ] Revisar as variaveis finais da Vercel; manter no frontend apenas
+   `VITE_API_URL`, `VITE_DEPLOYMENT_MODE` e `VITE_GA_MEASUREMENT_ID`.
+8. [x] Configurar no Render `DEPLOYMENT_MODE=demo` e
+   `ENABLE_DEMO_RESET=true`.
+9. [x] Configurar no frontend `VITE_DEPLOYMENT_MODE=demo`.
+10. [ ] Decidir se a IA sera habilitada.
+11. [ ] Se habilitada, configurar a credencial e o modelo somente no backend.
+12. [ ] Criar novo backup logico do banco.
+13. [ ] Executar preflight final somente leitura.
+14. [x] Reconfirmar o impacto da migration `016`.
+15. [ ] Configurar `npm run db:migrate` como Pre-Deploy Command/release step
+    bloqueante anterior ao Start Command.
 
-Antes de iniciar o backend em producao, aplique as migrations:
+## Publicacao
 
-```bash
-cd backend
-npm install
-npm run db:migrate
-```
+16. [x] Publicar primeiro o backend.
+17. [x] Confirmar que o migrador ignorou `001` a `015`, aplicou somente a `016`
+    e iniciou sem pendencias.
+18. [x] Publicar o frontend.
+19. [x] Confirmar commits e bundles ativos.
 
-## 2. Backend
+### Proxima publicacao do pacote local consolidado
 
-Variaveis recomendadas:
+- [ ] Criar backup e executar preflight somente leitura.
+- [ ] Confirmar os tres lockfiles v3, `engine-strict=true` na raiz/backend/frontend, instalacao limpa com `npm ci`, Node 24 no Vercel e `NODE_VERSION=24.16.0` no Render; nao presumir que o painel ja esta correto.
+- [ ] Confirmar que o release step aplicara, em ordem, `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql`, `019_platform_settings.sql` e `020_portal_approval_mode_and_review_drafts.sql` sobre o banco publicado em `016`.
+- [ ] Publicar o backend somente depois das migrations. Validar branding, configuracoes globais, modos `content|item`, drafts, conclusao, rewind e E-mail Marketing sem arquivo antes de publicar o frontend.
+- [ ] Concluir health checks e smoke tests do backend antes de publicar o frontend.
+- [ ] Publicar o frontend e confirmar que login/recuperacao nao consultam branding, enquanto admin e portais exibem o logo configuravel.
+- [ ] Reexecutar pelo menos backend 202/202, admin 95/95, integracao PostgreSQL 12/12, builds e `git diff --check` no artefato final; atualizar os totais se novos testes forem adicionados.
+- [ ] Em rollback, retornar frontend e depois backend; manter as migrations aditivas `017` a `020` e decidir qualquer estrategia posterior sem editar `schema_migrations` manualmente.
 
-```env
-NODE_ENV=production
-PORT=3001
-DATABASE_URL=postgresql://...
-JWT_SECRET=uma-chave-longa-e-segura
-APP_PUBLIC_URL=https://url-do-frontend
-CORS_ORIGINS=https://url-do-frontend
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-SUPABASE_STORAGE_BUCKET=postinder-uploads
-ZAPI_INSTANCE=
-ZAPI_TOKEN=
-ZAPI_CLIENT_TOKEN=
-```
+## Depois do deploy
 
-Comandos:
+Validacoes especificas da hotfix:
 
-```bash
-cd backend
-npm install
-npm run build
-npm start
-```
+- [x] `/health`, `/health/db` e `/health/storage` aprovados.
+- [x] Criacao com CPF e criacao/edicao com CNPJ aprovadas.
+- [x] Remocao do documento e compatibilidade de Cliente antigo sem documento aprovadas.
+- [x] Prazo diferente de 7 dias persistido e recuperado corretamente.
 
-Valide:
+20. [ ] Executar smoke tests: health checks, autenticacao, perfis, criacao,
+    upload, ordenacao, envio, portais, decisao, correcao, execucao, exclusao
+    logica, duplicacao e Retencao com dados descartaveis.
+21. [ ] Conferir logs sanitizados, inclusive redacao de tokens de portal em
+    sucesso, recusa, erro e subrota inexistente.
+22. [ ] Confirmar o reset da demo com admin autorizado e comprovar recusa para
+    viewer, Cliente e configuracao indisponivel.
 
-```text
-GET /health
-GET /health/db
-```
+Validacoes de midia dentro do smoke test:
 
-## 3. Uploads
+- [ ] MP4 H.264/AAC e enviado com progresso e reproduzido no portal e nas telas administrativas.
+- [ ] Controles de reproducao nao acionam swipe, aprovacao ou solicitacao de ajuste.
+- [ ] Swipe em videos preserva rolagem vertical, fullscreen, posicao do player e botoes explicitos.
+- [ ] Arquivo acima de 200 MB e tipo nao suportado exibem mensagens especificas; falha depois da criacao preserva a postagem editavel.
+- [ ] Codec nao reproduzivel oferece acesso ao arquivo original.
+- [ ] `draft` e `ready` nao aparecem ao Cliente.
+- [ ] Postagem Executada nao aceita mutacoes e a duplicacao cria novo registro.
+- [ ] Copia fisica na duplicacao persiste `bucket`, `storage_path`, MIME e tamanho.
 
-Em producao, configure Supabase Storage:
+Validacoes da interface consolidada:
 
-1. Crie um projeto no Supabase.
-2. Abra Storage.
-3. Crie um bucket chamado `postinder-uploads`.
-4. Deixe o bucket publico para que os arquivos possam ser visualizados no frontend.
-5. Copie a URL do projeto e a service role key para o backend.
+- [ ] Dashboard inicia **Atividade recente** e **Postagens** recolhidas e permite expansao independente.
+- [ ] Portal mantem a aprovacao prioritaria e a **Visao geral** recolhida por padrao, sem perder aba ou filtros ao reabrir.
+- [ ] Modo `content` consolida uma decisao por postagem; modo `item` permite navegacao livre, preserva drafts e somente oficializa em **Concluir analise**.
+- [ ] Rewind reabre a postagem elegivel mais recente uma vez por ciclo, sem ser consumido por navegacao de midia.
+- [ ] **Selecionar todos** respeita filtros e envia somente postagens elegiveis e visiveis; registros ocultos ou sem conteudo revisavel ficam fora.
+- [ ] Soundtrack ausente, desabilitado ou `none` nao bloqueia; no modo `item`, sua decisao isolada nao conclui o post.
+- [ ] Identidade da 20Cinco, contraste, foco e cores semanticas permanecem corretos nos temas claro e escuro.
+- [x] Cliente pode ser criado e editado com ou sem CPF/CNPJ; documento pode ser removido e prazo diferente de 7 dias persiste.
 
-```env
-SUPABASE_URL=https://...
-SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_STORAGE_BUCKET=postinder-uploads
-```
+O script `npm run lint` existe, mas ESLint e sua configuracao ainda nao estao
+disponiveis. Nenhum workflow de CI, configuracao versionada da Vercel ou
+comando documentado do Render executa lint; portanto, essa pendencia tecnica
+nao bloqueia a publicacao desta rodada e nao deve ser marcada como validacao
+aprovada. A verificacao administrativa da Vercel ainda deve confirmar a
+ausencia de override remoto.
 
-Sem essas variaveis, uploads em producao retornam erro porque o backend tenta usar storage online.
+## Observacao
 
-Valide depois do deploy:
-
-```text
-GET /health/storage
-```
-
-## 4. Frontend
-
-No ambiente do frontend:
-
-```env
-VITE_API_URL=https://url-do-backend/api/v1
-```
-
-Comandos:
-
-```bash
-cd apps/admin
-npm install
-npm run build
-```
-
-## 5. Testes manuais essenciais
-
-- Login admin.
-- Criar cliente.
-- Gerar link do portal na tela de detalhes do cliente.
-- Abrir `/portal/:token` em janela anonima e conferir se o portal carrega sem login.
-- Criar post com arquivo.
-- Reordenar arquivos/anexos e salvar.
-- Editar post recusado, remover arquivo antigo, adicionar novo arquivo e reenviar para aprovacao.
-- Conferir post na previa do feed.
-- Aprovar/reprovar como cliente pelo swipe e pelos botoes.
-- Confirmar que o cliente nao consegue voltar depois que o projeto inteiro foi aprovado.
-- Conferir aba de recusados no portal e edicao de feedback antes do reenvio.
-- Ver notificacoes lidas/nao lidas.
-- Conferir aba de postagens com projetos em andamento e concluidos.
-- Testar usuario Viewer e confirmar que ele nao consegue criar/editar/excluir.
-- Conferir insights de aprovacao inicial, recusa inicial, revisao e metricas por item.
-- Conferir detalhes do cliente, incluindo ultimo acesso apos abrir o portal.
-- Conferir `/health/db`.
-- Conferir `/health/storage`.
+O scheduler interno de Retencao e o retry por nova varredura existem no pacote local de configuracoes gerais, mas ainda exigem migration `019` e smoke test com dados descartaveis antes de publicacao. O fluxo de aprovacao exige tambem a migration `020`. Outbox para `activity_events`, fila distribuida, bucket privado, signed URLs, upload direto/retomavel e transcodificacao continuam inexistentes.

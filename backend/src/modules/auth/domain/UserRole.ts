@@ -4,5 +4,3 @@ export enum UserRole {
   EDITOR = 'editor',
   VIEWER = 'viewer',
 }
-
-export const UserRoleValues = Object.values(UserRole)

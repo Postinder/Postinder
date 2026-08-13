@@ -1,8 +1,7 @@
-import { Plug, CheckCircle, XCircle, ExternalLink, Copy, Eye, EyeOff } from 'lucide-react'
+import { Plug, CheckCircle, XCircle, ExternalLink, Server } from 'lucide-react'
 import { INTEGRATIONS } from '../../services/integrations/registry'
 import Card from '../../components/ui/Card'
 import PageHeader from '../../components/ui/PageHeader'
-import { useState } from 'react'
 
 const CATEGORY_LABELS = {
   ai:        { label: 'Inteligência Artificial', icon: '🤖' },
@@ -13,23 +12,18 @@ const CATEGORY_LABELS = {
   analytics: { label: 'Analytics',              icon: '📈' },
 }
 
-const ENV_INSTRUCTIONS = {
-  VITE_ANTHROPIC_API_KEY: 'console.anthropic.com → API Keys',
-  VITE_ZAPI_INSTANCE:     'developer.z-api.io → Instâncias',
-  VITE_ZAPI_TOKEN:        'developer.z-api.io → Token da instância',
-  VITE_TWILIO_SID:        'console.twilio.com → Account SID',
-  VITE_TWILIO_TOKEN:      'console.twilio.com → Auth Token',
-  VITE_TWILIO_FROM:       'Ex: whatsapp:+14155238886',
-  VITE_GHL_API_KEY:       'GoHighLevel → Settings → API Keys',
-  VITE_GHL_LOCATION_ID:   'GoHighLevel → Settings → Business Info → Location ID',
-  VITE_CANVA_CLIENT_ID:   'canva.com/developers → Apps → Client ID',
-  VITE_CANVA_CLIENT_SECRET:'canva.com/developers → Apps → Client Secret',
-  VITE_RESEND_API_KEY:    'resend.com → API Keys',
-  VITE_GA_MEASUREMENT_ID: 'analytics.google.com → Admin → Measurement ID',
-}
-
-function IntegrationCard({ name, description, icon, enabled, envKeys, docs, category }) {
-  const [showEnv, setShowEnv] = useState(false)
+function IntegrationCard({
+  name,
+  description,
+  icon,
+  enabled,
+  configuration,
+  configurationNote,
+  publicEnvKeys = [],
+  docs,
+}) {
+  const serverManaged = configuration === 'backend'
+  const unavailable = configuration === 'unavailable'
 
   return (
     <Card className={`p-5 transition-all ${enabled ? 'border-green-300 dark:border-green-800' : ''}`}>
@@ -42,50 +36,35 @@ function IntegrationCard({ name, description, icon, enabled, envKeys, docs, cate
           </div>
         </div>
         <div className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${
-          enabled
+          serverManaged
+            ? 'bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400'
+            : enabled
             ? 'bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400'
             : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400'
         }`}>
-          {enabled ? <><CheckCircle size={12}/> Ativo</> : <><XCircle size={12}/> Inativo</>}
+          {serverManaged
+            ? <><Server size={12}/> Server-side</>
+            : enabled
+              ? <><CheckCircle size={12}/> Ativo</>
+              : <><XCircle size={12}/> Indisponível</>}
         </div>
       </div>
 
-      {!enabled && (
-        <div>
-          <button
-            onClick={() => setShowEnv(v => !v)}
-            className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-mag-500 transition-colors mb-2"
-          >
-            {showEnv ? <EyeOff size={12}/> : <Eye size={12}/>}
-            {showEnv ? 'Ocultar configuração' : 'Como ativar'}
-          </button>
+      <div className="bg-neutral-50 dark:bg-neutral-800 rounded-xl p-3 text-xs text-neutral-500 dark:text-neutral-400">
+        {configurationNote}
+        {publicEnvKeys.length > 0 && (
+          <div className="mt-2">
+            Configuração pública permitida: <code className="font-mono">{publicEnvKeys.join(', ')}</code>
+          </div>
+        )}
+        {unavailable && (
+          <div className="mt-2 font-medium">
+            Nenhuma credencial deve ser adicionada ao frontend.
+          </div>
+        )}
+      </div>
 
-          {showEnv && (
-            <div className="bg-neutral-50 dark:bg-neutral-800 rounded-xl p-4 text-xs space-y-2">
-              <p className="font-semibold text-neutral-600 dark:text-neutral-300 mb-3">
-                Adicione as seguintes variáveis no arquivo <code className="bg-neutral-200 dark:bg-neutral-700 px-1 rounded">.env</code>:
-              </p>
-              {envKeys.map(key => (
-                <div key={key} className="flex items-start gap-2 bg-white dark:bg-neutral-900 rounded-lg p-2 border border-neutral-200 dark:border-neutral-700">
-                  <code className="text-mag-600 dark:text-mag-400 font-mono flex-shrink-0">{key}=</code>
-                  <span className="text-neutral-400 italic">{ENV_INSTRUCTIONS[key] || 'Consulte a documentação'}</span>
-                </div>
-              ))}
-              <p className="text-neutral-400 pt-1">
-                Após configurar, reinicie o servidor com <code className="bg-neutral-200 dark:bg-neutral-700 px-1 rounded">npm run dev</code>
-              </p>
-              {docs && (
-                <a href={docs} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-teal-500 hover:underline mt-1">
-                  <ExternalLink size={11}/> Documentação oficial
-                </a>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {enabled && docs && (
+      {docs && (
         <a href={docs} target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-1 text-xs text-teal-500 hover:underline mt-1">
           <ExternalLink size={11}/> Documentação
@@ -130,14 +109,11 @@ export default function IntegrationsPage() {
       </Card>
 
       <Card className="p-4 mb-6 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
-        <h3 className="font-semibold text-blue-700 dark:text-blue-400 text-sm mb-2">📋 Como configurar uma integração</h3>
-        <ol className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
-          <li>1. Clique em <strong>"Como ativar"</strong> na integração desejada</li>
-          <li>2. Crie a conta no serviço e obtenha as credenciais indicadas</li>
-          <li>3. Abra o arquivo <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">.env</code> na pasta do projeto</li>
-          <li>4. Adicione as variáveis com os valores obtidos</li>
-          <li>5. Reinicie o servidor: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">npm run dev</code></li>
-        </ol>
+        <h3 className="font-semibold text-blue-700 dark:text-blue-400 text-sm mb-2">🔒 Configuração segura</h3>
+        <p className="text-xs text-blue-600 dark:text-blue-400">
+          Integrações que exigem credenciais privadas são configuradas exclusivamente no backend.
+          O frontend aceita apenas identificadores explicitamente públicos.
+        </p>
       </Card>
 
       {Object.entries(byCategory).map(([category, integrations]) => {

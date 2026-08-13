@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { KeyRound } from 'lucide-react'
+import { Flame, KeyRound } from 'lucide-react'
 import { resetPassword } from '../../services/auth.service'
 import Button from '../../components/ui/Button'
 import toast from 'react-hot-toast'
@@ -31,6 +31,12 @@ export default function RecoverPage() {
     >
       <div className="w-full max-w-sm mx-4 bg-neutral-900 border border-neutral-800 rounded-2xl p-10 animate-slide-up">
         <div className="text-center mb-8">
+          <div className="mb-5 flex items-center justify-center gap-2" aria-label="Postinder">
+            <Flame size={24} className="text-mag-500" aria-hidden="true" />
+            <div className="text-xl font-extrabold tracking-tight text-white">
+              Post<span className="text-mag-500">inder</span>
+            </div>
+          </div>
           <KeyRound size={36} className="text-mag-500 mx-auto mb-3" />
           <h1 className="text-2xl font-extrabold text-white">Recuperar Senha</h1>
           <p className="text-neutral-500 text-xs mt-1">Enviaremos um link de redefinição</p>

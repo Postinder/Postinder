@@ -5,6 +5,7 @@ import { JwtProvider } from '../../infrastructure/JwtProvider'
 import { LoginDTO } from '../dtos/LoginDTO'
 import { TokenResponseDTO } from '../dtos/TokenResponseDTO'
 import { env } from '../../../../config/environment'
+import { isAdminRefreshToken, isClientRefreshToken } from '../../domain/AuthToken'
 
 export class AuthService {
   constructor(
@@ -40,18 +41,17 @@ export class AuthService {
 
   async refreshToken(refreshToken: string): Promise<TokenResponseDTO> {
     try {
-      const decoded = this.jwtProvider.verify(refreshToken) as any
-      if (decoded.type !== 'refresh') {
-        throw new UnauthorizedException('Invalid refresh token')
-      }
+      const decoded = this.jwtProvider.verify(refreshToken)
 
-      if (decoded.userId) {
+      if (isAdminRefreshToken(decoded)) {
         const user = await this.userRepository.findByEmail(decoded.email)
-        if (!user) throw new UnauthorizedException('User not found')
+        if (!user || user.id !== decoded.userId) {
+          throw new UnauthorizedException('User not found')
+        }
         return this.buildAdminTokens(user)
       }
 
-      if (decoded.clientId) {
+      if (isClientRefreshToken(decoded)) {
         const client = await this.userRepository.findClientById(decoded.clientId)
         if (!client) throw new UnauthorizedException('Client not found')
         return this.buildClientTokens(client)
@@ -70,7 +70,7 @@ export class AuthService {
       `${env.JWT_EXPIRY_MINUTES}m`,
     )
     const refreshToken = this.jwtProvider.sign(
-      { userId: user.id, email: user.email, type: 'refresh' },
+      { userId: user.id, email: user.email, type: 'refresh', context: 'admin' },
       `${env.JWT_REFRESH_EXPIRY_DAYS}d`,
     )
     return {
@@ -86,7 +86,7 @@ export class AuthService {
       `${env.JWT_EXPIRY_MINUTES}m`,
     )
     const refreshToken = this.jwtProvider.sign(
-      { clientId: client.id, type: 'refresh' },
+      { clientId: client.id, type: 'refresh', context: 'client' },
       `${env.JWT_REFRESH_EXPIRY_DAYS}d`,
     )
     return {

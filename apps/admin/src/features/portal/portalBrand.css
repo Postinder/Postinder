@@ -1,0 +1,42 @@
+.portal-brand {
+  /* Scoped defaults: these values can later be overridden at the portal root per company. */
+  --portal-brand-primary: #7d0038;
+  --portal-brand-primary-hover: #5a0029;
+  --portal-brand-primary-active: #5a0029;
+  --portal-brand-soft: #fff0f5;
+  --portal-brand-soft-hover: #f4e6ed;
+  --portal-brand-border: #a7014b;
+  --portal-brand-selection-ring: rgb(167 1 75 / 20%);
+  --portal-brand-focus: #a7014b;
+  --portal-brand-foreground: #7d0038;
+  --portal-brand-header-background: #7d0038;
+  --portal-brand-header-border: rgb(255 255 255 / 14%);
+}
+
+.dark .portal-brand {
+  --portal-brand-primary: #7d0038;
+  --portal-brand-primary-hover: #a7014b;
+  --portal-brand-primary-active: #5a0029;
+  --portal-brand-soft: rgb(125 0 56 / 28%);
+  --portal-brand-soft-hover: rgb(125 0 56 / 38%);
+  --portal-brand-border: #a7014b;
+  --portal-brand-selection-ring: rgb(240 192 212 / 24%);
+  --portal-brand-focus: #f0c0d4;
+  --portal-brand-foreground: #f0c0d4;
+  --portal-brand-header-background: #5a0029;
+  --portal-brand-header-border: rgb(255 255 255 / 12%);
+}
+
+.portal-brand-header {
+  border-color: var(--portal-brand-header-border);
+  background-color: var(--portal-brand-header-background);
+}
+
+.portal-brand-header .portal-theme-toggle {
+  background-color: rgb(255 255 255 / 18%);
+}
+
+.portal-brand-header .portal-theme-toggle:focus-visible {
+  --tw-ring-color: rgb(255 255 255 / 80%);
+  --tw-ring-offset-color: var(--portal-brand-header-background);
+}

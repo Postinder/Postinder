@@ -10,8 +10,23 @@ export async function approvePortalPost(token, postId) {
   return data
 }
 
-export async function rejectPortalPost(token, postId, comment) {
-  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/reject`, { comment })
+export async function rejectPortalPost(token, postId, comment, tags = []) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/reject`, { comment, tags })
+  return data
+}
+
+export async function savePortalItemDecision(token, postId, fileId, decision, comment = '', tags = []) {
+  const { data } = await apiClient.put(`/portal/${token}/posts/${postId}/items/${fileId}/decision`, { decision, comment, tags })
+  return data
+}
+
+export async function completePortalItemReview(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/complete-review`)
+  return data
+}
+
+export async function reopenPortalPost(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/reopen`)
   return data
 }
 
@@ -37,5 +52,20 @@ export async function resetPortalFile(token, fileId) {
 
 export async function updatePortalFileFeedback(token, fileId, comment, tags = []) {
   const { data } = await apiClient.patch(`/portal/${token}/files/${fileId}/feedback`, { comment, tags })
+  return data
+}
+
+export async function approvePortalSoundtrack(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/soundtrack/approve`)
+  return data
+}
+
+export async function adjustPortalSoundtrack(token, postId, comment) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/soundtrack/adjust`, { comment })
+  return data
+}
+
+export async function resetPortalSoundtrack(token, postId) {
+  const { data } = await apiClient.post(`/portal/${token}/posts/${postId}/soundtrack/reset`)
   return data
 }

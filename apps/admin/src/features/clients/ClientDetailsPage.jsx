@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, BarChart2, CalendarDays, CheckCircle, Clock, Copy, Grid, Link2, Mail, MessageCircle, PieChart, RefreshCw, UserRound } from 'lucide-react'
-import { fetchClients, generateClientPortalLink } from '../../services/clients.service'
+import { ArrowLeft, BarChart2, CalendarDays, CheckCircle, Clock, Copy, ExternalLink, Grid, Link2, Mail, MessageCircle, PieChart, RefreshCw, UserRound } from 'lucide-react'
+import { fetchClientPortalLink, fetchClients, generateClientPortalLink, replaceClientPortalLink, updateClient } from '../../services/clients.service'
 import { computePostStatus, fetchPosts } from '../../services/posts.service'
 import { fetchMonthlyFeedbacks } from '../../services/insights.service'
 import { Avatar, StatusBadge } from '../../components/ui/Badge'
@@ -10,6 +10,9 @@ import Card from '../../components/ui/Card'
 import EmptyState from '../../components/ui/EmptyState'
 import Skeleton from '../../components/ui/Skeleton'
 import toast from 'react-hot-toast'
+import { formatClientDocument } from '../../utils/clientDocument'
+import { usePlatformSettings } from '../../hooks/usePlatformSettings'
+import { isFieldVisible } from '../../utils/fieldPolicies'
 
 function getPostClientId(post) {
   return post.client_id || post.clientId
@@ -33,10 +36,6 @@ function formatDate(value) {
 
 function getHistoricalStatus(post) {
   if (post?.status === 'executed') return 'approved'
-  if (post?.status === 'archived') {
-    const fileStatus = computePostStatus(post.files || [])
-    return fileStatus === 'draft' ? 'archived' : fileStatus
-  }
   return computePostStatus(post)
 }
 
@@ -92,13 +91,26 @@ export default function ClientDetailsPage() {
   const [portalLink, setPortalLink] = useState(null)
   const [portalBusy, setPortalBusy] = useState(false)
   const [portalDays, setPortalDays] = useState(15)
+  const [portalLinkAccess, setPortalLinkAccess] = useState(true)
+  const [preferenceBusy, setPreferenceBusy] = useState(false)
+  const { settings } = usePlatformSettings()
+  const fieldPolicies = settings.client_fields
 
   useEffect(() => {
-    Promise.all([fetchClients({ includeInactive: true }), fetchPosts({ includeArchived: true, limit: 500 }), fetchMonthlyFeedbacks({ clientId: id })])
-      .then(([loadedClients, loadedPosts, loadedFeedbacks]) => {
+    Promise.all([
+      fetchClients({ includeInactive: true }),
+      fetchPosts({ limit: 500 }),
+      fetchMonthlyFeedbacks({ clientId: id }),
+      fetchClientPortalLink(id).catch(() => {
+        setPortalLinkAccess(false)
+        return null
+      }),
+    ])
+      .then(([loadedClients, loadedPosts, loadedFeedbacks, loadedPortalLink]) => {
         setClients(loadedClients)
         setPosts(loadedPosts)
         setFeedbacks(loadedFeedbacks)
+        setPortalLink(loadedPortalLink)
       })
       .catch(error => toast.error(error.message || 'Não foi possível carregar o cliente.'))
       .finally(() => setLoading(false))
@@ -190,6 +202,39 @@ export default function ClientDetailsPage() {
     }
   }
 
+  function handleOpenPortalLink() {
+    if (!portalLink?.portalUrl) return
+    window.open(portalLink.portalUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  async function handleReplacePortalLink() {
+    if (inactive || !confirm('Substituir o link ativo? O link anterior deixara de funcionar somente quando o novo estiver pronto.')) return
+    setPortalBusy(true)
+    try {
+      const result = await replaceClientPortalLink(id, portalDays)
+      setPortalLink(result)
+      toast.success('Link do portal substituido com seguranca.')
+    } catch (error) {
+      toast.error(error.message || 'Nao foi possivel substituir o link do portal.')
+    } finally {
+      setPortalBusy(false)
+    }
+  }
+
+  async function handlePortalModeChange(event) {
+    const portalMode = event.target.value || null
+    setPreferenceBusy(true)
+    try {
+      const updated = await updateClient(id, { portal_mode_override: portalMode })
+      setClients(current => current.map(item => item.id === id ? { ...item, ...updated } : item))
+      toast.success(portalMode ? 'Override do portal atualizado.' : 'O cliente agora usa a configuracao da plataforma.')
+    } catch (error) {
+      toast.error(error.message || 'Nao foi possivel atualizar o portal.')
+    } finally {
+      setPreferenceBusy(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-5">
@@ -235,12 +280,19 @@ export default function ClientDetailsPage() {
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 {client.email && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><Mail size={13} />{client.email}</span>}
-                {client.whatsapp && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><MessageCircle size={13} />{client.whatsapp}</span>}
-                {client.segment && <span className="rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">{client.segment}</span>}
+                {isFieldVisible(fieldPolicies.whatsapp) && client.whatsapp && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800"><MessageCircle size={13} />{client.whatsapp}</span>}
+                {isFieldVisible(fieldPolicies.document) ? <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">
+                  <UserRound size={13} />
+                  {client.document_number
+                    ? `${String(client.document_type || 'documento').toUpperCase()}: ${formatClientDocument(client.document_number, client.document_type)}`
+                    : 'Documento: —'}
+                </span> : null}
+                {isFieldVisible(fieldPolicies.segment) && client.segment && <span className="rounded-full bg-neutral-100 px-3 py-1.5 dark:bg-neutral-800">{client.segment}</span>}
               </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {portalLinkAccess ? <>
             <select
               value={portalDays}
               onChange={event => setPortalDays(Number(event.target.value))}
@@ -251,22 +303,48 @@ export default function ClientDetailsPage() {
               <option value={15}>15 dias</option>
             </select>
             {portalLink?.portalUrl ? (
-              <Button variant="secondary" onClick={handleCopyPortalLink} icon={<Copy size={16} />}>Copiar link do portal</Button>
+              <>
+                <Button variant="secondary" onClick={handleCopyPortalLink} icon={<Copy size={16} />}>Copiar link</Button>
+                <Button variant="secondary" onClick={handleOpenPortalLink} icon={<ExternalLink size={16} />}>Abrir portal</Button>
+              </>
             ) : null}
-            <Button variant="secondary" loading={portalBusy} disabled={inactive} onClick={handleGeneratePortalLink} icon={portalLink ? <RefreshCw size={16} /> : <Link2 size={16} />}>
-              {portalLink ? 'Regerar link' : 'Gerar link do portal'}
-            </Button>
+            {!portalLink?.hasActiveLink ? (
+              <Button variant="secondary" loading={portalBusy} disabled={inactive} onClick={handleGeneratePortalLink} icon={<Link2 size={16} />}>
+                Gerar link do portal
+              </Button>
+            ) : (
+              <Button variant="secondary" loading={portalBusy} disabled={inactive} onClick={handleReplacePortalLink} icon={<RefreshCw size={16} />}>
+                Substituir link
+              </Button>
+            )}
+            </> : null}
             <Button variant="secondary" onClick={() => navigate(`/admin/dashboard?client=${client.id}`)}>Ver posts</Button>
             <Button onClick={() => navigate(`/admin/feed?client=${client.id}`)}>Ver feed</Button>
           </div>
         </div>
-        {portalLink?.portalUrl ? (
+        {portalLinkAccess && portalLink?.hasActiveLink ? (
           <div className="mt-4 rounded-lg border border-mag-100 bg-mag-50 p-3 text-sm text-mag-900 dark:border-mag-500/20 dark:bg-mag-500/10 dark:text-mag-100">
-            <div className="font-bold">Link privado do portal</div>
-            <div className="mt-1 break-all text-xs">{portalLink.portalUrl}</div>
-            <div className="mt-1 text-xs opacity-70">Valido ate {formatDate(portalLink.expiresAt)}. Ao regerar, o link anterior deixa de ser usado.</div>
+            <div className="font-bold">Link ativo do portal</div>
+            {portalLink.portalUrl ? <div className="mt-1 break-all text-xs">{portalLink.portalUrl}</div> : <div className="mt-1 text-xs">Este link antigo continua valido, mas nao pode ser recuperado. Substitua-o explicitamente para voltar a copiar.</div>}
+            <div className="mt-1 text-xs opacity-70">Criado ou substituido em {formatDate(portalLink.createdAt)} · valido ate {formatDate(portalLink.expiresAt)}.</div>
           </div>
         ) : null}
+        <label className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/60">
+          <span>
+            <span className="block text-sm font-bold text-neutral-900 dark:text-white">Experiencia do portal</span>
+            <span className="mt-1 block text-xs leading-5 text-neutral-500 dark:text-neutral-300">Use o padrao global ou escolha um comportamento explicito para este cliente.</span>
+          </span>
+          <select
+            value={client.portal_mode_override || client.portalModeOverride || ((client.portal_detailed_view === true || client.portalDetailedView === true) ? 'detailed' : '')}
+            onChange={handlePortalModeChange}
+            disabled={inactive || preferenceBusy}
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            <option value="">Usar configuracao da plataforma</option>
+            <option value="simplified">Portal simplificado</option>
+            <option value="detailed">Portal detalhado</option>
+          </select>
+        </label>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

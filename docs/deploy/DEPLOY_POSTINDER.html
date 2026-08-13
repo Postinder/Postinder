@@ -159,7 +159,13 @@
     <header>
       <span class="badge">Postinder</span>
       <span class="badge">Deploy</span>
-      <h1>Guia de Deploy do Postinder</h1>
+    <h1>Registro Historico de Deploy do Postinder</h1>
+    <p class="warn"><strong>Documento historico, nao operacional:</strong> este
+      registro descreve a publicacao anterior as correcoes da auditoria
+      pre-deploy. Nao use suas variaveis ou checklists para uma nova
+      publicacao. O procedimento vigente esta em
+      <code>docs/DEPLOYMENT.md</code> e o deploy permanece nao autorizado.</p>
+      <p class="meta"><strong>Referencia historica:</strong> este arquivo registra um deploy anterior. Todas as instrucoes operacionais abaixo estao invalidadas e nao devem ser executadas. Para o procedimento oficial atual, consulte <code>docs/DEPLOYMENT.md</code>.</p>
       <p class="meta">Documento com os passos e configurações usados para publicar o frontend, backend e banco de dados da branch <code>newStructure</code>.</p>
       <p class="meta">Atualizado em 01/06/2026.</p>
     </header>
@@ -239,14 +245,14 @@ node dist/server.js</pre>
       <h2>Banco no Supabase</h2>
       <ol>
         <li>Foi criado um projeto Supabase chamado <code>Postinder</code>.</li>
-        <li>No <code>SQL Editor</code>, foi colado o conteúdo completo de <code>database/001_initial_schema.sql</code>.</li>
-        <li>O script criou as tabelas <code>users</code>, <code>clients</code>, <code>posts</code>, <code>files</code> e <code>feedback</code>.</li>
-        <li>O script também criou índices e inseriu o admin e cliente de teste.</li>
+        <li>As migrations estruturais devem ser aplicadas pelo comando <code>npm run db:migrate</code> no diretório <code>backend</code>.</li>
+        <li>O comando cria e atualiza as tabelas, índices e constraints, registrando cada etapa em <code>schema_migrations</code>.</li>
+        <li>Dados de demonstração são opcionais e exigem o comando explícito <code>APP_MODE=demo npm run db:seed-demo</code>.</li>
       </ol>
       <div class="note">
-        <p><strong>Importante:</strong> no SQL Editor deve ser colado o conteúdo do arquivo SQL, não o caminho <code>database/001_initial_schema.sql</code>.</p>
+        <p><strong>Importante:</strong> o schema SQL inicial legado foi removido. Novas instalações usam somente migrations versionadas.</p>
       </div>
-      <h3>Credenciais de teste criadas pelo SQL</h3>
+      <h3>Credenciais de teste criadas pela seed explícita</h3>
       <pre>Admin:
 E-mail: admin@postinder.local
 Senha:  Admin@123456
@@ -280,9 +286,8 @@ Senha:  Cliente@123456</pre>
       <h3>Configurações de build</h3>
       <pre>Framework Preset: Vite
 Root Directory: apps/admin
-Install Command: npm install
-Build Command: npm run build
-Output Directory: dist</pre>
+Install/Build/Output: HISTORICO - NAO EXECUTAR
+Fonte operacional atual: docs/DEPLOYMENT.md</pre>
       <h3>Variáveis de ambiente na Vercel</h3>
       <pre>VITE_API_URL=https://SUA-URL-DO-RENDER.onrender.com/api/v1
 VITE_APP_URL=https://postinder.vercel.app
@@ -307,8 +312,9 @@ Region: Oregon (US West)
 Root Directory: backend
 Instance Type: Free</pre>
       <h3>Comandos no Render</h3>
-      <pre>Build Command: npm install --include=dev && npm run build
-Start Command: npm run start</pre>
+      <pre>Build/Start: HISTORICO - NAO EXECUTAR
+Fonte operacional atual: docs/DEPLOYMENT.md</pre>
+      <p>Antes do startup, execute <code>npm run db:migrate</code> como etapa de release. A automatizacao dessa etapa no Render permanece pendente.</p>
       <p>O <code>--include=dev</code> garante que o TypeScript seja instalado mesmo com <code>NODE_ENV=production</code>.</p>
       <h3>Variáveis de ambiente no Render</h3>
       <pre>NODE_ENV=production
@@ -355,14 +361,14 @@ APP_PUBLIC_URL=https://postinder.vercel.app</pre>
             <td>Trocar a URL local para <code>127.0.0.1:5433</code>.</td>
           </tr>
           <tr>
-            <td>Supabase SQL Editor deu erro em <code>database</code></td>
-            <td>Foi colado o caminho do arquivo em vez do conteúdo SQL.</td>
-            <td>Copiar e colar todo o conteúdo de <code>database/001_initial_schema.sql</code>.</td>
+            <td>Banco Supabase está sem schema</td>
+            <td>As migrations não foram executadas.</td>
+            <td>Definir <code>DATABASE_URL</code> e rodar <code>npm run db:migrate</code> no diretório <code>backend</code>.</td>
           </tr>
           <tr>
             <td>Render falhou no build</td>
             <td><code>NODE_ENV=production</code> podia impedir instalação de dev dependencies.</td>
-            <td>Usar <code>npm install --include=dev && npm run build</code>.</td>
+            <td>Instrucao historica invalidada; consultar <code>docs/DEPLOYMENT.md</code>.</td>
           </tr>
           <tr>
             <td>Render falhou no start com <code>exports is not defined</code></td>

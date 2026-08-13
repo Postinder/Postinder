@@ -5,7 +5,6 @@ export interface FindPostsFilter {
   companyId?: string
   clientId?: string
   status?: PostStatus
-  includeArchived?: boolean
 }
 
 export interface PaginationParams {

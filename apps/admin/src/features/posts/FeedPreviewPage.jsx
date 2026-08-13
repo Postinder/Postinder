@@ -9,6 +9,7 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { Select } from '../../components/ui/Input'
 import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
+import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
 import toast from 'react-hot-toast'
 
 const STATUS_DOT = {
@@ -21,7 +22,7 @@ const STATUS_DOT = {
 }
 
 const STATUS_FILTERS = [
-  { value: '', label: 'Todos os estados' },
+  { value: '', label: 'Todos status' },
   { value: 'approved', label: 'Aprovado' },
   { value: 'rejected', label: 'Recusado' },
   { value: 'pending_approval', label: 'Aguardando' },
@@ -46,15 +47,23 @@ function isClientActive(client) {
   return client?.is_active !== false && client?.isActive !== false
 }
 
-function isPostArchived(post) {
-  return post?.archived === true || post?.is_archived === true || post?.isArchived === true || post?.status === 'archived'
-}
-
 function formatDate(value) {
   if (!value) return 'Sem data'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Sem data'
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
+const RETENTION_LABELS = {
+  immediate: 'Imediatamente',
+  '1d': '1 dia',
+  '7d': '7 dias',
+  '30d': '30 dias',
+  never: 'Nunca',
+}
+
+function isStorageDeleted(file) {
+  return Boolean(file?.storage_deleted_at || file?.storageDeletedAt)
 }
 
 function buildPostTimeline(post) {
@@ -96,8 +105,11 @@ function PostDetailsModal({ post, client, open, onClose }) {
   const files = post.files || []
   const status = computePostStatus(post)
   const activeFile = files[activeFileIndex] || files[0]
-  const activeFileUrl = resolveMediaUrl(activeFile?.url || activeFile?.storage_url)
+  const activeFileRemoved = isStorageDeleted(activeFile)
+  const activeFileUrl = activeFileRemoved ? null : resolveMediaUrl(activeFile?.url || activeFile?.storage_url)
   const activeFileIsImage = (activeFile?.file_type || '').toUpperCase() === 'IMAGE' || /\.(jpe?g|png|gif|webp|svg)$/i.test(activeFile?.name || '')
+  const activeFileIsVideo = getMediaKind(activeFile) === 'video'
+  const retentionPolicy = post.filesRetentionPolicy || post.files_retention_policy
 
   function moveFile(delta) {
     if (!files.length) return
@@ -186,7 +198,20 @@ function PostDetailsModal({ post, client, open, onClose }) {
 
               <div className="overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950">
                 <div className="relative flex min-h-80 items-center justify-center">
-                  {activeFileIsImage && activeFileUrl ? (
+                  {activeFileRemoved ? (
+                    <div className="max-w-sm px-6 text-center text-sm font-semibold text-neutral-500 dark:text-neutral-400">
+                      <ImageIcon size={28} className="mx-auto mb-3" />
+                      <div>Arquivo removido automaticamente conforme politica de retencao.</div>
+                      <div className="mt-2 text-xs font-medium">Removido em {formatDate(activeFile.storage_deleted_at || activeFile.storageDeletedAt)}{retentionPolicy ? ` · ${RETENTION_LABELS[retentionPolicy] || retentionPolicy}` : ''}</div>
+                    </div>
+                  ) : activeFileIsVideo && activeFileUrl ? (
+                    <MediaPreview
+                      file={activeFile}
+                      src={activeFileUrl}
+                      className="h-[58vh] w-full"
+                      mediaClassName="h-full w-full object-contain"
+                    />
+                  ) : activeFileIsImage && activeFileUrl ? (
                     <img
                       src={activeFileUrl}
                       alt={activeFile?.name || activeFile?.original_name || 'Arquivo'}
@@ -257,32 +282,38 @@ function PostDetailsModal({ post, client, open, onClose }) {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {files.map((file, index) => {
-                const url = resolveMediaUrl(file.url || file.storage_url)
+                const storageDeleted = isStorageDeleted(file)
+                const url = storageDeleted ? null : resolveMediaUrl(file.url || file.storage_url)
                 const isImage = (file.file_type || '').toUpperCase() === 'IMAGE' || /\.(jpe?g|png|gif|webp|svg)$/i.test(file.name || '')
+                const isVideo = getMediaKind(file) === 'video'
+                const content = <>
+                  <div className="relative h-36 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                    {storageDeleted ? (
+                      <div className="flex h-full items-center justify-center px-4 text-center text-xs font-bold text-neutral-400">Arquivo removido conforme retencao</div>
+                    ) : isVideo && url ? (
+                      <MediaPreview file={file} src={url} className="h-full w-full" mediaClassName="h-full w-full object-cover" controls={false} compact />
+                    ) : isImage && url ? (
+                      <img src={url} alt="" className="h-full w-full object-contain" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-neutral-400">
+                        {file.file_type || 'Arquivo'}
+                      </div>
+                    )}
+                    <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-1 text-xs font-black text-white">
+                      {index + 1}/{files.length}
+                    </span>
+                  </div>
+                  <div className="mt-2 truncate text-xs font-semibold text-neutral-600 group-hover:text-mag-600 dark:text-neutral-300">
+                    {file.name || file.original_name || 'Arquivo'}
+                  </div>
+                  {storageDeleted && <div className="mt-1 text-[11px] font-medium text-neutral-400">{formatDate(file.storage_deleted_at || file.storageDeletedAt)}{retentionPolicy ? ` · ${RETENTION_LABELS[retentionPolicy] || retentionPolicy}` : ''}</div>}
+                </>
                 return (
-                  <a
-                    key={file.id || `${file.name}-${index}`}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group rounded-lg border border-neutral-200 p-2 transition hover:border-mag-300 dark:border-neutral-800"
-                  >
-                    <div className="relative h-36 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
-                      {isImage && url ? (
-                        <img src={url} alt="" className="h-full w-full object-contain" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs font-bold text-neutral-400">
-                          {file.file_type || 'Arquivo'}
-                        </div>
-                      )}
-                      <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-1 text-xs font-black text-white">
-                        {index + 1}/{files.length}
-                      </span>
-                    </div>
-                    <div className="mt-2 truncate text-xs font-semibold text-neutral-600 group-hover:text-mag-600 dark:text-neutral-300">
-                      {file.name || file.original_name || 'Arquivo'}
-                    </div>
-                  </a>
+                  storageDeleted ? (
+                    <div key={file.id || `${file.name}-${index}`} className="rounded-lg border border-neutral-200 p-2 dark:border-neutral-800">{content}</div>
+                  ) : (
+                    <a key={file.id || `${file.name}-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="group rounded-lg border border-neutral-200 p-2 transition hover:border-mag-300 dark:border-neutral-800">{content}</a>
+                  )
                 )
               })}
             </div>
@@ -324,7 +355,7 @@ export default function FeedPreviewPage() {
   }
 
   useEffect(() => {
-    Promise.all([fetchPosts({ includeArchived: true }), fetchClients({ includeInactive: true })])
+    Promise.all([fetchPosts(), fetchClients({ includeInactive: true })])
       .then(([p, c]) => { setPosts(p); setClients(c) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -335,8 +366,8 @@ export default function FeedPreviewPage() {
     ? clients.filter(client => activeClientIds.has(client.id))
     : clients
   const scopedPosts = feedScope === 'active'
-    ? posts.filter(post => activeClientIds.has(getPostClientId(post)) && !isPostArchived(post))
-    : posts.filter(post => !isPostArchived(post) || !activeClientIds.has(getPostClientId(post)))
+    ? posts.filter(post => activeClientIds.has(getPostClientId(post)))
+    : posts
 
   const filtered = scopedPosts
     .filter(p => !filter || p.client_id === filter || p.clientId === filter)
@@ -348,7 +379,7 @@ export default function FeedPreviewPage() {
     })
   const activeClient = clients.find(c => c.id === filter)
   const selectedInactiveClient = activeClient && !isClientActive(activeClient)
-  const activeStatusLabel = STATUS_FILTERS.find(item => item.value === statusFilter)?.label || 'Todos os estados'
+  const activeStatusLabel = STATUS_FILTERS.find(item => item.value === statusFilter)?.label || 'Todos status'
   const activeScopeLabel = FEED_SCOPE_OPTIONS.find(item => item.value === feedScope)?.label || 'Clientes ativos'
   const selectedClient = selectedPost ? clients.find(c => c.id === getPostClientId(selectedPost)) : null
 
@@ -421,7 +452,10 @@ export default function FeedPreviewPage() {
           <div className="grid grid-cols-2 gap-px bg-neutral-200 dark:bg-neutral-800 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {filtered.map(p => {
               const st = normalizeFeedStatus(computePostStatus(p))
-              const url = resolveMediaUrl(p.files?.[0]?.url || p.files?.[0]?.storage_url)
+              const firstFile = p.files?.[0]
+              const firstFileRemoved = isStorageDeleted(firstFile)
+              const url = firstFileRemoved ? null : resolveMediaUrl(firstFile?.url || firstFile?.storage_url)
+              const firstFileIsVideo = getMediaKind(firstFile) === 'video'
               return (
                 <button
                   type="button"
@@ -430,7 +464,21 @@ export default function FeedPreviewPage() {
                   onClick={() => setSelectedPost(p)}
                   className={`group aspect-square relative bg-neutral-100 dark:bg-neutral-900 overflow-hidden flex items-center justify-center ${selectedPostId === p.id ? 'ring-2 ring-inset ring-mag-500' : ''}`}
                 >
-                  {url
+                  {firstFileRemoved
+                    ? <div className="flex flex-col items-center gap-2 px-4 text-center text-neutral-400"><ImageIcon size={28} /><span className="text-xs font-semibold">Arquivo removido conforme retencao</span></div>
+                    : firstFileIsVideo
+                    ? (
+                      <MediaPreview
+                        file={firstFile}
+                        src={url}
+                        className="h-full w-full"
+                        mediaClassName="pointer-events-none h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                        controls={false}
+                        muted
+                        compact
+                      />
+                    )
+                    : url
                     ? <img src={url} alt="" className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" />
                     : <div className="flex flex-col items-center gap-2 text-neutral-400"><ImageIcon size={28} /><span className="text-xs font-semibold">Sem mídia</span></div>
                   }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PlusSquare, CheckCircle,
-  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, RotateCcw
+  Grid, BarChart2, UserCog, Mail, Plug, LogOut, Menu, RotateCcw, Image, Settings2
 } from 'lucide-react'
 import { useAuthStore }  from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -12,18 +12,10 @@ import GlobalSearch from '../search/GlobalSearch'
 import { logout } from '../../services/auth.service'
 import { ROLE_PERMISSIONS } from '../../utils/constants'
 import toast from 'react-hot-toast'
+import { isDemoDeploymentMode } from '../../config/deploymentMode'
+import InstitutionalBrand from '../branding/InstitutionalBrand'
 
-const Logo20Cinco = () => (
-  <svg viewBox="0 0 260 80" className="w-full max-w-[180px]">
-    <text x="4" y="58" fontFamily="Arial Black,Arial" fontWeight="900" fontSize="58" fill="white">2</text>
-    <circle cx="60" cy="36" r="22" fill="none" stroke="white" strokeWidth="3.5"/>
-    <circle cx="60" cy="36" r="3" fill="#A7014B"/>
-    <line x1="60" y1="36" x2="60" y2="20" stroke="white" strokeWidth="3" strokeLinecap="round"/>
-    <line x1="60" y1="36" x2="72" y2="42" stroke="#A0A0A0" strokeWidth="2.5" strokeLinecap="round"/>
-    <text x="88" y="46" fontFamily="Arial Black,Arial" fontWeight="900" fontSize="34" fill="white">CINCO</text>
-    <text x="89" y="64" fontFamily="Arial" fontSize="13" fill="rgba(255,255,255,0.45)" letterSpacing="2">comunicação</text>
-  </svg>
-)
+const demoResetVisible = isDemoDeploymentMode(import.meta.env.VITE_DEPLOYMENT_MODE)
 
 function NavItem({ to, icon: Icon, label, badge }) {
   return (
@@ -71,10 +63,10 @@ export default function AdminLayout() {
 
 
   const sidebar = (
-    <aside className="flex flex-col h-full bg-mag-600 dark:bg-neutral-950">
+    <aside className="flex flex-col h-full bg-mag-600 dark:bg-mag-700">
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-white/10">
-        <Logo20Cinco />
+      <div className="flex min-h-[76px] items-center px-4 py-3 border-b border-white/10">
+        <InstitutionalBrand className="w-full" imageClassName="max-h-12 max-w-[180px]" fallbackClassName="text-white" />
       </div>
 
       {/* User */}
@@ -103,11 +95,13 @@ export default function AdminLayout() {
 
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-4 pb-1">Sistema</div>
         {isAdmin && <NavItem to="/admin/users" icon={UserCog} label="Usuários" />}
+        {isAdmin && <NavItem to="/admin/branding" icon={Image} label="Identidade visual" />}
+        {isAdmin && <NavItem to="/admin/platform-settings" icon={Settings2} label="Configurações da plataforma" />}
         {canAccess('email') && <NavItem to="/admin/email" icon={Mail} label="E-mail" />}
         {(isGestor || canAccess('integrations')) && <NavItem to="/admin/integrations" icon={Plug} label="Integrações" />}
 
         <div className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-5 pt-4 pb-1">Conta</div>
-        {isAdmin && <NavItem to="/admin/reset" icon={RotateCcw} label="Reset de testes" />}
+        {isAdmin && demoResetVisible && <NavItem to="/admin/reset" icon={RotateCcw} label="Reset de testes" />}
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium text-red-300/80 hover:text-red-300 hover:bg-white/5 transition-all"

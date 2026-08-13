@@ -2,6 +2,9 @@ import { Request, Response } from 'express'
 import { env } from '../../../../config/environment'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 import { PortalRepository } from '../../infrastructure/repositories/PortalRepository'
+import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
+import { sanitizeForLogging } from '../../../../shared/utils/logSanitizer'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
 
 interface AuthRequest extends Request {
   user?: any
@@ -12,11 +15,24 @@ export class PortalController {
   constructor(
     private portalRepository = new PortalRepository(),
     private activityRepository = new ActivityRepository(),
+    private soundtrackRepository = new SoundtrackRepository(),
+    private settingsService = new PlatformSettingsService(),
   ) {}
 
   private buildPortalUrl(token: string) {
     const baseUrl = env.APP_PUBLIC_URL || 'http://localhost:5173'
     return `${baseUrl.replace(/\/$/, '')}/portal/${token}`
+  }
+
+  private serializeActiveLink(result: { record: any; token?: string | null } | null) {
+    if (!result) return { hasActiveLink: false }
+    return {
+      hasActiveLink: true,
+      recoverable: Boolean(result.token),
+      portalUrl: result.token ? this.buildPortalUrl(result.token) : null,
+      expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
+    }
   }
 
   private async getSession(req: Request, res: Response) {
@@ -26,6 +42,36 @@ export class PortalController {
       return null
     }
     return session
+  }
+
+  private sanitizeActivityValue(req: Request, value: unknown) {
+    return sanitizeForLogging(value, { secrets: [req.params.token] })
+  }
+
+  private respondToReviewResult(result: any, res: Response) {
+    if (result?.kind === 'completed' || result?.kind === 'saved') return false
+    if (result?.kind === 'already_completed') {
+      res.json({ success: true, idempotent: true, status: result.status })
+      return true
+    }
+    if (result?.kind === 'wrong_mode') {
+      res.status(409).json({ error: 'A ação não corresponde à forma de aprovação configurada.' })
+      return true
+    }
+    if (result?.kind === 'incomplete') {
+      res.status(409).json({ error: 'Todos os itens precisam de uma decisão antes da conclusão.' })
+      return true
+    }
+    if (result?.kind === 'soundtrack_incomplete') {
+      res.status(409).json({ error: 'Conclua também a análise do fundo sonoro.' })
+      return true
+    }
+    if (result?.kind === 'comment_required') {
+      res.status(400).json({ error: 'comment is required' })
+      return true
+    }
+    res.status(404).json({ error: 'Post or item not found' })
+    return true
   }
 
   async createClientLink(req: AuthRequest, res: Response) {
@@ -38,10 +84,45 @@ export class PortalController {
     })
 
     if (!result) return res.status(404).json({ error: 'Client not found' })
+    if (result.existing) {
+      return res.status(409).json({
+        error: 'An active portal link already exists. Use the replace action explicitly.',
+        ...this.serializeActiveLink({ record: result.record, token: null }),
+      })
+    }
 
     res.status(201).json({
+      hasActiveLink: true,
+      recoverable: true,
       portalUrl: this.buildPortalUrl(result.token),
       expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
+    })
+  }
+
+  async getClientLink(req: AuthRequest, res: Response) {
+    const result = await this.portalRepository.getActiveToken({
+      clientId: req.params.id,
+      companyId: req.tenantId,
+    })
+    res.json(this.serializeActiveLink(result))
+  }
+
+  async replaceClientLink(req: AuthRequest, res: Response) {
+    const days = Number(req.body?.days) || 15
+    const result = await this.portalRepository.replaceToken({
+      clientId: req.params.id,
+      companyId: req.tenantId,
+      createdBy: req.user?.userId,
+      days,
+    })
+    if (!result || result.existing) return res.status(404).json({ error: 'Client not found' })
+    res.status(201).json({
+      hasActiveLink: true,
+      recoverable: true,
+      portalUrl: this.buildPortalUrl(result.token),
+      expiresAt: result.record.expires_at,
+      createdAt: result.record.created_at,
     })
   }
 
@@ -56,6 +137,8 @@ export class PortalController {
 
     res.json({
       client: session.client,
+      portalSettings: session.client.portalSettings,
+      features: (await this.settingsService.get()).features,
       expiresAt: session.expiresAt,
       posts,
       feedbacks,
@@ -95,6 +178,8 @@ export class PortalController {
 
     res.json({
       client,
+      portalSettings: client.portalSettings,
+      features: (await this.settingsService.get()).features,
       expiresAt: null,
       posts,
       feedbacks,
@@ -117,7 +202,7 @@ export class PortalController {
       clientId: session.clientId,
       companyId: session.companyId,
     })
-    if (!approved) return res.status(404).json({ error: 'Post not found' })
+    if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
       companyId: session.companyId,
@@ -127,28 +212,13 @@ export class PortalController {
       title: 'Post aprovado pelo portal',
     }).catch(() => {})
 
-    res.json({ success: true })
+    res.json({ success: true, status: approved.status })
   }
 
   async approveFile(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
-
-    const approved = await this.portalRepository.approveFile(req.params.fileId, {
-      clientId: session.clientId,
-      companyId: session.companyId,
-    })
-    if (!approved) return res.status(404).json({ error: 'File not found' })
-
-    await this.activityRepository.createForFile(req.params.fileId, {
-      companyId: session.companyId,
-      actorId: session.clientId,
-      actorRole: 'client_portal',
-      type: 'file_approved',
-      title: 'Item aprovado pelo portal',
-    }).catch(() => {})
-
-    res.json({ success: true })
+    res.status(409).json({ error: 'Use a revisão provisória e conclua a análise da postagem.' })
   }
 
   async approveAuthenticatedPost(req: AuthRequest, res: Response) {
@@ -159,7 +229,7 @@ export class PortalController {
       clientId: session.clientId,
       companyId: session.companyId,
     })
-    if (!approved) return res.status(404).json({ error: 'Post not found' })
+    if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
       companyId: session.companyId,
@@ -169,28 +239,14 @@ export class PortalController {
       title: 'Post aprovado pelo cliente',
     }).catch(() => {})
 
-    res.json({ success: true })
+    res.json({ success: true, status: approved.status })
   }
 
   async approveAuthenticatedFile(req: AuthRequest, res: Response) {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
 
-    const approved = await this.portalRepository.approveFile(req.params.fileId, {
-      clientId: session.clientId,
-      companyId: session.companyId,
-    })
-    if (!approved) return res.status(404).json({ error: 'File not found' })
-
-    await this.activityRepository.createForFile(req.params.fileId, {
-      companyId: session.companyId,
-      actorId: session.clientId,
-      actorRole: 'client',
-      type: 'file_approved',
-      title: 'Item aprovado pelo cliente',
-    }).catch(() => {})
-
-    res.json({ success: true })
+    res.status(409).json({ error: 'Use a revisão provisória e conclua a análise da postagem.' })
   }
 
   async rejectPost(req: Request, res: Response) {
@@ -200,19 +256,12 @@ export class PortalController {
     const comment = String(req.body?.comment || '').trim()
     if (!comment) return res.status(400).json({ error: 'comment is required' })
 
-    const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, {
+    const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : []
+    const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, tags, {
       clientId: session.clientId,
       companyId: session.companyId,
     })
-    if (!rejected) return res.status(404).json({ error: 'Post not found' })
-
-    await this.portalRepository.saveFeedback({
-      clientId: session.clientId,
-      postId: req.params.postId,
-      text: comment,
-      month: new Date().toISOString().slice(0, 7),
-      companyId: session.companyId,
-    }).catch(() => {})
+    if (this.respondToReviewResult(rejected, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
       companyId: session.companyId,
@@ -220,70 +269,23 @@ export class PortalController {
       actorRole: 'client_portal',
       type: 'post_rejected',
       title: 'Ajustes solicitados pelo portal',
-      metadata: { comment },
+      metadata: this.sanitizeActivityValue(req, { comment, tags }) as Record<string, unknown>,
     }).catch(() => {})
 
-    res.json({ success: true })
+    res.json({ success: true, status: rejected.status })
   }
 
   async rejectFile(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
 
-    const comment = String(req.body?.comment || '').trim()
-    if (!comment) return res.status(400).json({ error: 'comment is required' })
-    const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : []
-
-    const rejected = await this.portalRepository.rejectFile(req.params.fileId, comment, tags, {
-      clientId: session.clientId,
-      companyId: session.companyId,
-    })
-    if (!rejected) return res.status(404).json({ error: 'File not found' })
-
-    await this.portalRepository.saveFeedback({
-      clientId: session.clientId,
-      postId: rejected.postId,
-      text: comment,
-      month: new Date().toISOString().slice(0, 7),
-      companyId: session.companyId,
-    }).catch(() => {})
-
-    await this.activityRepository.createForFile(req.params.fileId, {
-      companyId: session.companyId,
-      actorId: session.clientId,
-      actorRole: 'client_portal',
-      type: 'feedback_sent',
-      title: 'Ajuste solicitado pelo portal',
-      metadata: { comment, tags },
-    }).catch(() => {})
-
-    res.json({ success: true })
+    res.status(409).json({ error: 'Use a revisão provisória e conclua a análise da postagem.' })
   }
 
   async updateRejectedFileFeedback(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
-
-    const comment = String(req.body?.comment || '').trim()
-    if (!comment) return res.status(400).json({ error: 'comment is required' })
-    const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : []
-
-    const updated = await this.portalRepository.updateRejectedFileFeedback(req.params.fileId, comment, tags, {
-      clientId: session.clientId,
-      companyId: session.companyId,
-    })
-    if (!updated) return res.status(404).json({ error: 'Rejected file not found' })
-
-    await this.activityRepository.createForFile(req.params.fileId, {
-      companyId: session.companyId,
-      actorId: session.clientId,
-      actorRole: 'client_portal',
-      type: 'feedback_updated',
-      title: 'Feedback de ajuste atualizado pelo portal',
-      metadata: { comment, tags },
-    }).catch(() => {})
-
-    res.json({ success: true })
+    res.status(409).json({ error: 'Reabra o conteúdo antes de alterar uma decisão concluída.' })
   }
 
   async rejectAuthenticatedPost(req: AuthRequest, res: Response) {
@@ -293,19 +295,12 @@ export class PortalController {
     const comment = String(req.body?.comment || '').trim()
     if (!comment) return res.status(400).json({ error: 'comment is required' })
 
-    const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, {
+    const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : []
+    const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, tags, {
       clientId: session.clientId,
       companyId: session.companyId,
     })
-    if (!rejected) return res.status(404).json({ error: 'Post not found' })
-
-    await this.portalRepository.saveFeedback({
-      clientId: session.clientId,
-      postId: req.params.postId,
-      text: comment,
-      month: new Date().toISOString().slice(0, 7),
-      companyId: session.companyId,
-    }).catch(() => {})
+    if (this.respondToReviewResult(rejected, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
       companyId: session.companyId,
@@ -313,93 +308,210 @@ export class PortalController {
       actorRole: 'client',
       type: 'post_rejected',
       title: 'Ajustes solicitados pelo cliente',
-      metadata: { comment },
+      metadata: { comment, tags },
     }).catch(() => {})
 
-    res.json({ success: true })
+    res.json({ success: true, status: rejected.status })
   }
 
   async rejectAuthenticatedFile(req: AuthRequest, res: Response) {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
 
-    const comment = String(req.body?.comment || '').trim()
-    if (!comment) return res.status(400).json({ error: 'comment is required' })
-    const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : []
-
-    const rejected = await this.portalRepository.rejectFile(req.params.fileId, comment, tags, {
-      clientId: session.clientId,
-      companyId: session.companyId,
-    })
-    if (!rejected) return res.status(404).json({ error: 'File not found' })
-
-    await this.portalRepository.saveFeedback({
-      clientId: session.clientId,
-      postId: rejected.postId,
-      text: comment,
-      month: new Date().toISOString().slice(0, 7),
-      companyId: session.companyId,
-    }).catch(() => {})
-
-    await this.activityRepository.createForFile(req.params.fileId, {
-      companyId: session.companyId,
-      actorId: session.clientId,
-      actorRole: 'client',
-      type: 'feedback_sent',
-      title: 'Ajuste solicitado pelo cliente',
-      metadata: { comment, tags },
-    }).catch(() => {})
-
-    res.json({ success: true })
+    res.status(409).json({ error: 'Use a revisão provisória e conclua a análise da postagem.' })
   }
 
   async updateAuthenticatedRejectedFileFeedback(req: AuthRequest, res: Response) {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
 
-    const comment = String(req.body?.comment || '').trim()
-    if (!comment) return res.status(400).json({ error: 'comment is required' })
-    const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : []
+    res.status(409).json({ error: 'Reabra o conteúdo antes de alterar uma decisão concluída.' })
+  }
 
-    const updated = await this.portalRepository.updateRejectedFileFeedback(req.params.fileId, comment, tags, {
-      clientId: session.clientId,
-      companyId: session.companyId,
-    })
-    if (!updated) return res.status(404).json({ error: 'Rejected file not found' })
+  private async saveItemReviewDecision(
+    req: Request,
+    res: Response,
+    session: { clientId: string; companyId?: string },
+  ) {
+    const decision = String(req.body?.decision || '').toLowerCase()
+    if (decision !== 'approved' && decision !== 'rejected') {
+      return res.status(400).json({ error: 'decision must be approved or rejected' })
+    }
+    const result = await this.portalRepository.saveItemDecision(
+      req.params.postId,
+      req.params.fileId,
+      {
+        decision,
+        comment: String(req.body?.comment || '').trim(),
+        tags: Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : [],
+      },
+      session,
+    )
+    if (this.respondToReviewResult(result, res)) return
+    res.json({ success: true, draft: result.draft })
+  }
 
-    await this.activityRepository.createForFile(req.params.fileId, {
+  async saveItemDecision(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    return this.saveItemReviewDecision(req, res, session)
+  }
+
+  async saveAuthenticatedItemDecision(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    return this.saveItemReviewDecision(req, res, session)
+  }
+
+  private async finishItemReview(
+    req: Request,
+    res: Response,
+    session: { clientId: string; companyId?: string },
+    actorRole: string,
+  ) {
+    const result = await this.portalRepository.completeItemReview(req.params.postId, session)
+    if (this.respondToReviewResult(result, res)) return
+    await this.activityRepository.createForPost(req.params.postId, {
       companyId: session.companyId,
       actorId: session.clientId,
-      actorRole: 'client',
-      type: 'feedback_updated',
-      title: 'Feedback de ajuste atualizado pelo cliente',
-      metadata: { comment, tags },
+      actorRole,
+      type: result.status === 'approved' ? 'post_approved' : 'post_rejected',
+      title: 'Cliente concluiu a análise do conteúdo',
+      metadata: this.sanitizeActivityValue(req, {
+        approvalMode: 'item',
+        result: result.status,
+        items: result.snapshot,
+      }) as Record<string, unknown>,
     }).catch(() => {})
+    res.json({ success: true, status: result.status, snapshot: result.snapshot })
+  }
 
+  async completeItemReview(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    return this.finishItemReview(req, res, session, 'client_portal')
+  }
+
+  async completeAuthenticatedItemReview(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    return this.finishItemReview(req, res, session, 'client')
+  }
+
+  private async reopenReview(
+    req: Request,
+    res: Response,
+    session: { clientId: string; companyId?: string },
+  ) {
+    const reopened = await this.portalRepository.reopenPost(req.params.postId, session)
+    if (!reopened) return res.status(409).json({ error: 'Este conteúdo não pode mais ser reaberto.' })
     res.json({ success: true })
+  }
+
+  async reopenPost(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    return this.reopenReview(req, res, session)
+  }
+
+  async reopenAuthenticatedPost(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    return this.reopenReview(req, res, session)
   }
 
   async resetFile(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
 
-    const reset = await this.portalRepository.resetFile(req.params.fileId, {
-      clientId: session.clientId,
-      companyId: session.companyId,
-    })
-    if (!reset) return res.status(404).json({ error: 'File not found' })
-    res.json({ success: true })
+    res.status(409).json({ error: 'O retorno é feito entre conteúdos concluídos, não entre arquivos.' })
   }
 
   async resetAuthenticatedFile(req: AuthRequest, res: Response) {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
 
-    const reset = await this.portalRepository.resetFile(req.params.fileId, {
-      clientId: session.clientId,
+    res.status(409).json({ error: 'O retorno é feito entre conteúdos concluídos, não entre arquivos.' })
+  }
+
+  private async decideSoundtrack(
+    req: Request,
+    res: Response,
+    session: { clientId: string; companyId?: string },
+    decision: 'approved' | 'adjustment_requested',
+    actorRole: string,
+  ) {
+    const settings = await this.settingsService.get()
+    if (!settings.features.soundtrack) {
+      return res.status(404).json({ error: 'Fundo sonoro indisponivel' })
+    }
+    const comment = decision === 'adjustment_requested' ? String(req.body?.comment || '').trim() : null
+    if (decision === 'adjustment_requested' && !comment) {
+      return res.status(400).json({ error: 'comment is required' })
+    }
+    const soundtrack = await this.soundtrackRepository.decide(
+      req.params.postId,
+      decision,
+      comment,
+      { clientId: session.clientId, companyId: session.companyId },
+      actorRole,
+      { recalculatePostStatus: settings.portal.approval_mode !== 'item' },
+    )
+    if (!soundtrack) return res.status(404).json({ error: 'Fundo sonoro nao encontrado ou indisponivel para decisao' })
+
+    await this.activityRepository.createForPost(req.params.postId, {
       companyId: session.companyId,
-    })
-    if (!reset) return res.status(404).json({ error: 'File not found' })
+      actorId: session.clientId,
+      actorRole,
+      type: decision === 'approved' ? 'soundtrack_approved' : 'soundtrack_adjustment_requested',
+      title: decision === 'approved' ? 'Fundo sonoro aprovado' : 'Ajuste solicitado no fundo sonoro',
+      metadata: this.sanitizeActivityValue(req, {
+        soundtrackId: soundtrack.id,
+        mode: soundtrack.mode,
+        revisionNumber: soundtrack.revisionNumber,
+        comment,
+      }) as Record<string, unknown>,
+    }).catch(() => {})
+    res.json({ success: true, data: soundtrack })
+  }
+
+  async approveSoundtrack(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'approved', 'client_portal')
+  }
+
+  async rejectSoundtrack(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'adjustment_requested', 'client_portal')
+  }
+
+  async resetSoundtrack(req: Request, res: Response) {
+    const session = await this.getSession(req, res)
+    if (!session) return
+    const reset = await this.soundtrackRepository.resetDecision(req.params.postId, session)
+    if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })
+    res.json({ success: true })
+  }
+
+  async approveAuthenticatedSoundtrack(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'approved', 'client')
+  }
+
+  async rejectAuthenticatedSoundtrack(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    return this.decideSoundtrack(req, res, session, 'adjustment_requested', 'client')
+  }
+
+  async resetAuthenticatedSoundtrack(req: AuthRequest, res: Response) {
+    const session = this.getAuthenticatedClient(req, res)
+    if (!session) return
+    const reset = await this.soundtrackRepository.resetDecision(req.params.postId, session)
+    if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })
     res.json({ success: true })
   }
 
@@ -431,7 +543,7 @@ export class PortalController {
       actorRole: 'client_portal',
       type: 'feedback_sent',
       title: 'Feedback enviado pelo portal',
-      description: text,
+      description: this.sanitizeActivityValue(req, text) as string,
       metadata: { rating },
     }).catch(() => {})
 

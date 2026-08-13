@@ -2,7 +2,7 @@
 
 **A forma mais rápida de aprovar conteúdo entre agência e cliente.**
 
-Postinder é uma plataforma de aprovação de conteúdo para agências de marketing e social media. O admin (agência) monta postagens com múltiplos arquivos — imagens, vídeos, áudios, PDFs, planilhas, apresentações — e envia para o cliente aprovar. O cliente recebe um aviso no WhatsApp, abre o link, e aprova ou reprova arquivo por arquivo em uma interface de swipe (arrasta pra aprovar, arrasta pra reprovar — como um Tinder de conteúdo, daí o nome). Tudo fica registrado: quem aprovou, quando, por quê, e com que taxa de retrabalho.
+Postinder é uma plataforma de aprovação de conteúdo para agências de marketing e social media. A agência monta postagens com múltiplos arquivos — imagens, vídeos, áudios, PDFs, planilhas, apresentações — e envia para o cliente aprovar. O cliente recebe um aviso no WhatsApp, abre o portal, e aprova ou reprova o conteúdo com navegação livre entre as mídias. Tudo fica registrado: quem aprovou, quando, por quê, e com que taxa de retrabalho.
 
 ---
 
@@ -33,7 +33,7 @@ sequenceDiagram
     Postinder->>WhatsApp: Notifica o cliente automaticamente
     WhatsApp->>Cliente: "Você tem posts aguardando aprovação"
     Cliente->>Postinder: Abre o portal (link com token ou login)
-    Cliente->>Postinder: Aprova / reprova arquivo por arquivo (swipe)
+    Cliente->>Postinder: Aprova / reprova o conteúdo
     alt Reprovado
         Cliente->>Postinder: Registra motivo + tag de rejeição
         Postinder->>Admin: Notifica pendência de ajuste
@@ -48,24 +48,27 @@ sequenceDiagram
 - **Link mágico com token** — sem senha, expira automaticamente, ideal para aprovação rápida pelo celular.
 - **Login autenticado** — para clientes que acessam o painel com frequência e querem histórico completo.
 
+A forma de aprovação é configurável pela agência: `content` consolida uma decisão para a postagem inteira, ou `item` permite escolhas provisórias por mídia, oficializadas quando o cliente conclui a análise.
+
 ---
 
 ## Funcionalidades
 
 ### Para a agência (admin)
 - **Gestão de clientes** — cadastro com cor de marca, segmento, prazo de aprovação (SLA) configurável e número de WhatsApp; ativação/desativação sem perder histórico.
-- **Criação de postagens** — múltiplos canais e formatos por post, upload de vários arquivos (imagem, vídeo, áudio, PDF, doc, planilha, apresentação, link de e-mail), reordenação, substituição e remoção de arquivos, agendamento e tags de funil.
+- **Criação de postagens** — múltiplos canais e formatos por post, upload de vários arquivos (imagem, vídeo, áudio, PDF, doc, planilha, apresentação, link de e-mail), trilha sonora opcional, reordenação, substituição e remoção de arquivos, agendamento e tags de funil.
 - **Envio em lote** — manda vários posts para aprovação de uma vez em vez de um por um.
 - **Fila de aprovações** — visão consolidada de tudo que está pendente entre todos os clientes.
 - **Dashboard e timeline de atividades** — auditoria de eventos (quem criou, aprovou, reprovou, reenviou) por cliente e por post.
-- **Insights & Feedbacks** — taxa de aprovação, taxa de rejeição, aprovação por arquivo, tempo médio de decisão do cliente, ranking dos motivos de rejeição mais comuns, feedback mensal por cliente (nota + comentário), com exportação.
-- **Controle de acesso por papel** — administradores com acesso total e usuários "viewer" com acesso somente leitura, além do isolamento por empresa (multi-tenant via `company_id`).
+- **Insights & Feedbacks** — taxa de aprovação, taxa de rejeição, aprovação por arquivo, tempo médio de decisão do cliente, ranking dos motivos de rejeição mais comuns, feedback mensal por cliente (nota + comentário), com apoio de IA para leitura dos dados.
+- **Identidade visual configurável** — logo institucional próprio exibido dinamicamente na área interna e no portal do cliente, sem rebuild.
+- **Configurações da plataforma** — retenção de arquivos após execução, forma de aprovação do cliente (`content`/`item`), políticas de campos obrigatórios/visíveis por postagem, feature flags (ex.: trilha sonora).
+- **Controle de acesso por papel** — perfis `admin`, `manager`, `editor` e `viewer`, cada um com capacidades distintas; rotas administrativas exigem capacidade declarada e negam acesso por padrão sem política explícita.
 - **Notificações internas** — central de notificações no painel, marcadas como lida/não lida por usuário.
-- **Configurações** — integrações (WhatsApp/Z-API, armazenamento), e-mail e ferramentas de manutenção (reset de dados de demonstração).
 
 ### Para o cliente
-- **Portal de aprovação dedicado**, com ou sem login.
-- **Aprovação por swipe** — cada arquivo é avaliado individualmente: aprovar, reprovar com motivo + tag, ou desfazer.
+- **Portal de aprovação dedicado**, com login ou link privado recuperável pelo admin (sem gerar novo token a cada acesso).
+- **Fila guiada** ordenada pela data prevista, avançando automaticamente após cada decisão — ou visão detalhada completa, configurável por cliente.
 - **Prévia nativa por tipo de arquivo** — imagem, vídeo, áudio, PDF, documento, planilha, apresentação e e-mail, sem precisar baixar nada.
 - **Feedback consolidado** — nota e comentário sobre o mês/entrega.
 - **Aviso automático via WhatsApp** sempre que há algo novo para revisar.
@@ -74,53 +77,42 @@ sequenceDiagram
 
 ## Arquitetura
 
-Monorepo (`pnpm` workspace) com backend e frontend desacoplados por uma API REST versionada.
+Monorepo com backend e frontend desacoplados por uma API REST versionada.
 
 ```text
 postinder/
 ├── apps/admin/          # Painel React (Vite) — admin e portal do cliente
-│   └── src/
-│       ├── features/    # Telas por domínio: posts, approvals, clients, insights...
-│       ├── services/    # Client HTTP para a API
-│       └── store/       # Estado global (Zustand)
-├── backend/              # API REST em Express + TypeScript
-│   └── src/modules/      # Um módulo por domínio (Clean Architecture)
-│       ├── auth/         # domain → application → infrastructure → presentation
-│       ├── posts/
-│       ├── clients/
-│       ├── approvals/
-│       ├── portal/       # acesso do cliente (token e autenticado)
-│       ├── activities/   # timeline/auditoria
-│       ├── notifications/
-│       └── maintenance/
+├── backend/              # API REST em Express + TypeScript (Clean Architecture por módulo)
+│   └── src/modules/      # auth, posts, clients, portal, branding, platformSettings, soundtracks, integrations...
 ├── database/
-│   ├── 001_initial_schema.sql
-│   └── migrations/       # migrations incrementais versionadas
-├── docs/deploy/          # scripts e guias de setup/deploy
+│   └── migrations/       # migrations versionadas — única fonte de verdade estrutural
+├── docs/                 # guias de arquitetura, deploy e operação
 └── docker-compose.yml    # PostgreSQL local
 ```
 
-Cada módulo do backend segue **Clean Architecture**: `domain` (entidades e regras), `application` (casos de uso/serviços), `infrastructure` (repositórios e integrações) e `presentation` (controllers e rotas HTTP) — isolando regra de negócio de detalhes de framework e banco.
+Em desenvolvimento, arquivos ficam em `uploads`; em produção o backend usa Supabase Storage. A topologia de referência é Vercel para o frontend, Render para a API e Supabase para banco e Storage.
 
 ### Stack
 
 | Camada | Tecnologia |
 |---|---|
-| Frontend | React + Vite, Zustand, Tailwind |
+| Frontend | React + Vite |
 | Backend | Node.js + TypeScript + Express |
-| Banco de dados | PostgreSQL |
-| Autenticação | JWT (access curto + refresh token) |
+| Banco de dados | PostgreSQL (migrations versionadas) |
+| Autenticação | JWT com contextos distintos para admin e cliente |
 | Armazenamento de arquivos | Local em dev · Supabase Storage em produção |
 | Notificação | WhatsApp via Z-API |
-| Deploy | Vercel (frontend) + Docker (banco local) |
+| IA | Insights agregados via Anthropic (dados pseudonimizados) |
+| Deploy | Vercel (frontend) + Render (API) + Supabase (banco/storage) |
 
 ---
 
 ## Rodando localmente
 
-### Pré-requisitos
-- [Node.js](https://nodejs.org) 18+
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+### Requisitos
+- Node.js 24.x (o `.node-version` fixa `24.16.0`)
+- npm 11.13.0
+- Docker Desktop, para o PostgreSQL local
 - Git
 
 ### Setup rápido (Windows)
@@ -130,27 +122,27 @@ Cada módulo do backend segue **Clean Architecture**: `domain` (entidades e regr
 npm run dev
 ```
 
-O script sobe o PostgreSQL via Docker, instala as dependências da raiz, do backend e do frontend, e aplica o schema do banco.
-
 ### Setup manual (qualquer sistema)
 
 ```bash
-# 1. Dependências
-npm install
-npm install --prefix backend
-npm install --prefix apps/admin
-
-# 2. Banco de dados
+npm ci
+npm ci --prefix backend
+npm ci --prefix apps/admin
 docker compose up -d
-
-# 3. Schema
-docker exec -i postinder-db psql -U postinder_user -d postinder_db < database/001_initial_schema.sql
-
-# 4. Variáveis de ambiente
-cp .env.example .env
-
-# 5. Sobe backend + frontend juntos
+cd backend
+npm run db:migrate
+cd ..
 npm run dev
+```
+
+`npm ci` é o comando padrão em desenvolvimento, validação e deploy — `npm install` fica reservado a mudanças deliberadas de dependências.
+
+Para incluir dados de demonstração depois das migrations:
+
+```powershell
+$env:APP_MODE = 'demo'
+cd backend
+npm run db:seed-demo
 ```
 
 | Serviço | URL |
@@ -158,7 +150,16 @@ npm run dev
 | Painel (frontend) | http://localhost:5173 |
 | API (backend) | http://localhost:3001 |
 | Health check | http://localhost:3001/health |
-| PostgreSQL | `localhost:5433` |
+| PostgreSQL | `127.0.0.1:5433` |
+
+### Contas de demonstração (após seed)
+
+| Perfil | E-mail | Senha |
+|---|---|---|
+| Admin | `admin@postinder.local` | `Admin@123456` |
+| Cliente | `cliente@example.com` | `Cliente@123456` |
+
+Essas credenciais são exclusivas de demonstração e não devem ser usadas em produção. Para bootstrap sem seed, configure `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` e rode `npm run db:bootstrap-admin` em `backend`.
 
 ### Variáveis de ambiente principais
 
@@ -169,21 +170,62 @@ npm run dev
 | `APP_PUBLIC_URL` | URL usada para gerar os links do portal do cliente |
 | `ZAPI_INSTANCE` / `ZAPI_TOKEN` / `ZAPI_CLIENT_TOKEN` | Credenciais da Z-API para envio automático de WhatsApp |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` | Armazenamento de arquivos em produção |
+| `DEPLOYMENT_MODE` / `ENABLE_DEMO_RESET` | Controlam se o reset de dados de demonstração pode existir no ambiente |
+| `VITE_API_URL` / `VITE_DEPLOYMENT_MODE` / `VITE_GA_MEASUREMENT_ID` | Únicas variáveis públicas consumidas pelo frontend |
 
-### Contas de teste (seed local)
-
-| Perfil | E-mail | Senha |
-|---|---|---|
-| Admin | `admin@postinder.local` | `Admin@123456` |
-| Cliente | `cliente@example.com` | `Cliente@123456` |
+Segredos (Anthropic, Z-API) nunca pertencem ao frontend — vivem só no backend.
 
 ---
 
+## Banco de dados
+
+As migrations em `database/migrations` são a única fonte de verdade estrutural:
+
+```bash
+cd backend
+npm run db:migrate
+```
+
+O startup não cria nem corrige schema automaticamente. Em deploy, `npm run db:migrate` deve rodar como Pre-Deploy Command/release step bloqueante, antes do Start Command — com backup lógico e preflight do banco obrigatórios antes de migrations em produção.
 
 ---
+
+## Autenticação e autorização
+
+- JWT administrativo e JWT de cliente são contextos distintos; refresh tokens também têm contexto explícito.
+- Perfis: `admin` (todas as capacidades), `manager` (operações não destrutivas), `editor` (fluxo editorial), `viewer` (somente leitura).
+- Toda rota administrativa exige autenticação, identidade administrativa e capacidade declarada — sem política explícita, o acesso é negado por padrão.
+- Portal autenticado de cliente e portal por token privado são fluxos separados.
+
+---
+
+## Comandos úteis
+
+```bash
+npm run dev                          # backend + frontend juntos
+
+npm run build --prefix backend
+npm run build --prefix apps/admin
+
+cd backend
+npm run db:migrate
+npm run db:seed-demo
+npm run db:bootstrap-admin
+npm run storage:cleanup-retention    # retenção manual (o scheduler interno também roda sozinho)
+```
+
+Para reiniciar só o banco local: `docker compose down -v`, depois `docker compose up -d` e `npm run db:migrate` em `backend`.
+
+---
+
+## Documentação
+
+- [Deploy, banco e ambientes](docs/DEPLOYMENT.md)
+- [Checklist de deploy](docs/deploy/CHECKLIST_DEPLOY_TESTE.md)
+- [Storage e retenção](docs/STORAGE_ARCHITECTURE.md)
 
 ## Notas para o time
 
 - Não versione o arquivo `.env`.
 - O banco local roda via Docker — sem ele, a API não lê nem grava dados.
-- Rotinas de manutenção (retenção de posts executados, limpeza de arquivos de clientes inativos, arquivamento por desativação) rodam via migrations versionadas em `database/migrations/`.
+- Rotinas de manutenção (retenção de posts executados, limpeza de arquivos de clientes inativos, arquivamento por desativação) rodam via scheduler interno e migrations versionadas em `database/migrations/`.

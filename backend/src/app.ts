@@ -1,10 +1,12 @@
 import cors from 'cors'
-import express, { Express } from 'express'
+import express, { Express, Router } from 'express'
 import path from 'path'
 import { requestLogger } from './shared/middlewares/requestLogger'
 import { errorHandler } from './shared/middlewares/errorHandler'
 import { authMiddleware } from './shared/middlewares/authMiddleware'
-import { readOnlyAdminMiddleware } from './shared/middlewares/readOnlyAdminMiddleware'
+import { adminAuthMiddleware } from './shared/middlewares/adminAuthMiddleware'
+import { clientAuthMiddleware } from './shared/middlewares/clientAuthMiddleware'
+import { requireAdminRouteCapability } from './shared/middlewares/requireCapability'
 import { createAuthRoutes } from './modules/auth/presentation/routes/auth.routes'
 import { createPostsRoutes } from './modules/posts/presentation/routes/posts.routes'
 import { createClientsRoutes } from './modules/clients/presentation/routes/clients.routes'
@@ -16,23 +18,43 @@ import { createPortalRoutes } from './modules/portal/presentation/routes/portal.
 import { createClientPortalRoutes } from './modules/portal/presentation/routes/clientPortal.routes'
 import { createMaintenanceRoutes } from './modules/maintenance/presentation/routes/maintenance.routes'
 import { pool } from './shared/database/pool'
-import { env } from './config/environment'
+import { env, Environment } from './config/environment'
 import { checkRemoteStorage } from './shared/upload/storage'
+import { getDemoResetAvailability } from './config/demoReset'
+import { MaintenanceController } from './modules/maintenance/presentation/controllers/MaintenanceController'
+import { logger } from './shared/utils/Logger'
+import { PortalController } from './modules/portal/presentation/controllers/PortalController'
+import { AIInsightsController } from './modules/integrations/presentation/controllers/AIInsightsController'
+import { createIntegrationsRoutes } from './modules/integrations/presentation/routes/integrations.routes'
+import { BrandingController } from './modules/branding/presentation/controllers/BrandingController'
+import { createAdminBrandingRoutes, createPublicBrandingRoutes } from './modules/branding/presentation/routes/branding.routes'
+import { PlatformSettingsController } from './modules/platformSettings/presentation/controllers/PlatformSettingsController'
+import { createPlatformSettingsRoutes } from './modules/platformSettings/presentation/routes/platformSettings.routes'
 
-function parseCorsOrigins() {
+export interface AppOptions {
+  runtimeEnvironment?: Environment
+  maintenanceController?: MaintenanceController
+  portalController?: PortalController
+  aiInsightsController?: AIInsightsController
+  brandingController?: BrandingController
+  platformSettingsController?: PlatformSettingsController
+}
+
+function parseCorsOrigins(runtimeEnvironment: Environment) {
   return [
-    env.APP_PUBLIC_URL,
-    ...(env.CORS_ORIGINS || '').split(','),
+    runtimeEnvironment.APP_PUBLIC_URL,
+    ...(runtimeEnvironment.CORS_ORIGINS || '').split(','),
     'http://localhost:5173',
   ]
     .map(origin => origin?.trim())
     .filter(Boolean) as string[]
 }
 
-export function createApp(): Express {
+export function createApp(options: AppOptions = {}): Express {
   const app = express()
+  const runtimeEnvironment = options.runtimeEnvironment || env
 
-  const allowedOrigins = parseCorsOrigins()
+  const allowedOrigins = parseCorsOrigins(runtimeEnvironment)
 
   app.use(cors({
     origin(origin, callback) {
@@ -61,7 +83,7 @@ export function createApp(): Express {
   })
 
   app.get('/health/storage', async (_req, res) => {
-    if (env.NODE_ENV !== 'production') {
+    if (runtimeEnvironment.NODE_ENV !== 'production') {
       return res.json({ status: 'ok', storage: 'local', path: '/uploads' })
     }
 
@@ -74,86 +96,49 @@ export function createApp(): Express {
   })
 
   app.use('/api/v1/auth', createAuthRoutes())
-  app.use('/api/v1/portal', createPortalRoutes())
-  app.use('/api/v1/client-portal', authMiddleware, createClientPortalRoutes())
-  app.use('/api/v1/notifications', authMiddleware, createNotificationsRoutes())
-  app.use('/api/v1/posts', authMiddleware, readOnlyAdminMiddleware, createPostsRoutes())
-  app.use('/api/v1/clients', authMiddleware, readOnlyAdminMiddleware, createClientsRoutes())
-  app.use('/api/v1/users', authMiddleware, readOnlyAdminMiddleware, createUsersRoutes())
-  app.use('/api/v1/approvals', authMiddleware, readOnlyAdminMiddleware, createApprovalsRoutes())
-  app.use('/api/v1/files', authMiddleware, readOnlyAdminMiddleware, createFilesRoutes())
-  app.use('/api/v1/feedback', authMiddleware, readOnlyAdminMiddleware, createFeedbackRoutes())
-  app.use('/api/v1/activities', authMiddleware, readOnlyAdminMiddleware, createActivitiesRoutes())
-  app.use('/api/v1/maintenance', authMiddleware, readOnlyAdminMiddleware, createMaintenanceRoutes())
+  app.use('/api/v1/branding', createPublicBrandingRoutes(options.brandingController))
+  app.use('/api/v1/portal', createPortalRoutes(options.portalController))
+  app.all('/api/v1/portal/*', (_req, res) => {
+    res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' })
+  })
+  app.use('/api/v1/client-portal', authMiddleware, clientAuthMiddleware, createClientPortalRoutes())
+
+  const demoResetAvailability = getDemoResetAvailability(runtimeEnvironment)
+  const demoResetEnabled = demoResetAvailability.enabled
+  if (demoResetAvailability.reason === 'invalid-deployment-mode') {
+    logger.warn('Demo reset disabled because DEPLOYMENT_MODE is invalid')
+  }
+  if (!demoResetEnabled) {
+    app.all('/api/v1/maintenance/reset-demo-data', (_req, res) => {
+      res.status(404).json({ error: 'Not found' })
+    })
+  }
+
+  const adminRoutes = Router()
+  adminRoutes.use(authMiddleware, adminAuthMiddleware, requireAdminRouteCapability)
+  adminRoutes.use('/notifications', createNotificationsRoutes())
+  adminRoutes.use('/posts', createPostsRoutes())
+  adminRoutes.use('/clients', createClientsRoutes())
+  adminRoutes.use('/users', createUsersRoutes())
+  adminRoutes.use('/approvals', createApprovalsRoutes())
+  adminRoutes.use('/files', createFilesRoutes())
+  adminRoutes.use('/feedback', createFeedbackRoutes())
+  adminRoutes.use('/activities', createActivitiesRoutes())
+  adminRoutes.use('/branding', createAdminBrandingRoutes(options.brandingController))
+  adminRoutes.use('/platform-settings', createPlatformSettingsRoutes(options.platformSettingsController))
+  adminRoutes.use(
+    '/integrations',
+    createIntegrationsRoutes(runtimeEnvironment, options.aiInsightsController),
+  )
+  if (demoResetEnabled) {
+    adminRoutes.use(
+      '/maintenance',
+      createMaintenanceRoutes(runtimeEnvironment, options.maintenanceController),
+    )
+  }
+  app.use('/api/v1', adminRoutes)
 
   app.use(errorHandler)
-
-  // Add original_name column if it doesn't exist (safe to run repeatedly)
-  pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT[] DEFAULT ARRAY[]::TEXT[];
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-    ALTER TABLE clients ADD COLUMN IF NOT EXISTS company_id UUID;
-    ALTER TABLE clients ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-    ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_access_at TIMESTAMP;
-    ALTER TABLE files ADD COLUMN IF NOT EXISTS original_name VARCHAR(255);
-    ALTER TABLE files ADD COLUMN IF NOT EXISTS sort_order INTEGER;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS channels TEXT[] DEFAULT ARRAY[]::TEXT[];
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS formats JSONB DEFAULT '{}'::jsonb;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS scheduled_date TIMESTAMP;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS funnel_tag VARCHAR(100);
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS email_link TEXT;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS files_delete_after TIMESTAMP;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS archived_by_client_deactivation BOOLEAN DEFAULT false;
-    CREATE TABLE IF NOT EXISTS activity_events (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      company_id UUID,
-      client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
-      post_id UUID REFERENCES posts(id) ON DELETE SET NULL,
-      actor_id UUID,
-      actor_role VARCHAR(50),
-      type VARCHAR(80) NOT NULL,
-      title VARCHAR(255) NOT NULL,
-      description TEXT,
-      metadata JSONB DEFAULT '{}'::jsonb,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_activity_events_company_id ON activity_events(company_id);
-    CREATE INDEX IF NOT EXISTS idx_files_post_sort_order ON files(post_id, sort_order);
-    CREATE INDEX IF NOT EXISTS idx_activity_events_client_id ON activity_events(client_id);
-    CREATE INDEX IF NOT EXISTS idx_activity_events_post_id ON activity_events(post_id);
-    CREATE INDEX IF NOT EXISTS idx_activity_events_created_at ON activity_events(created_at DESC);
-    CREATE TABLE IF NOT EXISTS notification_reads (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      company_id UUID,
-      user_id UUID NOT NULL,
-      notification_id VARCHAR(255) NOT NULL,
-      read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (user_id, notification_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_notification_reads_user_id ON notification_reads(user_id);
-    CREATE INDEX IF NOT EXISTS idx_notification_reads_notification_id ON notification_reads(notification_id);
-    CREATE INDEX IF NOT EXISTS idx_notification_reads_company_id ON notification_reads(company_id);
-    CREATE TABLE IF NOT EXISTS client_portal_tokens (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-      company_id UUID,
-      token_hash VARCHAR(128) NOT NULL UNIQUE,
-      expires_at TIMESTAMP NOT NULL,
-      revoked_at TIMESTAMP,
-      last_used_at TIMESTAMP,
-      created_by UUID,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_client_portal_tokens_client_id ON client_portal_tokens(client_id);
-    CREATE INDEX IF NOT EXISTS idx_client_portal_tokens_hash ON client_portal_tokens(token_hash);
-    CREATE INDEX IF NOT EXISTS idx_client_portal_tokens_expires_at ON client_portal_tokens(expires_at);
-  `).catch(() => {})
 
   return app
 }

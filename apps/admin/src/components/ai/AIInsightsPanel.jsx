@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Sparkles, RefreshCw, TrendingUp, AlertTriangle, Lightbulb, MessageSquare, Send } from 'lucide-react'
 import { analyzePerformance, chatWithMetrics } from '../../services/integrations/ai.integration'
-import { isEnabled } from '../../services/integrations/registry'
 import Card from '../ui/Card'
 import Button from '../ui/Button'
 
@@ -24,8 +23,6 @@ export default function AIInsightsPanel({ posts = [], clients = [], period = 'mo
   const [chatHistory, setChatHistory] = useState([])
   const [chatLoading, setChatLoading] = useState(false)
 
-  const aiEnabled = isEnabled('ai')
-
   async function handleAnalyze() {
     setLoading(true)
     try {
@@ -45,11 +42,7 @@ export default function AIInsightsPanel({ posts = [], clients = [], period = 'mo
     setChatHistory(h => [...h, { role: 'user', text: question }])
     setChatLoading(true)
     try {
-      const context = {
-        totalPosts: posts.length,
-        period,
-        clients: clients.map(c => c.name),
-      }
+      const context = { posts, clients, period }
       const answer = await chatWithMetrics(question, context)
       setChatHistory(h => [...h, { role: 'ai', text: answer }])
     } catch (e) {
@@ -57,24 +50,6 @@ export default function AIInsightsPanel({ posts = [], clients = [], period = 'mo
     } finally {
       setChatLoading(false)
     }
-  }
-
-  if (!aiEnabled) {
-    return (
-      <Card className="p-6 border-dashed border-2">
-        <div className="text-center">
-          <Sparkles size={32} className="text-neutral-300 mx-auto mb-3" />
-          <h3 className="font-bold text-neutral-600 dark:text-neutral-400 mb-1">Análise com IA disponível</h3>
-          <p className="text-sm text-neutral-400 mb-4">
-            Adicione <code className="bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-xs font-mono">VITE_ANTHROPIC_API_KEY</code> no arquivo <code className="bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-xs font-mono">.env</code> para ativar.
-          </p>
-          <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer"
-            className="text-xs text-mag-500 hover:underline">
-            Obter API Key → console.anthropic.com
-          </a>
-        </div>
-      </Card>
-    )
   }
 
   return (
@@ -91,6 +66,9 @@ export default function AIInsightsPanel({ posts = [], clients = [], period = 'mo
             {analysis ? 'Reanalisar' : 'Analisar agora'}
           </Button>
         </div>
+        <p className="text-xs text-neutral-400 mt-3">
+          Ao executar, sua pergunta, métricas agregadas e Clientes pseudonimizados serão processados pelo provedor de IA configurado.
+        </p>
       </Card>
 
       {/* Analysis result */}

@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Archive,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
@@ -26,8 +25,9 @@ import Input, { Select, Textarea } from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import PageHeader from '../../components/ui/PageHeader'
 import Skeleton from '../../components/ui/Skeleton'
-import { CHANNELS, FUNNEL_TAGS } from '../../utils/constants'
-import { resolveMediaUrl } from '../../utils/mediaUrl'
+import { CHANNELS } from '../../utils/constants'
+import { prepareUploadFiles } from '../../utils/uploadValidation'
+import { normalizeEmailPreviewUrl } from '../../utils/emailPreview'
 import {
   computePostStatus,
   duplicatePost,
@@ -41,9 +41,25 @@ import {
   reorderPostFiles,
   removePostFile,
   markPostExecuted,
+  savePostSoundtrack,
 } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
+import {
+  getBulkSelectionState,
+  getBulkSendEligiblePosts,
+  getSelectedBulkSendPosts,
+  isBulkSendEligible,
+  toggleAllBulkSendPosts,
+} from './postBulkSelection'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
+import ChannelIcon from '../../components/posts/ChannelIcon'
+import MediaPreview, { getMediaKind, getMediaName } from '../../components/media/MediaPreview'
+import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
+import { useAuthStore } from '../../store/authStore'
+import { usePlatformSettings } from '../../hooks/usePlatformSettings'
+import { isFieldRequired, isFieldVisible, putVisibleField, requiredFieldIsMissing } from '../../utils/fieldPolicies'
+import SoundtrackEditor from '../../components/posts/SoundtrackEditor'
+import { soundtrackDraftFromPost, validateSoundtrackDraft } from '../../utils/soundtrack'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -52,16 +68,6 @@ const STATUS_OPTIONS = [
   { value: 'sent', label: 'Enviado' },
   { value: 'pending_approval', label: 'Aguardando' },
   { value: 'rejected', label: 'Recusado' },
-  { value: 'archived', label: 'Arquivado interno' },
-]
-
-const SENDABLE_STATUSES = ['draft', 'ready', 'rejected']
-
-const EXECUTION_RETENTION_OPTIONS = [
-  { value: 'never', label: 'Manter arquivos', description: 'Os anexos continuam disponiveis para consulta.' },
-  { value: 'immediate', label: 'Excluir agora', description: 'Remove os arquivos assim que marcar como executado.' },
-  { value: '1d', label: 'Excluir em 1 dia', description: 'Mantem os anexos por 24 horas apos a execucao.' },
-  { value: '7d', label: 'Excluir em 1 semana', description: 'Mantem os anexos por 7 dias apos a execucao.' },
 ]
 
 function getPostClientId(post) {
@@ -95,22 +101,7 @@ function getPostChannels(post) {
 }
 
 function getAttachmentName(file) {
-  return file?.name || file?.original_name || file?.originalName || file?.file?.name || 'Arquivo'
-}
-
-function getAttachmentType(file) {
-  return file?.file_type || file?.fileType || file?.type || file?.file?.type || ''
-}
-
-function isImageAttachment(file) {
-  const type = String(getAttachmentType(file)).toLowerCase()
-  const name = getAttachmentName(file)
-  return type.startsWith('image/') || type === 'image' || /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(name)
-}
-
-function getAttachmentPreviewUrl(file) {
-  if (file?.file instanceof File) return URL.createObjectURL(file.file)
-  return resolveMediaUrl(file?.storage_url || file?.url)
+  return getMediaName(file)
 }
 
 function CompactFeedPreview({ channels, files }) {
@@ -119,8 +110,6 @@ function CompactFeedPreview({ channels, files }) {
   const totalFiles = files.length
   const safeIndex = totalFiles ? Math.min(activeIndex, totalFiles - 1) : 0
   const activeFile = files[safeIndex]
-  const previewUrl = getAttachmentPreviewUrl(activeFile)
-  const image = activeFile && isImageAttachment(activeFile)
 
   useEffect(() => {
     if (activeIndex > Math.max(totalFiles - 1, 0)) setActiveIndex(Math.max(totalFiles - 1, 0))
@@ -151,13 +140,8 @@ function CompactFeedPreview({ channels, files }) {
       <div className="p-4">
         <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950">
           <div className="relative flex aspect-[4/3] max-h-[420px] min-h-[260px] items-center justify-center">
-            {image && previewUrl ? (
-              <img src={previewUrl} alt={getAttachmentName(activeFile)} className="h-full w-full object-contain" />
-            ) : activeFile ? (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
-                <FilePlus size={34} />
-                <span className="max-w-[80%] truncate text-sm font-bold">{getAttachmentName(activeFile)}</span>
-              </div>
+            {activeFile ? (
+              <MediaPreview file={activeFile} className="h-full w-full" mediaClassName="h-full w-full object-contain" />
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
                 <ImageIcon size={34} />
@@ -197,7 +181,7 @@ function CompactFeedPreview({ channels, files }) {
           <div className="flex flex-wrap justify-end gap-1.5">
             {activeChannels.length ? activeChannels.map(channel => (
               <span key={channel} className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300">
-                {CHANNELS[channel]?.icon} {channel}
+                <ChannelIcon channel={channel} size={14} /> {channel}
               </span>
             )) : (
               <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-400 dark:bg-neutral-800">
@@ -211,13 +195,16 @@ function CompactFeedPreview({ channels, files }) {
   )
 }
 
-function EditPostModal({ post, clients, open, onClose, onSaved }) {
-  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', funnelTag: '' })
+function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
+  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', emailLink: '' })
   const [channels, setChannels] = useState({})
   const [existingFiles, setExistingFiles] = useState([])
   const [removedExistingFiles, setRemovedExistingFiles] = useState([])
   const [files, setFiles] = useState([])
   const [saving, setSaving] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(null)
+  const [soundtrack, setSoundtrack] = useState(() => soundtrackDraftFromPost(null))
+  const [soundtrackDirty, setSoundtrackDirty] = useState(false)
 
   useEffect(() => {
     if (!post) return
@@ -229,12 +216,15 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
     ))
     setRemovedExistingFiles([])
     setFiles([])
+    setUploadProgress(null)
+    setSoundtrack(soundtrackDraftFromPost(post))
+    setSoundtrackDirty(false)
     setForm({
       clientId: getPostClientId(post) || '',
       title: post.title || '',
       caption: post.description || '',
       scheduledDate: toDateInput(getScheduledDate(post)),
-      funnelTag: post.funnelTag || post.funnel_tag || '',
+      emailLink: post.emailLink || post.email_link || '',
     })
   }, [post])
 
@@ -248,28 +238,63 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
   async function handleSave() {
     if (isApproved && !confirm('Este post ja foi aprovado. Deseja alterar mesmo assim?')) return
     if (isSent && !confirm('Este post ja foi enviado ao cliente. Alterar pode afetar uma aprovacao em andamento. Continuar?')) return
+    const selectedChannels = Object.keys(channels)
+    const hasEmail = selectedChannels.includes('E-mail Marketing')
+    const normalizedEmailLink = normalizeEmailPreviewUrl(form.emailLink)
+    if (hasEmail && !normalizedEmailLink) {
+      toast.error('Informe um Link de pre-visualizacao do e-mail valido, iniciado por http:// ou https://.')
+      return
+    }
+    if (!(hasEmail && selectedChannels.length === 1) && !previewFiles.length) {
+      toast.error('Mantenha ou adicione ao menos um arquivo para os canais selecionados.')
+      return
+    }
+    for (const [policy, value] of [
+      [settings.post_fields.description, form.caption],
+      [settings.post_fields.scheduled_date, form.scheduledDate],
+    ]) {
+      if (requiredFieldIsMissing(policy, value)) {
+        toast.error('Preencha todos os campos obrigatorios da postagem.')
+        return
+      }
+    }
+    if (settings.features.soundtrack && soundtrackDirty) {
+      const videos = previewFiles.map((item, index) => ({ key: item.id || item.localId || `file-${index}`, isVideo: getMediaKind(item) === 'video' })).filter(item => item.isVideo)
+      const soundtrackError = validateSoundtrackDraft(soundtrack, videos)
+      if (soundtrackError) {
+        toast.error(soundtrackError)
+        return
+      }
+    }
 
     setSaving(true)
     try {
-      await updatePost(post.id, {
+      const payload = {
         clientId: form.clientId,
         title: form.title,
-        description: form.caption,
-        scheduledDate: form.scheduledDate || null,
-        funnelTag: form.funnelTag || null,
-        channels: Object.keys(channels),
-      })
+        channels: selectedChannels,
+        emailLink: hasEmail ? normalizedEmailLink : null,
+      }
+      putVisibleField(payload, 'description', form.caption, settings.post_fields.description)
+      putVisibleField(payload, 'scheduledDate', form.scheduledDate || null, settings.post_fields.scheduled_date)
+      await updatePost(post.id, payload)
+      let uploadedFiles = []
+      if (files.length) {
+        uploadedFiles = await uploadPostFiles(post.id, files.map((item, index) => ({
+          ...item,
+          sortOrder: existingFiles.length + index + 1,
+        })), { onUploadProgress: setUploadProgress })
+      }
+      if (settings.features.soundtrack && soundtrackDirty) {
+        const sourceIndex = files.findIndex(item => (item.id || item.localId) === soundtrack.sourceMediaKey)
+        const sourceMediaId = sourceIndex >= 0 ? uploadedFiles[sourceIndex]?.id : soundtrack.sourceMediaKey
+        await savePostSoundtrack(post.id, soundtrack, { sourceMediaId })
+      }
       if (removedExistingFiles.length) {
         await Promise.all(removedExistingFiles.map(file => removePostFile(post.id, file.id)))
       }
       if (existingFiles.length) {
         await reorderPostFiles(post.id, existingFiles.map((file, index) => ({ id: file.id, sort_order: index + 1 })))
-      }
-      if (files.length) {
-        await uploadPostFiles(post.id, files.map((item, index) => ({
-          ...item,
-          sortOrder: existingFiles.length + index + 1,
-        })))
       }
       toast.success('Postagem atualizada.')
       onSaved()
@@ -278,6 +303,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
       toast.error(error.message)
     } finally {
       setSaving(false)
+      setUploadProgress(null)
     }
   }
 
@@ -304,29 +330,24 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
             <Select label="Cliente" value={form.clientId} onChange={event => setForm(current => ({ ...current, clientId: event.target.value }))}>
               {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
             </Select>
-            <Input label="Data planejada" type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} />
+            {isFieldVisible(settings.post_fields.scheduled_date) ? <Input label={`Data planejada${isFieldRequired(settings.post_fields.scheduled_date) ? ' *' : ''}`} type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} /> : null}
           </div>
 
           <Input label="Titulo" value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
           <CompactFeedPreview channels={channels} files={previewFiles} />
-          <Textarea label="Legenda / texto" value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} />
+          {isFieldVisible(settings.post_fields.description) ? <Textarea label={`Legenda / texto${isFieldRequired(settings.post_fields.description) ? ' *' : ''}`} value={form.caption} onChange={event => setForm(current => ({ ...current, caption: event.target.value }))} /> : null}
         </div>
 
-        <div>
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Tag de funil</label>
-          <div className="flex flex-wrap gap-2">
-            {FUNNEL_TAGS.map(tag => (
-              <button
-                key={tag.value}
-                type="button"
-                onClick={() => setForm(current => ({ ...current, funnelTag: current.funnelTag === tag.value ? '' : tag.value }))}
-                className={`rounded-lg border px-3 py-2 text-xs font-bold ${form.funnelTag === tag.value ? `${tag.color} border-current` : 'border-neutral-200 text-neutral-500 dark:border-neutral-700'}`}
-              >
-                {tag.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {channels['E-mail Marketing'] ? (
+          <Input
+            label="Link de pré-visualização do e-mail"
+            type="url"
+            value={form.emailLink}
+            onChange={event => setForm(current => ({ ...current, emailLink: event.target.value }))}
+            placeholder="https://exemplo.com/preview"
+          />
+        ) : null}
+
 
         <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500">Canais</label>
@@ -338,7 +359,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
                 onClick={() => toggleChannel(channel)}
                 className={`rounded-full border px-3 py-2 text-sm font-semibold ${channels[channel] ? 'border-mag-500 bg-mag-50 text-mag-600 dark:bg-mag-950 dark:text-mag-300' : 'border-neutral-200 text-neutral-500 dark:border-neutral-700'}`}
               >
-                {data.icon} {channel}
+                <ChannelIcon channel={channel} size={15} /> {channel}
               </button>
             ))}
           </div>
@@ -374,13 +395,13 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
             type="file"
             multiple
             className="hidden"
-            onChange={event => setFiles(Array.from(event.target.files || []).map(file => ({
-              localId: `${file.name}-${file.size}-${file.lastModified}-${globalThis.crypto?.randomUUID?.() || Math.random()}`,
-              file,
-              name: file.name,
-              type: file.type,
-              size: file.size,
-            })))}
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+            onChange={event => {
+              const { accepted, errors } = prepareUploadFiles(event.target.files)
+              setFiles(current => [...current, ...accepted])
+              errors.forEach(error => toast.error(error))
+              event.target.value = ''
+            }}
           />
         </label>
 
@@ -391,6 +412,26 @@ function EditPostModal({ post, clients, open, onClose, onSaved }) {
             description="Novos anexos serao adicionados apos os arquivos atuais, nesta ordem."
             onMove={(from, to) => setFiles(current => moveAttachment(current, from, to))}
             onRemove={index => setFiles(current => current.filter((_, fileIndex) => fileIndex !== index))}
+          />
+        ) : null}
+
+        {uploadProgress ? (
+          <div className="rounded-lg border border-mag-200 bg-mag-50 p-3 text-xs font-bold text-mag-700 dark:border-mag-900 dark:bg-mag-950/30 dark:text-mag-300">
+            <div className="flex justify-between gap-3">
+              <span className="truncate">Enviando {uploadProgress.fileIndex + 1} de {uploadProgress.totalFiles}: {uploadProgress.fileName}</span>
+              <span>{uploadProgress.percent}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-mag-100 dark:bg-mag-900">
+              <div className="h-full bg-mag-600 transition-[width]" style={{ width: `${uploadProgress.percent}%` }} />
+            </div>
+          </div>
+        ) : null}
+
+        {settings.features.soundtrack ? (
+          <SoundtrackEditor
+            value={soundtrack}
+            onChange={value => { setSoundtrack(value); setSoundtrackDirty(true) }}
+            attachments={previewFiles}
           />
         ) : null}
 
@@ -444,13 +485,7 @@ function BatchSendModal({ posts, clientsById, open, onClose, onConfirm, loading 
   )
 }
 
-function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
-  const [retention, setRetention] = useState('never')
-
-  useEffect(() => {
-    if (open) setRetention('never')
-  }, [open])
-
+function ExecutePostModal({ post, client, open, onClose, onConfirm, loading, retentionHours }) {
   if (!post) return null
 
   return (
@@ -461,35 +496,17 @@ function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
           <div className="mt-1 text-xs text-neutral-500">{client?.name || 'Cliente'} - {(post.files || []).length} arquivo(s)</div>
         </div>
 
-        <div>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Limpeza dos arquivos</div>
-          <div className="space-y-2">
-            {EXECUTION_RETENTION_OPTIONS.map(option => (
-              <label key={option.value} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${retention === option.value ? 'border-mag-500 bg-mag-50 dark:bg-mag-500/10' : 'border-neutral-200 dark:border-neutral-800'}`}>
-                <input
-                  type="radio"
-                  name="execution-retention"
-                  value={option.value}
-                  checked={retention === option.value}
-                  onChange={event => setRetention(event.target.value)}
-                  className="mt-1 accent-mag-600"
-                />
-                <span>
-                  <span className="block text-sm font-bold text-neutral-900 dark:text-white">{option.label}</span>
-                  <span className="mt-0.5 block text-xs text-neutral-500">{option.description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+          Os arquivos permanecem disponiveis por <strong>{retentionHours} hora(s)</strong> apos a execucao. O historico e as metricas permanecem preservados.
         </div>
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          Depois de executado, o projeto sai da lista de concluidos e entra em executados. O cliente nao podera alterar a aprovacao.
+          Depois de postado na rede, o projeto sai da lista de aprovados pelo cliente. O cliente nao podera alterar a aprovacao.
         </div>
 
         <div className="flex gap-3">
           <Button variant="secondary" className="flex-1 justify-center" onClick={onClose}>Cancelar</Button>
-          <Button className="flex-1 justify-center" onClick={() => onConfirm(retention)} loading={loading} icon={<CheckCircle size={16} />}>Confirmar execucao</Button>
+          <Button className="flex-1 justify-center" onClick={onConfirm} loading={loading} icon={<CheckCircle size={16} />}>Confirmar execucao</Button>
         </div>
       </div>
     </Modal>
@@ -499,6 +516,8 @@ function ExecutePostModal({ post, client, open, onClose, onConfirm, loading }) {
 export default function ManagePostsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { user } = useAuthStore()
+  const { settings } = usePlatformSettings()
   const [posts, setPosts] = useState([])
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
@@ -514,12 +533,15 @@ export default function ManagePostsPage() {
   const [batchLoading, setBatchLoading] = useState(false)
   const [executePost, setExecutePost] = useState(null)
   const [executeLoading, setExecuteLoading] = useState(false)
+  const [postToDelete, setPostToDelete] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const selectAllRef = useRef(null)
 
   const clientsById = useMemo(() => new Map(clients.map(client => [client.id, client])), [clients])
 
   function load() {
     setLoading(true)
-    Promise.all([fetchPosts({ limit: 500, includeArchived: true }), fetchClients()])
+    Promise.all([fetchPosts({ limit: 500 }), fetchClients()])
       .then(([loadedPosts, loadedClients]) => {
         setPosts(loadedPosts)
         setClients(loadedClients)
@@ -547,8 +569,6 @@ export default function ManagePostsPage() {
           if (status !== 'executed') return false
         } else {
           if (['approved', 'executed'].includes(status)) return false
-          if (status !== 'archived' && statusFilter === 'archived') return false
-          if (status === 'archived' && statusFilter !== 'archived') return false
         }
         const haystack = `${post.title || ''} ${post.description || ''} ${client.name || ''}`.toLowerCase()
         if (search && !haystack.includes(search.toLowerCase())) return false
@@ -567,16 +587,34 @@ export default function ManagePostsPage() {
   const activeCount = posts.filter(post => {
     if (!clientsById.has(getPostClientId(post))) return false
     const status = computePostStatus(post)
-    return !['approved', 'executed', 'archived'].includes(status)
+    return !['approved', 'executed'].includes(status)
   }).length
   const completedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'approved').length
   const executedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'executed').length
 
-  const selectedPosts = filtered.filter(post => selected.includes(post.id))
-  const sendableSelected = selectedPosts.filter(post => SENDABLE_STATUSES.includes(computePostStatus(post)))
+  const eligibleVisiblePosts = useMemo(
+    () => getBulkSendEligiblePosts(filtered, computePostStatus),
+    [filtered],
+  )
+  const sendableSelected = useMemo(
+    () => getSelectedBulkSendPosts(filtered, selected, computePostStatus),
+    [filtered, selected],
+  )
+  const bulkSelectionState = useMemo(
+    () => getBulkSelectionState(eligibleVisiblePosts, selected),
+    [eligibleVisiblePosts, selected],
+  )
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = bulkSelectionState.indeterminate
+  }, [bulkSelectionState.indeterminate])
 
   function toggleSelected(postId) {
     setSelected(current => current.includes(postId) ? current.filter(id => id !== postId) : [...current, postId])
+  }
+
+  function toggleAllSelected() {
+    setSelected(current => toggleAllBulkSendPosts(current, eligibleVisiblePosts, !bulkSelectionState.checked))
   }
 
   async function runAction(action, successMessage) {
@@ -613,11 +651,11 @@ export default function ManagePostsPage() {
     }
   }
 
-  async function handleMarkExecuted(retention) {
+  async function handleMarkExecuted() {
     if (!executePost) return
     setExecuteLoading(true)
     try {
-      await markPostExecuted(executePost.id, retention)
+      await markPostExecuted(executePost.id)
       toast.success('Postagem marcada como executada.')
       setExecutePost(null)
       load()
@@ -625,6 +663,21 @@ export default function ManagePostsPage() {
       toast.error(error.response?.data?.error || error.message)
     } finally {
       setExecuteLoading(false)
+    }
+  }
+
+  async function handleDeletePost() {
+    if (!postToDelete) return
+    setDeleteLoading(true)
+    try {
+      await softDeletePost(postToDelete.id)
+      toast.success('Postagem excluida.')
+      setPostToDelete(null)
+      load()
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message)
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -641,8 +694,8 @@ export default function ManagePostsPage() {
         <div className="mb-4 flex flex-wrap gap-2">
           {[
             { key: 'active', label: 'Projetos em andamento', count: activeCount },
-            { key: 'completed', label: 'Concluidos', count: completedCount },
-            { key: 'executed', label: 'Executados', count: executedCount },
+            { key: 'completed', label: 'Aprovado pelo cliente', count: completedCount },
+            { key: 'executed', label: 'Postado na rede', count: executedCount },
           ].map(item => (
             <button
               key={item.key}
@@ -690,15 +743,30 @@ export default function ManagePostsPage() {
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-neutral-500">
+          <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-300">
             <Filter size={16} />
-            {filtered.length} postagem(ns) {view === 'executed' ? 'executada(s)' : view === 'completed' ? 'concluida(s)' : 'em andamento'} encontrada(s)
-            {view === 'active' && selected.length ? <span className="font-bold text-mag-600">- {selected.length} selecionada(s)</span> : null}
+            {filtered.length} postagem(ns) {view === 'executed' ? 'postada(s) na rede' : view === 'completed' ? 'aprovada(s) pelo cliente' : 'em andamento'} encontrada(s)
+            {view === 'active' && sendableSelected.length ? <span className="font-bold text-mag-600 dark:text-mag-300">- {sendableSelected.length} selecionada(s) nesta lista</span> : null}
           </div>
           {view === 'active' ? (
-            <Button disabled={!sendableSelected.length} onClick={() => setBatchOpen(true)} icon={<Send size={16} />}>
-              Enviar lote para aprovacao
-            </Button>
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:justify-end">
+              <label className={`flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold ${eligibleVisiblePosts.length ? 'cursor-pointer border-neutral-200 text-neutral-700 hover:border-mag-300 dark:border-neutral-700 dark:text-neutral-200' : 'cursor-not-allowed border-neutral-100 text-neutral-400 dark:border-neutral-800 dark:text-neutral-600'}`}>
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={bulkSelectionState.checked}
+                  onChange={toggleAllSelected}
+                  disabled={!eligibleVisiblePosts.length}
+                  aria-label={bulkSelectionState.checked ? 'Desmarcar todos os elegíveis nesta lista' : 'Selecionar todos os elegíveis nesta lista'}
+                  className="h-4 w-4 accent-mag-600"
+                />
+                <span>{bulkSelectionState.checked ? 'Desmarcar todos' : 'Selecionar todos'}</span>
+                <span className="font-medium text-neutral-400">({eligibleVisiblePosts.length} elegíveis nesta lista)</span>
+              </label>
+              <Button disabled={!sendableSelected.length} onClick={() => setBatchOpen(true)} icon={<Send size={16} />} className="dark:disabled:opacity-60">
+                Enviar lote para aprovacao
+              </Button>
+            </div>
           ) : null}
         </div>
       </Card>
@@ -712,9 +780,9 @@ export default function ManagePostsPage() {
           {filtered.map(post => {
             const client = clientsById.get(getPostClientId(post)) || {}
             const status = computePostStatus(post)
-            const canSend = SENDABLE_STATUSES.includes(status)
+            const canSend = isBulkSendEligible(post, computePostStatus)
             const canExecute = status === 'approved'
-            const canArchive = !['archived'].includes(status)
+            const canDelete = canDeletePost(status, user?.role)
             return (
               <Card key={post.id} className="p-4">
                 <div className="grid gap-4 lg:grid-cols-[32px_1.1fr_1.6fr_1fr_auto] lg:items-center">
@@ -727,35 +795,30 @@ export default function ManagePostsPage() {
                     <Avatar name={client.name} color={client.color} />
                     <div className="min-w-0">
                       <div className="truncate text-sm font-bold text-neutral-900 dark:text-white">{client.name || 'Cliente'}</div>
-                      <div className="text-xs text-neutral-400">{formatDate(getScheduledDate(post))}</div>
+                      <div className="text-xs text-neutral-400 dark:text-neutral-300/80">{formatDate(getScheduledDate(post))}</div>
                     </div>
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-base font-extrabold text-neutral-950 dark:text-white">{post.title || 'Post sem titulo'}</div>
-                    <div className="mt-1 line-clamp-1 text-sm text-neutral-500">{post.description || 'Sem legenda cadastrada.'}</div>
+                    <div className="mt-1 line-clamp-1 text-sm text-neutral-500 dark:text-neutral-300">{post.description || 'Sem legenda cadastrada.'}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {getPostChannels(post).map(channel => <span key={channel} className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-500 dark:bg-neutral-800">{channel}</span>)}
+                      {getPostChannels(post).map(channel => <span key={channel} className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-1 dark:ring-inset dark:ring-neutral-700/70">{channel}</span>)}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 lg:justify-center">
                     <StatusBadge status={status} />
-                    <span className="text-xs font-semibold text-neutral-400">{(post.files || []).length} arquivo(s)</span>
-                    <span className="text-xs text-neutral-400">Atualizado {formatDate(getUpdatedDate(post))}</span>
+                    <span className="text-xs font-semibold text-neutral-400 dark:text-neutral-300">{(post.files || []).length} arquivo(s)</span>
+                    <span className="text-xs text-neutral-400 dark:text-neutral-300/80">Atualizado {formatDate(getUpdatedDate(post))}</span>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1.5">
-                    <button title="Previa" onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:hover:bg-neutral-800"><Eye size={16} /></button>
-                    {status !== 'executed' && <button title="Editar" onClick={() => setEditPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><Edit3 size={16} /></button>}
-                    <button title="Duplicar" onClick={() => runAction(() => duplicatePost(post.id), 'Postagem duplicada.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 dark:hover:bg-neutral-800"><Copy size={16} /></button>
-                    {status === 'draft' && <button title="Marcar pronto" onClick={() => runAction(() => updatePostStatus(post.id, 'ready'), 'Postagem marcada como pronta.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-green-600 dark:hover:bg-neutral-800"><CheckCircle size={16} /></button>}
-                    {status === 'ready' && <button title="Voltar para rascunho" onClick={() => runAction(() => updatePostStatus(post.id, 'draft'), 'Postagem voltou para rascunho.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-amber-600 dark:hover:bg-neutral-800"><RotateCcw size={16} /></button>}
-                    {canSend && <button title="Enviar para aprovacao" onClick={() => handleSend(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:hover:bg-neutral-800"><Send size={16} /></button>}
-                    {canExecute && <button title="Marcar como executado" onClick={() => setExecutePost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:hover:bg-neutral-800"><CheckCircle size={16} /></button>}
-                    {canArchive && status !== 'executed' && <button title="Arquivar" onClick={() => {
-                      const needsConfirm = ['sent', 'pending_approval', 'approved'].includes(status)
-                      if (!needsConfirm || confirm('Esta postagem ja foi enviada/aprovada. Arquivar mesmo assim?')) {
-                        runAction(() => softDeletePost(post.id), 'Postagem arquivada.')
-                      }
-                    }} className="rounded-lg p-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30">{status === 'draft' ? <Trash2 size={16} /> : <Archive size={16} />}</button>}
+                    <button title="Previa" onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-mag-200"><Eye size={16} /></button>
+                    {status !== 'executed' && <button title="Editar" onClick={() => setEditPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-teal-100"><Edit3 size={16} /></button>}
+                    <button title="Duplicar" onClick={() => runAction(() => duplicatePost(post.id), 'Postagem duplicada.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-blue-300"><Copy size={16} /></button>
+                    {status === 'draft' && <button title="Marcar pronto" onClick={() => runAction(() => updatePostStatus(post.id, 'ready'), 'Postagem marcada como pronta.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-green-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-green-300"><CheckCircle size={16} /></button>}
+                    {status === 'ready' && <button title="Voltar para rascunho" onClick={() => runAction(() => updatePostStatus(post.id, 'draft'), 'Postagem voltou para rascunho.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-amber-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-amber-300"><RotateCcw size={16} /></button>}
+                    {canSend && <button title="Enviar para aprovacao" onClick={() => handleSend(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-mag-200"><Send size={16} /></button>}
+                    {canExecute && <button title="Marcar como executado" onClick={() => setExecutePost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-teal-100"><CheckCircle size={16} /></button>}
+                    {canDelete && <button title="Excluir postagem" onClick={() => setPostToDelete(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:text-neutral-300 dark:hover:bg-red-950/30 dark:hover:text-red-300"><Trash2 size={16} /></button>}
                   </div>
                 </div>
               </Card>
@@ -764,14 +827,14 @@ export default function ManagePostsPage() {
           {!filtered.length && (
             <Card className="p-10 text-center">
               <div className="text-sm font-bold text-neutral-700 dark:text-neutral-200">Nenhuma postagem encontrada</div>
-              <p className="mt-1 text-sm text-neutral-500">{view === 'executed' ? 'Nenhum projeto executado com estes filtros.' : view === 'completed' ? 'Nenhum projeto concluido com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
+              <p className="mt-1 text-sm text-neutral-500">{view === 'executed' ? 'Nenhuma postagem postada na rede com estes filtros.' : view === 'completed' ? 'Nenhuma postagem aprovada pelo cliente com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
               <Button className="mt-4" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')}>Nova Postagem</Button>
             </Card>
           )}
         </div>
       )}
 
-      <EditPostModal post={editPost} clients={clients} open={!!editPost} onClose={() => setEditPost(null)} onSaved={load} />
+      <EditPostModal post={editPost} clients={clients} open={!!editPost} onClose={() => setEditPost(null)} onSaved={load} settings={settings} />
       <BatchSendModal
         posts={sendableSelected}
         clientsById={clientsById}
@@ -787,6 +850,15 @@ export default function ManagePostsPage() {
         onClose={() => setExecutePost(null)}
         onConfirm={handleMarkExecuted}
         loading={executeLoading}
+        retentionHours={settings.retention.executed_attachment_hours}
+      />
+      <DeletePostModal
+        post={postToDelete}
+        status={postToDelete ? computePostStatus(postToDelete) : ''}
+        open={!!postToDelete}
+        onClose={() => setPostToDelete(null)}
+        onConfirm={handleDeletePost}
+        loading={deleteLoading}
       />
     </div>
   )

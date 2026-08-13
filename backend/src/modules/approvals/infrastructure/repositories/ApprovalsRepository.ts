@@ -1,6 +1,8 @@
 import { query } from '../../../../shared/database/pool'
+import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
 
 export class ApprovalsRepository {
+  private readonly soundtrackRepository = new SoundtrackRepository()
   async getClientQueue(clientId: string, companyId?: string) {
     const params: any[] = [clientId]
     const conditions = [
@@ -62,7 +64,7 @@ export class ApprovalsRepository {
   }
 
   private buildScopeConditions(params: any[], scope?: { clientId?: string; companyId?: string }) {
-    const conditions = ['p.deleted_at IS NULL']
+    const conditions = ['p.deleted_at IS NULL', "p.status <> 'executed'"]
     if (scope?.clientId) {
       params.push(scope.clientId)
       conditions.push(`p.client_id = $${params.length}`)
@@ -91,15 +93,7 @@ export class ApprovalsRepository {
     if (!fileRes.rows[0]) return false
 
     const postId = fileRes.rows[0].post_id
-    const pending = await query(`SELECT id FROM files WHERE post_id = $1 AND status = 'pending'`, [postId])
-    if (pending.rows.length === 0) {
-      const rejected = await query(`SELECT id FROM files WHERE post_id = $1 AND status = 'rejected' LIMIT 1`, [postId])
-      if (rejected.rows.length > 0) {
-        await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [postId])
-      } else {
-        await query(`UPDATE posts SET status = 'approved', approved_at = NOW(), updated_at = NOW() WHERE id = $1`, [postId])
-      }
-    }
+    await this.soundtrackRepository.recalculatePostStatus(postId)
     return true
   }
 
@@ -118,7 +112,7 @@ export class ApprovalsRepository {
       params,
     )
     if (fileRes.rows[0]) {
-      await query(`UPDATE posts SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [fileRes.rows[0].post_id])
+      await this.soundtrackRepository.recalculatePostStatus(fileRes.rows[0].post_id)
       return true
     }
     return false

@@ -3,16 +3,33 @@ import { ClientRepository } from '../../infrastructure/repositories/ClientReposi
 import bcryptjs from 'bcryptjs'
 import { env } from '../../../../config/environment'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
+import {
+  ClientInputValidationError,
+  normalizeClientDocument,
+  normalizeDeadlineDays,
+  requiredClientFieldMissing,
+} from '../../domain/clientInput'
+import { DEFAULT_PLATFORM_SETTINGS } from '../../../platformSettings/domain/PlatformSettings'
+import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
 
 interface AuthRequest extends Request {
   user?: any
   tenantId?: string
 }
 
+function preferredBodyValue(body: Record<string, any>, officialName: string, compatibilityName: string) {
+  return Object.prototype.hasOwnProperty.call(body, officialName)
+    ? body[officialName]
+    : body[compatibilityName]
+}
+
 export class ClientsController {
   constructor(
     private clientRepository: ClientRepository,
     private activityRepository = new ActivityRepository(),
+    private settingsService: Pick<PlatformSettingsService, 'get'> = {
+      get: async () => ({ ...DEFAULT_PLATFORM_SETTINGS, updated_at: null }),
+    },
   ) {}
 
   private onlyDigits(value = '') {
@@ -48,31 +65,56 @@ export class ClientsController {
     )
 
     if (!response.ok) {
-      const details = await response.text().catch(() => '')
-      throw new Error(details || 'WhatsApp provider failed')
+      throw new Error('WhatsApp provider failed')
     }
 
     return { sent: true, provider: 'z-api' }
   }
 
   async create(req: AuthRequest, res: Response) {
-    const { name, email, password, whatsapp, segment, color, deadline_days } = req.body
+    const body = req.body || {}
+    const { name, email, password, whatsapp, segment, color } = body
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
 
     try {
+      const settings = await this.settingsService.get()
+      const policies = settings.client_fields
+      for (const [field, value] of [['whatsapp', whatsapp], ['segment', segment]] as const) {
+        if (policies[field] === 'required' && requiredClientFieldMissing(value)) {
+          return res.status(400).json({ error: `${field} is required` })
+        }
+      }
+      const deadlineInput = preferredBodyValue(body, 'deadline_days', 'deadlineDays')
+      if (policies.deadline_days === 'required' && (deadlineInput === undefined || deadlineInput === null || deadlineInput === '')) {
+        return res.status(400).json({ error: 'deadline_days is required' })
+      }
+      const documentInput = preferredBodyValue(body, 'document_number', 'document')
+      if (policies.document === 'required' && requiredClientFieldMissing(documentInput)) {
+        return res.status(400).json({ error: 'document is required' })
+      }
+      const deadlineDays = normalizeDeadlineDays(
+        policies.deadline_days === 'hidden' ? undefined : deadlineInput,
+      )
+      const document = policies.document === 'hidden'
+        ? { document_type: null, document_number: null }
+        : normalizeClientDocument(
+          preferredBodyValue(body, 'document_type', 'documentType'),
+          documentInput,
+        )
       const passwordHash = await bcryptjs.hash(password, 10)
 
       const client = await this.clientRepository.create({
         name,
         email,
         password_hash: passwordHash,
-        whatsapp,
-        segment,
+        whatsapp: policies.whatsapp === 'hidden' ? undefined : whatsapp,
+        segment: policies.segment === 'hidden' ? undefined : segment,
         color,
-        deadline_days,
+        deadline_days: deadlineDays,
+        ...document,
         company_id: req.tenantId,
       })
 
@@ -86,6 +128,9 @@ export class ClientsController {
 
       res.status(201).json({ data: client })
     } catch (error: any) {
+      if (error instanceof ClientInputValidationError) {
+        return res.status(400).json({ error: error.message })
+      }
       const status = error.message === 'Email already exists' ? 400 : 500
       const message = error.message === 'Email already exists'
         ? 'Este e-mail ja esta em uso por um usuario ou cliente.'
@@ -140,14 +185,69 @@ export class ClientsController {
   async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params
-      const { name, whatsapp, segment, color, deadline_days } = req.body
+      const body = req.body || {}
+      const { name, whatsapp, segment, color } = body
+      const settings = await this.settingsService.get()
+      const policies = settings.client_fields
+      const includesDocument = policies.document !== 'hidden' && [
+        'document_type',
+        'document_number',
+        'documentType',
+        'document',
+      ].some(field => Object.prototype.hasOwnProperty.call(body, field))
+      const document: { document_type?: 'cpf' | 'cnpj' | null; document_number?: string | null } = includesDocument
+        ? normalizeClientDocument(
+          preferredBodyValue(body, 'document_type', 'documentType'),
+          preferredBodyValue(body, 'document_number', 'document'),
+        )
+        : {}
+      const deadlineDays = normalizeDeadlineDays(
+        policies.deadline_days === 'hidden'
+          ? undefined
+          : preferredBodyValue(body, 'deadline_days', 'deadlineDays'),
+      )
+      const includesWhatsapp = Object.prototype.hasOwnProperty.call(body, 'whatsapp')
+      const includesSegment = Object.prototype.hasOwnProperty.call(body, 'segment')
+      const includesDeadline = ['deadline_days', 'deadlineDays'].some(field => Object.prototype.hasOwnProperty.call(body, field))
+      const needsCurrent = Object.values(policies).includes('required')
+      const current = needsCurrent ? await this.clientRepository.findById(id, req.tenantId) : null
+      if (needsCurrent && !current) return res.status(404).json({ error: 'Client not found' })
+      if (policies.whatsapp === 'required' && requiredClientFieldMissing(includesWhatsapp ? whatsapp : current?.whatsapp)) {
+        return res.status(400).json({ error: 'whatsapp is required' })
+      }
+      if (policies.segment === 'required' && requiredClientFieldMissing(includesSegment ? segment : current?.segment)) {
+        return res.status(400).json({ error: 'segment is required' })
+      }
+      if (policies.deadline_days === 'required' && requiredClientFieldMissing(includesDeadline ? deadlineDays : current?.deadline_days)) {
+        return res.status(400).json({ error: 'deadline_days is required' })
+      }
+      if (policies.document === 'required' && requiredClientFieldMissing(includesDocument ? document.document_number : current?.document_number)) {
+        return res.status(400).json({ error: 'document is required' })
+      }
+      const detailedViewValue = preferredBodyValue(body, 'portal_detailed_view', 'portalDetailedView')
+      if (detailedViewValue !== undefined && typeof detailedViewValue !== 'boolean') {
+        return res.status(400).json({ error: 'Invalid portal detailed view setting' })
+      }
+      const hasPortalOverride = Object.prototype.hasOwnProperty.call(body, 'portal_mode_override')
+        || Object.prototype.hasOwnProperty.call(body, 'portalModeOverride')
+      const portalModeOverride = hasPortalOverride
+        ? preferredBodyValue(body, 'portal_mode_override', 'portalModeOverride')
+        : detailedViewValue === undefined
+          ? undefined
+          : detailedViewValue ? 'detailed' : 'simplified'
+      if (hasPortalOverride && portalModeOverride !== null && !['simplified', 'detailed'].includes(portalModeOverride)) {
+        return res.status(400).json({ error: 'Invalid portal mode override' })
+      }
 
       const client = await this.clientRepository.update(id, {
         name,
-        whatsapp,
-        segment,
+        whatsapp: policies.whatsapp === 'hidden' ? undefined : whatsapp,
+        segment: policies.segment === 'hidden' ? undefined : segment,
         color,
-        deadline_days,
+        deadline_days: deadlineDays,
+        portal_detailed_view: detailedViewValue,
+        portal_mode_override: portalModeOverride,
+        ...document,
       }, req.tenantId)
 
       if (!client) {
@@ -156,6 +256,9 @@ export class ClientsController {
 
       res.json({ data: client })
     } catch (error: any) {
+      if (error instanceof ClientInputValidationError) {
+        return res.status(400).json({ error: error.message })
+      }
       res.status(500).json({ error: error.message })
     }
   }
@@ -190,7 +293,10 @@ export class ClientsController {
       if (!client) return res.status(404).json({ error: 'Client not found' })
       res.json({ data: client })
     } catch (error: any) {
-      res.status(500).json({ error: error.message })
+      const conflict = error.message === 'Email already exists'
+      res.status(conflict ? 400 : 500).json({
+        error: conflict ? 'Este e-mail ja esta em uso por um usuario ou cliente.' : error.message,
+      })
     }
   }
 
@@ -225,8 +331,8 @@ export class ClientsController {
         message,
         approvalUrl,
       })
-    } catch (error: any) {
-      res.status(502).json({ error: error.message || 'Failed to send WhatsApp notification' })
+    } catch {
+      res.status(502).json({ error: 'Failed to send WhatsApp notification' })
     }
   }
 }

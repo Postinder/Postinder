@@ -1,17 +1,23 @@
-import { Children, useEffect, useRef, useState } from 'react'
+import { Children, useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { ChevronDown } from 'lucide-react'
 
-export default function Input({ label, error, className, ...props }) {
+export default function Input({ label, error, className, id: providedId, ...props }) {
+  const generatedId = useId()
+  const inputId = providedId || `input-${generatedId.replace(/:/g, '')}`
+  const errorId = error ? `${inputId}-error` : undefined
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        <label htmlFor={inputId} className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
           {label}
         </label>
       )}
       <input
+        id={inputId}
         {...props}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={errorId}
         className={clsx(
           'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-all',
           'bg-white dark:bg-neutral-800',
@@ -23,21 +29,27 @@ export default function Input({ label, error, className, ...props }) {
           className
         )}
       />
-      {error && <span className="text-xs text-red-500">{error}</span>}
+      {error && <span id={errorId} role="alert" className="text-xs text-red-500">{error}</span>}
     </div>
   )
 }
 
-export function Textarea({ label, error, className, ...props }) {
+export function Textarea({ label, error, className, id: providedId, ...props }) {
+  const generatedId = useId()
+  const inputId = providedId || `textarea-${generatedId.replace(/:/g, '')}`
+  const errorId = error ? `${inputId}-error` : undefined
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        <label htmlFor={inputId} className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
           {label}
         </label>
       )}
       <textarea
+        id={inputId}
         {...props}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={errorId}
         className={clsx(
           'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-all resize-y min-h-[90px]',
           'bg-white dark:bg-neutral-800',
@@ -49,13 +61,16 @@ export function Textarea({ label, error, className, ...props }) {
           className
         )}
       />
-      {error && <span className="text-xs text-red-500">{error}</span>}
+      {error && <span id={errorId} role="alert" className="text-xs text-red-500">{error}</span>}
     </div>
   )
 }
 
 export function Select({ label, error, children, className, ...props }) {
   const [open, setOpen] = useState(false)
+  const generatedId = useId()
+  const controlId = props.id || `select-${generatedId.replace(/:/g, '')}`
+  const errorId = error ? `${controlId}-error` : undefined
   const rootRef = useRef(null)
   const options = Children.toArray(children)
     .filter(child => child?.type === 'option')
@@ -83,14 +98,19 @@ export function Select({ label, error, children, className, ...props }) {
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        <label htmlFor={controlId} className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
           {label}
         </label>
       )}
       <div ref={rootRef} className={clsx('relative', className)}>
         <button
+          id={controlId}
           type="button"
           disabled={props.disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
+          aria-haspopup="listbox"
+          aria-expanded={open}
           onClick={() => setOpen(current => !current)}
           className={clsx(
             'flex w-full items-center justify-between gap-3 rounded-xl border py-2.5 pl-3.5 pr-3 text-left text-sm font-semibold outline-none transition-all',
@@ -130,7 +150,7 @@ export function Select({ label, error, children, className, ...props }) {
           </div>
         )}
       </div>
-      {error && <span className="text-xs text-red-500">{error}</span>}
+      {error && <span id={errorId} role="alert" className="text-xs text-red-500">{error}</span>}
     </div>
   )
 }
