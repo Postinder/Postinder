@@ -179,28 +179,6 @@ npm run dev
 
 ---
 
-## Comandos úteis
-
-```bash
-npm run build --prefix backend      # build do backend
-npm run build --prefix apps/admin   # build do frontend
-docker compose down                 # parar o banco
-docker compose down -v && docker compose up -d   # resetar o banco (aplique o schema de novo depois)
-```
-
-No Windows, `docs\deploy\iniciar.bat` encerra processos antigos nas portas `3001`/`5173` e sobe o projeto com um clique.
-
----
-
-## Troubleshooting
-
-**`ERR_CONNECTION_REFUSED` no navegador** — o backend não está rodando. Teste `curl http://localhost:3001/health`; se falhar, rode `npm run dev`.
-
-**Docker não sobe** — abra o Docker Desktop e aguarde ficar pronto antes de rodar `docker compose up -d`.
-
-**Login não funciona** — o schema pode não ter sido aplicado. Rode novamente o comando de schema da seção de setup.
-
-**Tela abre mas os dados não carregam** — confirme que frontend (`5173`) e backend (`3001`) estão de pé; em último caso, use `docs\deploy\iniciar.bat`.
 
 ---
 
