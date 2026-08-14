@@ -71,7 +71,9 @@ test('item review is editable, navigable and only concludes after every draft de
   assert.match(portalPageSource, /disabled=\{!canCompleteItemReview \|\| busy\}/)
   assert.match(portalPageSource, /Concluir análise/)
   assert.match(portalServicesSource, /complete-review/)
-  assert.match(reviewActionsSource, /aria-pressed=\{decision === 'approved'\}/)
+  assert.match(reviewActionsSource, /aria-pressed=\{normallyApproved\}/)
+  assert.match(reviewActionsSource, /aria-label="Adorei"/)
+  assert.match(reviewActionsSource, /positiveReaction === 'loved'/)
   assert.match(reviewActionsSource, /aria-pressed=\{decision === 'rejected'\}/)
 })
 
@@ -91,5 +93,5 @@ test('portal presents complete client-facing content without technical filenames
   assert.doesNotMatch(portalPageSource, /Ver mais|line-clamp-2 md:line-clamp-1/)
   assert.match(reviewHeaderSource, /Data de publicação:/)
   assert.match(channelChipsSource, /import ChannelIcon/)
-  assert.match(reviewActionsSource, /'Reprovar'/)
+  assert.match(reviewActionsSource, /Solicitar ajuste/)
 })

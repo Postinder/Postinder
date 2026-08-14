@@ -22,8 +22,10 @@ describe('portal services optimistic revision contract', () => {
     const service = createPortalService(client)
 
     await service.approvePortalPost('token', 'post', 7)
+    await service.approvePortalPost('token', 'loved-post', 7, 'loved')
     await service.rejectPortalPost('token', 'post', 'Ajustar', ['Texto'], 7)
     await service.savePortalItemDecision('token', 'post', 'file', 'rejected', 'Trocar', ['Imagem'], 7)
+    await service.savePortalItemDecision('token', 'post', 'loved-file', 'approved', '', [], 7, 'loved')
     await service.completePortalItemReview('token', 'post', 7)
     await service.reopenPortalPost('token', 'post', 7)
     await service.approvePortalSoundtrack('token', 'post', 7)
@@ -32,8 +34,10 @@ describe('portal services optimistic revision contract', () => {
 
     expect(calls).toEqual([
       { method: 'post', path: '/portal/token/posts/post/approve', body: { expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/loved-post/approve', body: { positiveReaction: 'loved', expectedRevision: 7 } },
       { method: 'post', path: '/portal/token/posts/post/reject', body: { comment: 'Ajustar', tags: ['Texto'], expectedRevision: 7 } },
       { method: 'put', path: '/portal/token/posts/post/items/file/decision', body: { decision: 'rejected', comment: 'Trocar', tags: ['Imagem'], expectedRevision: 7 } },
+      { method: 'put', path: '/portal/token/posts/post/items/loved-file/decision', body: { decision: 'approved', comment: '', tags: [], positiveReaction: 'loved', expectedRevision: 7 } },
       { method: 'post', path: '/portal/token/posts/post/complete-review', body: { expectedRevision: 7 } },
       { method: 'post', path: '/portal/token/posts/post/reopen', body: { expectedRevision: 7 } },
       { method: 'post', path: '/portal/token/posts/post/soundtrack/approve', body: { expectedRevision: 7 } },
@@ -47,8 +51,10 @@ describe('portal services optimistic revision contract', () => {
     const service = createClientPortalService(client)
 
     await service.approveAuthenticatedPortalPost('post', 9)
+    await service.approveAuthenticatedPortalPost('loved-post', 9, 'loved')
     await service.rejectAuthenticatedPortalPost('post', 'Ajustar', ['Texto'], 9)
     await service.saveAuthenticatedPortalItemDecision('post', 'file', 'approved', '', [], 9)
+    await service.saveAuthenticatedPortalItemDecision('post', 'loved-file', 'approved', '', [], 9, 'loved')
     await service.completeAuthenticatedPortalItemReview('post', 9)
     await service.reopenAuthenticatedPortalPost('post', 9)
     await service.approveAuthenticatedPortalSoundtrack('post', 9)
@@ -57,8 +63,10 @@ describe('portal services optimistic revision contract', () => {
 
     expect(calls).toEqual([
       { method: 'post', path: '/client-portal/posts/post/approve', body: { expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/loved-post/approve', body: { positiveReaction: 'loved', expectedRevision: 9 } },
       { method: 'post', path: '/client-portal/posts/post/reject', body: { comment: 'Ajustar', tags: ['Texto'], expectedRevision: 9 } },
       { method: 'put', path: '/client-portal/posts/post/items/file/decision', body: { decision: 'approved', comment: '', tags: [], expectedRevision: 9 } },
+      { method: 'put', path: '/client-portal/posts/post/items/loved-file/decision', body: { decision: 'approved', comment: '', tags: [], positiveReaction: 'loved', expectedRevision: 9 } },
       { method: 'post', path: '/client-portal/posts/post/complete-review', body: { expectedRevision: 9 } },
       { method: 'post', path: '/client-portal/posts/post/reopen', body: { expectedRevision: 9 } },
       { method: 'post', path: '/client-portal/posts/post/soundtrack/approve', body: { expectedRevision: 9 } },
@@ -75,6 +83,7 @@ describe('portal services optimistic revision contract', () => {
     await expect(tokenService.approvePortalPost('token', 'post')).rejects.toThrow(/expectedRevision/)
     await expect(tokenService.approvePortalPost('token', 'post', 0)).rejects.toThrow(/expectedRevision/)
     await expect(authService.adjustAuthenticatedPortalSoundtrack('post', 'Ajustar', -1)).rejects.toThrow(/expectedRevision/)
+    await expect(tokenService.approvePortalPost('token', 'post', 1, 'invalid')).rejects.toThrow(/positiveReaction/)
     expect(calls).toEqual([])
   })
 })

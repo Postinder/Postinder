@@ -5,6 +5,13 @@ export function getItemReviewDecision(file) {
   return FINAL_ITEM_DECISIONS.has(decision) ? decision : null
 }
 
+export function getItemPositiveReaction(file) {
+  if (getItemReviewDecision(file) !== 'approved') return null
+  return (file?.review_positive_reaction || file?.positiveReaction || file?.positive_reaction) === 'loved'
+    ? 'loved'
+    : null
+}
+
 export function isItemReviewComplete(files = []) {
   return files.length > 0 && files.every(file => getItemReviewDecision(file))
 }

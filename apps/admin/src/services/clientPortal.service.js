@@ -7,6 +7,12 @@ function withExpectedRevision(expectedRevision, payload = {}) {
   return { ...payload, expectedRevision }
 }
 
+function withPositiveReaction(payload, positiveReaction) {
+  if (positiveReaction == null) return payload
+  if (positiveReaction !== 'loved') throw new TypeError('positiveReaction must be loved when provided')
+  return { ...payload, positiveReaction }
+}
+
 export function createClientPortalService(client = apiClient) {
   return {
     async fetchAuthenticatedPortal() {
@@ -14,10 +20,10 @@ export function createClientPortalService(client = apiClient) {
       return data
     },
 
-    async approveAuthenticatedPortalPost(postId, expectedRevision) {
+    async approveAuthenticatedPortalPost(postId, expectedRevision, positiveReaction = null) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/approve`,
-        withExpectedRevision(expectedRevision),
+        withExpectedRevision(expectedRevision, withPositiveReaction({}, positiveReaction)),
       )
       return data
     },
@@ -30,10 +36,10 @@ export function createClientPortalService(client = apiClient) {
       return data
     },
 
-    async saveAuthenticatedPortalItemDecision(postId, fileId, decision, comment = '', tags = [], expectedRevision) {
+    async saveAuthenticatedPortalItemDecision(postId, fileId, decision, comment = '', tags = [], expectedRevision, positiveReaction = null) {
       const { data } = await client.put(
         `/client-portal/posts/${postId}/items/${fileId}/decision`,
-        withExpectedRevision(expectedRevision, { decision, comment, tags }),
+        withExpectedRevision(expectedRevision, withPositiveReaction({ decision, comment, tags }, positiveReaction)),
       )
       return data
     },

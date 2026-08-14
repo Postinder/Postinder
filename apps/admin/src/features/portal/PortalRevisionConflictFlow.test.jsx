@@ -53,7 +53,7 @@ describe('portal revision-bound interactive intents', () => {
     const props = reviewProps(oldProject)
     const view = render(<ProjectReviewPanel {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reprovar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Solicitar ajuste' }))
     const oldDialog = screen.getByRole('dialog')
     fireEvent.change(within(oldDialog).getByRole('textbox'), { target: { value: 'Intencao da revisao 4' } })
 
@@ -64,12 +64,12 @@ describe('portal revision-bound interactive intents', () => {
     })} />)
     expect(screen.queryByRole('dialog')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reprovar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Solicitar ajuste' }))
     const newDialog = screen.getByRole('dialog')
     const textarea = within(newDialog).getByRole('textbox')
     expect(textarea.value).toBe('')
     fireEvent.change(textarea, { target: { value: 'Nova intencao explicita' } })
-    fireEvent.click(within(newDialog).getByRole('button', { name: 'Reprovar' }))
+    fireEvent.click(within(newDialog).getByRole('button', { name: 'Solicitar ajuste' }))
 
     await waitFor(() => expect(props.onRejectPost).toHaveBeenCalledWith(
       'post-1',
@@ -118,6 +118,38 @@ describe('portal revision-bound interactive intents', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Ajuste novo' } })
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reprovar' }))
     await waitFor(() => expect(onAdjust).toHaveBeenCalledWith('Ajuste novo', 8))
+  })
+
+  it('offers three explicit content intents and maps Adorei to an approved positive reaction', () => {
+    const project = emailProject(6)
+    const props = reviewProps(project)
+    render(<ProjectReviewPanel {...props} />)
+
+    expect(screen.getByRole('button', { name: 'Adorei' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Solicitar ajuste' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Adorei' }))
+    expect(props.onApprovePost).toHaveBeenCalledWith('post-1', 'loved')
+  })
+
+  it('keeps a loved item visibly distinct while preserving approved as its operational decision', () => {
+    const project = {
+      ...emailProject(3),
+      channels: ['Instagram'],
+      emailLink: null,
+      files: [{
+        id: 'file-1',
+        name: 'arte.png',
+        file_type: 'IMAGE',
+        url: 'https://example.test/arte.png',
+        review_decision: 'approved',
+        review_positive_reaction: 'loved',
+      }],
+    }
+    render(<ProjectReviewPanel {...reviewProps(project, { approvalMode: 'item' })} />)
+
+    expect(screen.getAllByRole('button', { name: 'Adorei' }).some(button => button.getAttribute('aria-pressed') === 'true')).toBe(true)
+    expect(screen.getAllByRole('button', { name: 'Aprovar' }).every(button => button.getAttribute('aria-pressed') === 'false')).toBe(true)
   })
 
   it('renders a non-empty revision-visible funnel in simplified and detailed modes only', () => {

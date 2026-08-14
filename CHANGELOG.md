@@ -2,6 +2,25 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
+## Nao publicado - 14/08/2026 - reacao positiva Adorei
+
+### Added
+
+- O portal passou a apresentar **Adorei**, **Aprovar** e **Solicitar ajuste**. **Adorei** e uma aprovacao normal acrescida do fato historico `positive_reaction = loved`; nao cria status, fluxo de execucao ou decisao de soundtrack diferente.
+- Em `content`, a reacao integra a decisao oficial append-only. Em `item`, drafts preservam a escolha e o `item_snapshot` oficial identifica quais itens receberam **Adorei**; mistura com aprovacao normal continua positiva e qualquer ajuste preserva a logica negativa.
+- A metrica **Adorei no mes** conta uma vez por post atualmente certificado, com `loved` na projecao oficial corrente e `approvedAt` no mes de referencia; nao multiplica itens, retries ou fatos historicos superados por rewind.
+- Migration aditiva `024_portal_positive_reaction.sql`, compativel com legado: `positive_reaction` e opcional, `NULL` continua neutro, snapshot vazio permanece valido e nenhum backfill inventa entusiasmo.
+
+### Fixed
+
+- Falhas correntes de remocao do Storage de soundtrack passaram a usar `post_soundtracks.storage_delete_error`, sem tentar atualizar `post_soundtrack_versions` append-only; falha de persistencia continua registrada pelo logger.
+- `portalServices.test.jsx` passou a integrar uma unica vez o agregador padrao de testes do admin.
+
+### Validation
+
+- Gate focal PASS sem P0/P1/P2 residual: backend typecheck/build e 215/215; PostgreSQL revisao 27/27 e portal 14/14; soundtrack/retention 16/16 e integracao aprovada; admin 83/83 unitarios, 33/33 React, focal do portal 20/20 Node e 8/8 React, `portalServices` 3/3 e build aprovado; `git diff --check` aprovado.
+- PostgreSQL 18.4 descartavel aplicou a `024` uma vez e tratou a segunda execucao como no-op; append-only e compatibilidade legada permaneceram preservados. O segundo commit, push e deploy desta leva ainda nao foram realizados.
+
 ## Nao publicado - 13/08/2026 - integridade de revisao e historico append-only
 
 ### Added

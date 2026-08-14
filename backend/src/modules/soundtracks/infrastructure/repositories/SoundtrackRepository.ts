@@ -20,8 +20,7 @@ type SoundtrackScope = {
 type PreviousStorageReference = {
   bucket?: string | null
   storagePath?: string | null
-  soundtrackId?: string
-  versionId?: string
+  soundtrackId: string
 }
 
 function cleanText(value: unknown) {
@@ -295,19 +294,12 @@ export class SoundtrackRepository {
         [postId],
       )
       const current = currentResult.rows[0]
-      const currentVersion = current ? await client.query(
-        `SELECT id FROM post_soundtrack_versions
-         WHERE soundtrack_id = $1 AND revision_number = $2`,
-        [current.id, current.revision_number],
-      ) : null
-
       if (input.mode === 'none') {
         if (current) {
           previousReference = {
             bucket: current.bucket,
             storagePath: current.storage_path,
             soundtrackId: current.id,
-            versionId: currentVersion?.rows[0]?.id,
           }
           const cleared = await client.query(
             `UPDATE post_soundtracks
@@ -345,7 +337,6 @@ export class SoundtrackRepository {
             bucket: current.bucket,
             storagePath: current.storage_path,
             soundtrackId: current.id,
-            versionId: currentVersion?.rows[0]?.id,
           }
         }
 
@@ -449,13 +440,18 @@ export class SoundtrackRepository {
     const removal = await removeStoredFile({ bucket: reference.bucket, storagePath: reference.storagePath })
     if (!removal.removed) {
       logger.error('Failed to remove replaced soundtrack object', removal)
-      if (reference.versionId) {
+      try {
         await query(
-          `UPDATE post_soundtrack_versions
-           SET snapshot = snapshot || jsonb_build_object('storageDeleteError', $2)
+          `UPDATE post_soundtracks
+           SET storage_delete_error = $2, updated_at = NOW()
            WHERE id = $1`,
-          [reference.versionId, removal.error || 'Storage deletion failed'],
-        ).catch(() => {})
+          [reference.soundtrackId, removal.error || 'Storage deletion failed'],
+        )
+      } catch (persistenceError) {
+        logger.error('Failed to persist soundtrack storage deletion error', {
+          soundtrackId: reference.soundtrackId,
+          persistenceError,
+        })
       }
     }
   }

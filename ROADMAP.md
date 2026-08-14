@@ -14,6 +14,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 | Ajustes pontuais de layout definidos na rodada atual | concluidos e validados localmente |
 | Aprovacao configuravel `content|item`, UX do portal e rewind por postagem | concluidos, auditados e nao publicados |
 | Revisao/certificacao de conteudo, funil com snapshot e historico append-only de soundtrack | concluidos, validados e nao publicados |
+| Reacao positiva **Adorei**, metrica mensal, migration 024 e dois P2 focais | concluidos, gate PASS, documentacao em consolidacao e nao publicados |
 | Selecao contextual em lote | concluida, auditada e nao publicada |
 | Preparacao final de deploy | pendente |
 | Deploy | pendente e nao autorizado |
@@ -35,7 +36,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 - Configurar a demo publicada com `DEPLOYMENT_MODE=demo`, `ENABLE_DEMO_RESET=true` e `VITE_DEPLOYMENT_MODE=demo`.
 - Decidir se a IA sera habilitada; se for, configurar a credencial somente no backend.
 - Criar novo backup logico e executar novo preflight imediatamente antes do deploy.
-- [ ] Auditar o diff final e criar o commit local autorizado. Antes do deploy, reconfirmar o preflight das migrations `017` a `023` e manter `npm run db:migrate` como release step bloqueante anterior ao Start Command.
+- [ ] Auditar o diff final e criar o segundo commit local autorizado. Antes do deploy, reconfirmar o preflight das migrations `017` a `024` e manter `npm run db:migrate` como release step bloqueante anterior ao Start Command.
 - Publicar primeiro o backend, confirmar migrations e startup, depois publicar o frontend.
 - Confirmar commits e bundles ativos e executar smoke tests, conferencia de logs sanitizados e teste controlado do reset demo.
 - Validar no ambiente publicado metadados de Storage, copia fisica e limpeza manual de Retencao somente com dados descartaveis.
@@ -88,7 +89,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 - Corrigir textos remanescentes com acentuacao/mojibake e avaliar code splitting do bundle Vite.
 - Avaliar tags de reprovacao configuraveis e eventual editor sem antecipar nova arquitetura.
 - Reavaliar a permanencia do soundtrack, hoje opcional e secundario, sem considerar sua remocao uma decisao ja tomada.
-- Considerar Super Like/"Adorei" e metricas de entusiasmo somente como hipotese futura de produto.
+- Avaliar somente analises historicas adicionais de entusiasmo; a intencao **Adorei** e a metrica mensal da projecao corrente ja estao concluidas no pacote local.
 
 ## P3 - Integracoes
 

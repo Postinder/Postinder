@@ -305,6 +305,7 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
     await applyMigration('021_content_revision_and_review_history.sql')
     await applyMigration('022_funnel_visibility_and_revision_snapshot.sql')
     await applyMigration('023_soundtrack_history_append_only.sql')
+    await applyMigration('024_portal_positive_reaction.sql')
 
     const [postModule, portalModule, soundtrackModule, settingsModule, poolModule] = await Promise.all([
       import('./infrastructure/repositories/PostRepository'),
@@ -382,6 +383,8 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
     await applyMigration('021_content_revision_and_review_history.sql')
     await applyMigration('022_funnel_visibility_and_revision_snapshot.sql')
     await applyMigration('023_soundtrack_history_append_only.sql')
+    await applyMigration('024_portal_positive_reaction.sql')
+    await applyMigration('024_portal_positive_reaction.sql')
     assert.equal(
       Number((await database().query(
         'SELECT COUNT(*)::int AS count FROM portal_item_review_drafts',
@@ -393,6 +396,17 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
       [legacyFixture.postIdsByStatus.approved],
     )
     assert.deepEqual(funnelDefaults.rows[0].review_field_visibility, { funnel_tag: false })
+    const positiveReactionDefaults = await database().query(
+      `SELECT column_name, column_default
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'portal_review_decisions'
+         AND column_name IN ('positive_reaction', 'item_snapshot')
+       ORDER BY column_name`,
+    )
+    assert.deepEqual(positiveReactionDefaults.rows.map(row => row.column_name), ['item_snapshot', 'positive_reaction'])
+    assert.match(positiveReactionDefaults.rows[0].column_default, /'\[\]'::jsonb/)
+    assert.equal(positiveReactionDefaults.rows[1].column_default, null)
   })
 
   test('database triggers protect post, attachment, and soundtrack material while allowing decisions and hard cascades', async () => {
@@ -579,6 +593,36 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
     } finally {
       client.release()
     }
+  })
+
+  test('soundtrack storage cleanup errors update current state without mutating append-only versions', async () => {
+    await resetBusinessData('content', true)
+    const seeded = await seedEditablePost({ soundtrack: true })
+    assert.ok(seeded.soundtrackId)
+    const version = await database().query(
+      `INSERT INTO post_soundtrack_versions (
+         soundtrack_id, post_id, revision_number, reason, snapshot, actor_role
+       ) VALUES ($1, $2, 1, 'created', '{"marker":"immutable"}'::jsonb, 'admin')
+       RETURNING id, snapshot`,
+      [seeded.soundtrackId, seeded.postId],
+    )
+
+    await (soundtrackRepository as any).removePreviousStorage({
+      bucket: 'not-the-local-bucket',
+      storagePath: 'soundtrack-tests/expected-storage-failure.mp3',
+      soundtrackId: seeded.soundtrackId,
+    })
+
+    const current = await database().query(
+      'SELECT storage_delete_error FROM post_soundtracks WHERE id = $1',
+      [seeded.soundtrackId],
+    )
+    const history = await database().query(
+      'SELECT snapshot FROM post_soundtrack_versions WHERE id = $1',
+      [version.rows[0].id],
+    )
+    assert.equal(current.rows[0].storage_delete_error, 'Local storage bucket does not match object bucket')
+    assert.deepEqual(history.rows[0].snapshot, { marker: 'immutable' })
   })
 
   test('stale expectedRevision produces no canonical mutation or review fact', async () => {
@@ -1013,6 +1057,7 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
     assert.deepEqual(await portalRepository.approvePost(seeded.postId, scope, 1), {
       kind: 'already_completed',
       status: 'approved',
+      positiveReaction: null,
     })
     assert.equal((await postRepository.reopenForEditing(
       seeded.postId,

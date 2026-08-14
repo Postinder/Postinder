@@ -59,7 +59,12 @@ export class PortalController {
       return true
     }
     if (result?.kind === 'already_completed') {
-      res.json({ success: true, idempotent: true, status: result.status })
+      res.json({
+        success: true,
+        idempotent: true,
+        status: result.status,
+        positiveReaction: result.positiveReaction || null,
+      })
       return true
     }
     if (result?.kind === 'decision_conflict') {
@@ -92,6 +97,16 @@ export class PortalController {
 
   private expectedRevision(req: Request) {
     return Number(req.body?.expectedRevision)
+  }
+
+  private positiveReaction(req: Request, res: Response) {
+    const value = req.body?.positiveReaction
+    if (value === undefined || value === null || value === '') {
+      return { valid: true as const, value: null }
+    }
+    if (value === 'loved') return { valid: true as const, value: 'loved' as const }
+    res.status(400).json({ error: 'positiveReaction must be loved when provided' })
+    return { valid: false as const, value: null }
   }
 
   async createClientLink(req: AuthRequest, res: Response) {
@@ -217,11 +232,13 @@ export class PortalController {
   async approvePost(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
+    const reaction = this.positiveReaction(req, res)
+    if (!reaction.valid) return
 
     const approved = await this.portalRepository.approvePost(req.params.postId, {
       clientId: session.clientId,
       companyId: session.companyId,
-    }, this.expectedRevision(req), 'client_portal')
+    }, this.expectedRevision(req), 'client_portal', reaction.value)
     if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -230,9 +247,10 @@ export class PortalController {
       actorRole: 'client_portal',
       type: 'post_approved',
       title: 'Post aprovado pelo portal',
+      metadata: reaction.value ? { positiveReaction: reaction.value } : undefined,
     }).catch(() => {})
 
-    res.json({ success: true, status: approved.status })
+    res.json({ success: true, status: approved.status, positiveReaction: approved.positiveReaction || null })
   }
 
   async approveFile(req: Request, res: Response) {
@@ -244,11 +262,13 @@ export class PortalController {
   async approveAuthenticatedPost(req: AuthRequest, res: Response) {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
+    const reaction = this.positiveReaction(req, res)
+    if (!reaction.valid) return
 
     const approved = await this.portalRepository.approvePost(req.params.postId, {
       clientId: session.clientId,
       companyId: session.companyId,
-    }, this.expectedRevision(req), 'client')
+    }, this.expectedRevision(req), 'client', reaction.value)
     if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -257,9 +277,10 @@ export class PortalController {
       actorRole: 'client',
       type: 'post_approved',
       title: 'Post aprovado pelo cliente',
+      metadata: reaction.value ? { positiveReaction: reaction.value } : undefined,
     }).catch(() => {})
 
-    res.json({ success: true, status: approved.status })
+    res.json({ success: true, status: approved.status, positiveReaction: approved.positiveReaction || null })
   }
 
   async approveAuthenticatedFile(req: AuthRequest, res: Response) {
@@ -357,11 +378,17 @@ export class PortalController {
     if (decision !== 'approved' && decision !== 'rejected') {
       return res.status(400).json({ error: 'decision must be approved or rejected' })
     }
+    const reaction = this.positiveReaction(req, res)
+    if (!reaction.valid) return
+    if (decision !== 'approved' && reaction.value) {
+      return res.status(400).json({ error: 'positiveReaction is allowed only for approved decisions' })
+    }
     const result = await this.portalRepository.saveItemDecision(
       req.params.postId,
       req.params.fileId,
       {
         decision,
+        positiveReaction: reaction.value,
         comment: String(req.body?.comment || '').trim(),
         tags: Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : [],
       },

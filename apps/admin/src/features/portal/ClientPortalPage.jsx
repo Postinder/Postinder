@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileText,
   FolderOpen,
+  Heart,
   History,
   LayoutGrid,
   Loader2,
@@ -66,6 +67,7 @@ import {
 import {
   countApprovedInMonth,
   countContentsWithAdjustments,
+  countLovedInMonth,
   findNextScheduledPost,
 } from './portalMetrics'
 import {
@@ -75,7 +77,7 @@ import {
   getPortalSwipeIntent,
   isVideoControlsArea,
 } from './portalSwipe'
-import { getItemReviewDecision, hasPendingApplicableSoundtrack, isItemReviewComplete, selectReviewMedia } from './portalReview'
+import { getItemPositiveReaction, getItemReviewDecision, hasPendingApplicableSoundtrack, isItemReviewComplete, selectReviewMedia } from './portalReview'
 import {
   getPostContentRevision,
   PORTAL_REVISION_CONFLICT_MESSAGE,
@@ -100,7 +102,7 @@ function getSafeEmailPreviewUrl(post) {
   return normalizeEmailPreviewUrl(post?.emailLink || post?.email_link)
 }
 
-function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, canPrevious, canNext, busy, decision, currentPosition, totalFiles }) {
+function SwipeReviewCard({ post, file, onApprove, onLove, onReject, onPrevious, onNext, canPrevious, canNext, busy, decision, positiveReaction, currentPosition, totalFiles }) {
   const [dragX, setDragX] = useState(0)
   const [dragging, setDragging] = useState(false)
   const cardRef = useRef(null)
@@ -253,7 +255,7 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
       >
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-between px-6">
           <span className={`rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white transition-opacity motion-reduce:transition-none ${dragX < -35 ? 'opacity-100' : 'opacity-0'}`}>
-            REPROVAR
+            SOLICITAR AJUSTE
           </span>
           <span className={`rounded-full bg-green-600 px-4 py-2 text-sm font-black text-white transition-opacity motion-reduce:transition-none ${dragX > 35 ? 'opacity-100' : 'opacity-0'}`}>
             APROVAR
@@ -333,7 +335,7 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-black text-neutral-500 dark:text-neutral-300">{mediaLabel}</span>
             <p className="w-full text-center text-[11px] font-semibold text-neutral-400 dark:text-neutral-300/80 sm:ml-auto sm:w-auto sm:text-right">
-              Arraste: esquerda para reprovar · direita para aprovar
+              Arraste: esquerda para solicitar ajuste · direita para aprovar
             </p>
           </div>
 
@@ -352,8 +354,10 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
               fileName={fileName}
               onReject={onReject}
               onApprove={onApprove}
+              onLove={onLove}
               busy={busy}
               decision={decision}
+              positiveReaction={positiveReaction}
               compact
               className="hidden shrink-0 self-start md:flex"
             />
@@ -365,15 +369,17 @@ function SwipeReviewCard({ post, file, onApprove, onReject, onPrevious, onNext, 
         fileName={fileName}
         onReject={onReject}
         onApprove={onApprove}
+        onLove={onLove}
         busy={busy}
         decision={decision}
+        positiveReaction={positiveReaction}
         className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(0,0,0,0.08)] backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 md:hidden"
       />
     </div>
   )
 }
 
-function EmailPreviewReviewCard({ post, onApprove, onReject, busy }) {
+function EmailPreviewReviewCard({ post, onApprove, onLove, onReject, busy }) {
   const previewUrl = getSafeEmailPreviewUrl(post)
   return (
     <div className="mx-auto max-w-2xl rounded-2xl border border-blue-200 bg-white p-6 text-center shadow-xl dark:border-blue-900 dark:bg-neutral-900">
@@ -389,7 +395,7 @@ function EmailPreviewReviewCard({ post, onApprove, onReject, busy }) {
         <ExternalLink size={16} /> Abrir prévia do e-mail
       </a>
       {post?.description ? <p className="mx-auto mt-5 max-w-xl whitespace-pre-wrap text-left text-sm leading-6 text-neutral-600 dark:text-neutral-300">{post.description}</p> : null}
-      <PortalReviewActions fileName="prévia do e-mail" onReject={onReject} onApprove={onApprove} busy={busy} className="mt-6 justify-center" />
+      <PortalReviewActions fileName="prévia do e-mail" onReject={onReject} onApprove={onApprove} onLove={onLove} busy={busy} className="mt-6 justify-center" />
     </div>
   )
 }
@@ -400,8 +406,9 @@ function ReviewDots({ files, activeFileId, onSelect, approvalMode }) {
     <div className="mb-3 flex flex-wrap items-center justify-center gap-2" aria-label="Navegação entre mídias">
       {files.map((file, index) => {
         const decision = approvalMode === 'item' ? getItemReviewDecision(file) : null
+        const positiveReaction = approvalMode === 'item' ? getItemPositiveReaction(file) : null
         const current = file.id === activeFileId
-        const label = decision === 'approved' ? 'aprovado' : decision === 'rejected' ? 'reprovado' : 'pendente'
+        const label = positiveReaction === 'loved' ? 'marcado como Adorei' : decision === 'approved' ? 'aprovado' : decision === 'rejected' ? 'com ajuste solicitado' : 'pendente'
         return (
           <button
             key={file.id}
@@ -409,9 +416,9 @@ function ReviewDots({ files, activeFileId, onSelect, approvalMode }) {
             onClick={() => onSelect(selectReviewMedia(files, activeFileId, file.id))}
             aria-label={`Ir para mídia ${index + 1}: ${label}${current ? ', atual' : ''}`}
             aria-current={current ? 'true' : undefined}
-            className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-[11px] font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] ${current ? 'scale-110 border-[var(--portal-brand-primary)] ring-2 ring-[var(--portal-brand-selection-ring)]' : 'border-neutral-300 dark:border-neutral-700'} ${decision === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200' : decision === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200' : 'bg-white text-neutral-500 dark:bg-neutral-900 dark:text-neutral-300'}`}
+            className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-[11px] font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] ${current ? 'scale-110 border-[var(--portal-brand-primary)] ring-2 ring-[var(--portal-brand-selection-ring)]' : 'border-neutral-300 dark:border-neutral-700'} ${positiveReaction === 'loved' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200' : decision === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200' : decision === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200' : 'bg-white text-neutral-500 dark:bg-neutral-900 dark:text-neutral-300'}`}
           >
-            {decision === 'approved' ? '✓' : decision === 'rejected' ? '!' : index + 1}
+            {positiveReaction === 'loved' ? '♥' : decision === 'approved' ? '✓' : decision === 'rejected' ? '!' : index + 1}
           </button>
         )
       })}
@@ -513,6 +520,7 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
 
   const allItemsDecided = isItemReviewComplete(files)
   const currentDecision = approvalMode === 'item' ? getItemReviewDecision(currentFile) : null
+  const currentPositiveReaction = approvalMode === 'item' ? getItemPositiveReaction(currentFile) : null
   const hasRejectedItem = files.some(file => getItemReviewDecision(file) === 'rejected')
   const hasPendingSoundtrackDecision = hasPendingApplicableSoundtrack(soundtrackEnabled, selectedProject.soundtrack)
   const canCompleteItemReview = allItemsDecided && (hasRejectedItem || !hasPendingSoundtrackDecision)
@@ -549,12 +557,16 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
             onApprove={() => approvalMode === 'item'
               ? onSaveItemDecision(selectedProject.id, currentFile.id, 'approved')
               : onApprovePost(selectedProject.id)}
+            onLove={() => approvalMode === 'item'
+              ? onSaveItemDecision(selectedProject.id, currentFile.id, 'approved', '', [], null, 'loved')
+              : onApprovePost(selectedProject.id, 'loved')}
             onReject={openRejectDialog}
             onPrevious={() => setActiveFileId(files[currentFileIndex - 1]?.id || currentFile.id)}
             onNext={() => setActiveFileId(files[currentFileIndex + 1]?.id || currentFile.id)}
             canPrevious={currentFileIndex > 0}
             canNext={currentFileIndex < files.length - 1}
             decision={currentDecision}
+            positiveReaction={currentPositiveReaction}
             currentPosition={currentFileIndex + 1}
             totalFiles={files.length}
           />
@@ -563,6 +575,7 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
             post={selectedProject}
             busy={busy}
             onApprove={() => onApprovePost(selectedProject.id)}
+            onLove={() => onApprovePost(selectedProject.id, 'loved')}
             onReject={openRejectDialog}
           />
         ) : (
@@ -605,7 +618,7 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
             onClose={closeRejectDialog}
             initialFocusRef={rejectTextareaRef}
           >
-              <h3 id="portal-reject-title" className="text-lg font-black">Reprovar</h3>
+              <h3 id="portal-reject-title" className="text-lg font-black">Solicitar ajuste</h3>
               <p id="portal-reject-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Selecione as tags e descreva o ajuste necessário.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {REJECTION_TAGS.map(tag => {
@@ -627,7 +640,7 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
                 ref={rejectTextareaRef}
                 value={comment}
                 onChange={event => setComment(event.target.value)}
-                aria-label="Comentário da reprovação"
+                aria-label="Comentário do ajuste solicitado"
                 className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus:border-[var(--portal-brand-border)] focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] dark:border-neutral-700 dark:bg-neutral-950"
                 placeholder="Ex: trocar imagem, ajustar texto, revisar cor..."
               />
@@ -636,7 +649,7 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
                   Cancelar
                 </button>
                 <button type="button" onClick={submitReject} disabled={busy} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-neutral-900">
-                  Reprovar
+                  Solicitar ajuste
                 </button>
               </div>
           </PortalDialog>
@@ -783,6 +796,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
   )
 
   const monthApproved = useMemo(() => countApprovedInMonth(posts), [posts])
+  const monthLoved = useMemo(() => countLovedInMonth(posts), [posts])
   const rejectedCount = useMemo(() => countContentsWithAdjustments(posts), [posts])
   const nextPost = useMemo(() => findNextScheduledPost(posts), [posts])
 
@@ -854,7 +868,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }, [lastAction, lastActionKey, posts])
 
-  async function handleSaveItemDecision(projectId, fileId, decision, comment = '', tags = [], intentRevision = null) {
+  async function handleSaveItemDecision(projectId, fileId, decision, comment = '', tags = [], intentRevision = null, positiveReaction = null) {
     setBusy(true)
     try {
       const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
@@ -862,10 +876,10 @@ export default function ClientPortalPage({ mode = 'token' }) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await saveAuthenticatedPortalItemDecision(projectId, fileId, decision, comment, tags, expectedRevision)
-      else await savePortalItemDecision(token, projectId, fileId, decision, comment, tags, expectedRevision)
+      if (isAuthenticatedMode) await saveAuthenticatedPortalItemDecision(projectId, fileId, decision, comment, tags, expectedRevision, positiveReaction)
+      else await savePortalItemDecision(token, projectId, fileId, decision, comment, tags, expectedRevision, positiveReaction)
       await reload()
-      toast.success(decision === 'approved' ? 'Item marcado como aprovado.' : 'Item marcado como reprovado.')
+      toast.success(positiveReaction === 'loved' ? 'Item marcado como Adorei.' : decision === 'approved' ? 'Item marcado como aprovado.' : 'Ajuste solicitado para o item.')
       return true
     } catch (error) {
       await handlePortalMutationError(error)
@@ -899,7 +913,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleApprovePost(projectId) {
+  async function handleApprovePost(projectId, positiveReaction = null) {
     setBusy(true)
     try {
       const expectedRevision = getExpectedRevision(projectId)
@@ -907,13 +921,13 @@ export default function ClientPortalPage({ mode = 'token' }) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId, expectedRevision)
-      else await approvePortalPost(token, projectId, expectedRevision)
+      if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId, expectedRevision, positiveReaction)
+      else await approvePortalPost(token, projectId, expectedRevision, positiveReaction)
       const action = { projectId, type: 'completed' }
       setLastAction(action)
       localStorage.setItem(lastActionKey, JSON.stringify(action))
       await reload()
-      toast.success('Conteúdo aprovado.')
+      toast.success(positiveReaction === 'loved' ? 'Que bom que você adorou! Conteúdo aprovado.' : 'Conteúdo aprovado.')
       return true
     } catch (error) {
       await handlePortalMutationError(error)
@@ -1152,6 +1166,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
             <PortalMetricsBar items={[
               { id: 'pending', icon: <Clock size={16} />, label: 'Aguardando aprovação', value: pendingProjects.length, sub: `${pendingItemsCount} itens pendentes` },
               { id: 'approved', icon: <CheckCircle size={16} />, label: 'Aprovados no mês', value: monthApproved, sub: 'conteúdos liberados' },
+              { id: 'loved', icon: <Heart size={16} />, label: 'Adorei no mês', value: monthLoved, sub: 'conteúdos com entusiasmo' },
               { id: 'adjustments', icon: <XCircle size={16} />, label: 'Com ajustes', value: rejectedCount, sub: 'conteúdos com ajustes solicitados' },
               { id: 'next', icon: <CalendarDays size={16} />, label: 'Próxima data prevista', value: nextPost ? formatDate(getPostDate(nextPost)) : 'Sem previsão', sub: nextPost?.title || 'nenhum conteúdo planejado' },
             ]} />

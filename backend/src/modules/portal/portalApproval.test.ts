@@ -65,6 +65,45 @@ test('provisional item choices never create official activities', async () => {
   assert.equal(activities, 0)
 })
 
+test('Adorei keeps the operational approval decision and forwards only the positive signal', async () => {
+  let capturedReaction: string | null | undefined
+  let activity: any
+  const repository = {
+    async validateToken() { return { clientId: 'client-1', companyId: 'company-1' } },
+    async approvePost(_postId: string, _session: unknown, _revision: number, _role: string, positiveReaction: string | null) {
+      capturedReaction = positiveReaction
+      return { kind: 'completed', status: 'approved', positiveReaction }
+    },
+  }
+  const controller = new PortalController(repository as any, {
+    async createForPost(_postId: string, input: any) { activity = input },
+  } as any, {} as any, {} as any)
+  const { state, response } = responseState()
+
+  await controller.approvePost(request({ positiveReaction: 'loved' }), response)
+
+  assert.equal(capturedReaction, 'loved')
+  assert.equal(state.body.status, 'approved')
+  assert.equal(state.body.positiveReaction, 'loved')
+  assert.equal(activity.type, 'post_approved')
+  assert.deepEqual(activity.metadata, { positiveReaction: 'loved' })
+})
+
+test('invalid positive reactions are rejected before persistence', async () => {
+  let calls = 0
+  const repository = {
+    async validateToken() { return { clientId: 'client-1', companyId: 'company-1' } },
+    async approvePost() { calls += 1 },
+  }
+  const controller = new PortalController(repository as any, {} as any, {} as any, {} as any)
+  const { state, response } = responseState()
+
+  await controller.approvePost(request({ positiveReaction: 'super-like-v2' }), response)
+
+  assert.equal(state.status, 400)
+  assert.equal(calls, 0)
+})
+
 test('completion emits one official activity and an idempotent retry emits none', async () => {
   let completionCalls = 0
   let activities = 0
@@ -149,6 +188,18 @@ test('migration and repository separate drafts from the atomic official snapshot
   assert.match(completionSection, /UPDATE files f/)
   assert.match(completionSection, /UPDATE posts/)
   assert.match(completionSection, /saveOfficialReview/)
+})
+
+test('positive reaction migration extends approval facts without creating a third operational decision', () => {
+  const migration = readFileSync(path.resolve(process.cwd(), '../database/migrations/024_portal_positive_reaction.sql'), 'utf8')
+  const repository = readFileSync(path.resolve(process.cwd(), 'src/modules/portal/infrastructure/repositories/PortalRepository.ts'), 'utf8')
+
+  assert.match(migration, /portal_item_review_drafts[\s\S]*positive_reaction VARCHAR\(20\)/)
+  assert.match(migration, /portal_review_decisions[\s\S]*item_snapshot JSONB NOT NULL DEFAULT '\[\]'/)
+  assert.match(migration, /positive_reaction = 'loved'/)
+  assert.doesNotMatch(migration, /decision IN \([^)]*loved/)
+  assert.match(repository, /decision: 'approved' \| 'rejected'/)
+  assert.match(repository, /positiveReaction: 'loved' \| null/)
 })
 
 test('soundtrack remains an optional secondary condition in item completion', () => {

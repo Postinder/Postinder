@@ -1,6 +1,6 @@
 # Banco de dados
 
-## Migrations 021 a 023 - integridade de revisao e soundtrack
+## Migrations 021 a 024 - integridade de revisao, soundtrack e reacao positiva
 
 `021_content_revision_and_review_history.sql` adiciona `posts.content_revision`, `approved_revision` e `executed_revision`, vincula drafts/decisoes a uma revisao de conteudo e cria `portal_review_decisions` e `portal_review_actions` como fatos oficiais append-only. O banco bloqueia UPDATE e DELETE direto nesses fatos oficiais. Triggers tambem protegem alteracoes materiais em posts, files e soundtrack quando o ciclo esta protegido. Operacoes do runtime usam `expectedRevision`, e a execucao exige revisao oficialmente aprovada, Cliente ativo e tenant coerente.
 
@@ -18,7 +18,9 @@ Assim, um `approved` legado sem `approved_revision` nao pode executar ate cumpri
 
 `023_soundtrack_history_append_only.sql` bloqueia UPDATE e DELETE direto em `post_soundtrack_versions` e `post_soundtrack_decisions`, mantendo INSERT legitimo. A funcao de guarda reconhece as cascatas existentes, portanto hard delete autorizado de soundtrack, post ou Cliente continua removendo o historico relacionado.
 
-As migrations `021`/`022` foram validadas sobre dump sanitizado representativo. A `023` e a cadeia oficial foram validadas em PostgreSQL 18.4 descartavel; a segunda execucao do migrador foi no-op, e os probes confirmaram bloqueios diretos e cascatas por soundtrack, post e Cliente.
+`024_portal_positive_reaction.sql` e aditiva e acrescenta `positive_reaction` opcional aos drafts e decisoes do portal, alem do `item_snapshot` oficial. **Adorei** persiste `decision = approved` com `positive_reaction = loved`; aprovacao normal e legado permanecem com `NULL`. Constraints aceitam somente combinacoes semanticamente validas, impedem reacao positiva em rejeicao ou no lugar errado e preservam `[]` como snapshot legado valido. A migration nao reescreve decisoes oficiais, nao faz backfill de `loved` e nao enfraquece os triggers append-only.
+
+As migrations `021`/`022` foram validadas sobre dump sanitizado representativo. A `023`, a `024` e a cadeia oficial foram validadas em PostgreSQL 18.4 descartavel; a primeira execucao aplicou `024` uma unica vez, a segunda foi no-op, e os probes confirmaram as constraints, os bloqueios diretos e as cascatas legitimas. O SHA-256 validado da `024` e `A2DD6EFA09EABB0000DE365BE9E8A110259D197FD70910D83552A278C771C294`.
 
 ## Migration 020 - forma de aprovacao e revisoes do portal
 
@@ -32,15 +34,15 @@ As migrations `021`/`022` foram validadas sobre dump sanitizado representativo. 
 
 O autosave e a conclusao usam locks/transacoes; envio, reenvio e conclusao em modo `content` limpam drafts obsoletos aplicaveis. Posts anteriores a migration permanecem compativeis, e instalacoes sem valor explicito usam o fallback de dominio `content`.
 
-A auditoria original aplicou a cadeia estrutural ate `020`; a validacao posterior ampliou o gate ate `023`, sempre em PostgreSQL local descartavel e com segunda execucao no-op.
+A auditoria original aplicou a cadeia estrutural ate `020`; a validacao posterior ampliou o gate ate `024`, sempre em PostgreSQL local descartavel e com segunda execucao no-op.
 
 ## Migration 019 — configuracoes globais
 
 `019_platform_settings.sql` e aditiva e ainda nao publicada. Ela cria `platform_settings` com chave singleton, retencao de 24 horas, feature flag de fundo sonoro, JSONB controlado para politicas de campos e booleans do portal. Tambem adiciona `clients.portal_mode_override` anulavel com `simplified|detailed`; `NULL` significa herdar.
 
-A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017` a `023`, nessa ordem, antes de iniciar o backend atual.
+A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017` a `024`, nessa ordem, antes de iniciar o backend atual.
 
-A limitacao anterior de PostgreSQL local foi superada: a auditoria posterior aplicou toda a cadeia ate `023` em banco temporario e confirmou o no-op da segunda rodada. Antes do deploy, ainda sao obrigatorios backup e preflight novos do ambiente publicado.
+A limitacao anterior de PostgreSQL local foi superada: a auditoria posterior aplicou toda a cadeia ate `024` em banco temporario e confirmou o no-op da segunda rodada. Antes do deploy, ainda sao obrigatorios backup e preflight novos do ambiente publicado.
 
 ## Fonte de verdade
 
@@ -62,7 +64,7 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `016`
 estao registradas. As migrations `012` a `015` foram aplicadas em 30/07/2026,
 e `016_client_documents.sql` foi aplicada em 31/07/2026. O banco publicado
-esta em `016`. Em relacao ao codigo local atual, `017` a `023` permanecem pendentes para uma futura publicacao.
+esta em `016`. Em relacao ao codigo local atual, `017` a `024` permanecem pendentes para uma futura publicacao.
 
 O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
 e posteriormente aplicou `012` a `015` em producao. Na publicacao da hotfix,
@@ -72,7 +74,7 @@ A migration aditiva `017_platform_branding.sql`, ainda nao publicada, cria a con
 
 A migration aditiva `018_client_portal_preferences_and_recoverable_links.sql`, tambem nao publicada, adiciona `clients.portal_detailed_view BOOLEAN NOT NULL DEFAULT FALSE`, `client_portal_tokens.token_ciphertext TEXT` anulavel e um indice parcial de consulta por Cliente. Nao existe backfill, remocao, reescrita ou invalidacao de token antigo. O migrador oficial aplicou `001`, `003` a `018` em PostgreSQL 18.4 local vazio e, na segunda execucao, ignorou toda a cadeia como ja registrada.
 
-A migration `015_post_soundtracks.sql` cria o estado atual do fundo sonoro e suas tabelas de versoes/decisoes. O vinculo e opcional: postagens anteriores continuam semanticamente no modo `none`, sem backfill de registros nem reescrita de historico. A imutabilidade append-only dessas tabelas e garantida no banco pela `023`.
+A migration `015_post_soundtracks.sql` cria o estado atual do fundo sonoro e suas tabelas de versoes/decisoes. O vinculo e opcional: postagens anteriores continuam semanticamente no modo `none`, sem backfill de registros nem reescrita de historico. A imutabilidade append-only dessas tabelas e garantida no banco pela `023`. **Adorei** nao pertence ao soundtrack. Falhas correntes de exclusao no Storage sao persistidas em `post_soundtracks.storage_delete_error`, sem atualizar `post_soundtrack_versions`; falhas dessa persistencia continuam observaveis no logger.
 
 A migration `016_client_documents.sql` adiciona `document_type` e
 `document_number` anulaveis a `clients`, com constraint de coerencia para CPF

@@ -289,6 +289,135 @@ integrationTest('content mode creates one official decision for mixed image and 
   }
 })
 
+integrationTest('content Adorei is an idempotent approved fact, stays revision-bound, and survives rewind only in history', async () => {
+  await setSettings('content')
+  const repository = new PortalRepository(new PlatformSettingsService())
+
+  const staleSeed = await seedPost({ files: [{}] })
+  const staleScope = { clientId: staleSeed.clientId, companyId }
+  assert.equal((await repository.approvePost(staleSeed.postId, staleScope, 2, 'client', 'loved')).kind, 'revision_conflict')
+  assert.equal((await query('SELECT COUNT(*)::int AS count FROM portal_review_decisions WHERE post_id = $1', [staleSeed.postId])).rows[0].count, 0)
+
+  const normalSeed = await seedPost({ files: [{}] })
+  const normalScope = { clientId: normalSeed.clientId, companyId }
+  assert.equal((await repository.approvePost(normalSeed.postId, normalScope, 1)).status, 'approved')
+  assert.deepEqual((await query(
+    'SELECT decision, positive_reaction, item_snapshot FROM portal_review_decisions WHERE post_id = $1',
+    [normalSeed.postId],
+  )).rows[0], { decision: 'approved', positive_reaction: null, item_snapshot: [] })
+
+  const lovedSeed = await seedPost({ files: [{}] })
+  const lovedScope = { clientId: lovedSeed.clientId, companyId }
+  const loved = await repository.approvePost(lovedSeed.postId, lovedScope, 1, 'client', 'loved')
+  assert.equal(loved.status, 'approved')
+  assert.equal(loved.positiveReaction, 'loved')
+  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1, 'client', 'loved')).kind, 'already_completed')
+  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1)).kind, 'decision_conflict')
+
+  const official = await query(
+    `SELECT decision, positive_reaction, item_snapshot
+     FROM portal_review_decisions WHERE post_id = $1 ORDER BY review_sequence`,
+    [lovedSeed.postId],
+  )
+  assert.deepEqual(official.rows, [{ decision: 'approved', positive_reaction: 'loved', item_snapshot: [] }])
+  await assert.rejects(
+    query("UPDATE portal_review_decisions SET positive_reaction = NULL WHERE post_id = $1", [lovedSeed.postId]),
+    (error: any) => error?.code === '23514',
+  )
+  assert.equal((await repository.listPosts(lovedSeed.clientId, companyId))[0].hasPositiveReaction, true)
+
+  assert.equal((await repository.reopenPost(lovedSeed.postId, lovedScope, 1)).kind, 'reopened')
+  const reopened = (await repository.listPosts(lovedSeed.clientId, companyId))[0]
+  assert.equal(reopened.positiveReaction, null)
+  assert.equal(reopened.hasPositiveReaction, false)
+  assert.equal((await query(
+    'SELECT positive_reaction FROM portal_review_decisions WHERE post_id = $1',
+    [lovedSeed.postId],
+  )).rows[0].positive_reaction, 'loved')
+
+  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1)).status, 'approved')
+  const history = await query(
+    'SELECT positive_reaction FROM portal_review_decisions WHERE post_id = $1 ORDER BY review_sequence',
+    [lovedSeed.postId],
+  )
+  assert.deepEqual(history.rows, [{ positive_reaction: 'loved' }, { positive_reaction: null }])
+})
+
+integrationTest('item Adorei drafts consolidate on the positive side and the official snapshot identifies every loved item', async () => {
+  await setSettings('item')
+  const repository = new PortalRepository(new PlatformSettingsService())
+
+  async function completeWith(reactions: Array<'normal' | 'loved' | 'rejected'>) {
+    const seeded = await seedPost({ files: reactions.map(() => ({})) })
+    const scope = { clientId: seeded.clientId, companyId }
+    for (const [index, reaction] of reactions.entries()) {
+      await repository.saveItemDecision(
+        seeded.postId,
+        seeded.files[index].id,
+        reaction === 'rejected'
+          ? { decision: 'rejected', comment: `Ajuste ${index}` }
+          : { decision: 'approved', positiveReaction: reaction === 'loved' ? 'loved' : null },
+        scope,
+        1,
+      )
+    }
+    const drafts = await query(
+      `SELECT decision, positive_reaction FROM portal_item_review_drafts
+       WHERE post_id = $1 ORDER BY file_id`,
+      [seeded.postId],
+    )
+    const result = await repository.completeItemReview(seeded.postId, scope, 1)
+    const official = await query(
+      `SELECT decision, positive_reaction, item_snapshot
+       FROM portal_review_decisions WHERE post_id = $1`,
+      [seeded.postId],
+    )
+    return { seeded, scope, drafts: drafts.rows, result, official: official.rows[0] }
+  }
+
+  const allNormal = await completeWith(['normal', 'normal', 'normal'])
+  assert.equal(allNormal.result.status, 'approved')
+  assert.equal(allNormal.official.positive_reaction, null)
+  assert.deepEqual(allNormal.official.item_snapshot.map((item: any) => item.positiveReaction), [null, null, null])
+  assert.equal((await repository.listPosts(allNormal.seeded.clientId, companyId))[0].hasPositiveReaction, false)
+
+  const mixed = await completeWith(['loved', 'normal', 'loved'])
+  assert.equal(mixed.result.status, 'approved')
+  assert.deepEqual(mixed.result.snapshot.map((item: any) => item.positiveReaction), ['loved', null, 'loved'])
+  assert.deepEqual(mixed.official.item_snapshot.map((item: any) => item.positiveReaction), ['loved', null, 'loved'])
+  assert.equal((await repository.listPosts(mixed.seeded.clientId, companyId))[0].hasPositiveReaction, true)
+  assert.equal((await repository.completeItemReview(mixed.seeded.postId, mixed.scope, 1)).kind, 'already_completed')
+  assert.equal((await query('SELECT COUNT(*)::int AS count FROM portal_review_decisions WHERE post_id = $1', [mixed.seeded.postId])).rows[0].count, 1)
+
+  const allLoved = await completeWith(['loved', 'loved', 'loved'])
+  assert.equal(allLoved.result.status, 'approved')
+  assert.ok(allLoved.official.item_snapshot.every((item: any) => item.positiveReaction === 'loved'))
+
+  const withAdjustment = await completeWith(['loved', 'rejected', 'normal'])
+  assert.equal(withAdjustment.result.status, 'rejected')
+  assert.equal(withAdjustment.official.decision, 'rejected')
+  assert.equal(withAdjustment.official.item_snapshot[0].positiveReaction, 'loved')
+
+  const postRepository = new PostRepository()
+  assert.equal(await postRepository.resubmit(withAdjustment.seeded.postId, {}, companyId, false), true)
+  assert.equal((await repository.saveItemDecision(
+    withAdjustment.seeded.postId,
+    withAdjustment.seeded.files[0].id,
+    { decision: 'approved', positiveReaction: 'loved' },
+    withAdjustment.scope,
+    1,
+  )).kind, 'revision_conflict')
+  const newRevisionDrafts = await query(
+    'SELECT COUNT(*)::int AS count FROM portal_item_review_drafts WHERE post_id = $1',
+    [withAdjustment.seeded.postId],
+  )
+  assert.equal(newRevisionDrafts.rows[0].count, 0)
+  assert.equal((await query(
+    'SELECT item_snapshot->0->>\'positiveReaction\' AS reaction FROM portal_review_decisions WHERE post_id = $1',
+    [withAdjustment.seeded.postId],
+  )).rows[0].reaction, 'loved')
+})
+
 integrationTest('soundtrack decisions remain subordinate and cannot conclude item review', async () => {
   await setSettings('item', true)
   const seeded = await seedPost({
@@ -415,10 +544,30 @@ integrationTest('migration constraints enforce defaults, valid modes, file owner
     ),
     (error: any) => error?.code === '23503',
   )
+  await assert.rejects(
+    query(
+      `INSERT INTO portal_item_review_drafts (
+         post_id, file_id, content_revision, decision, positive_reaction, rejection_reason
+       ) VALUES ($1, $2, 1, 'rejected', 'loved', 'Ajustar')`,
+      [first.postId, first.files[0].id],
+    ),
+    (error: any) => error?.code === '23514',
+  )
   await query(
-    `INSERT INTO portal_item_review_drafts (post_id, file_id, content_revision, decision)
-     VALUES ($1, $2, 1, 'approved')`,
+    `INSERT INTO portal_item_review_drafts (
+       post_id, file_id, content_revision, decision, positive_reaction
+     ) VALUES ($1, $2, 1, 'approved', 'loved')`,
     [first.postId, first.files[0].id],
+  )
+  await assert.rejects(
+    query(
+      `INSERT INTO portal_review_decisions (
+         post_id, content_revision, review_sequence, decision, approval_mode,
+         client_id, actor_role, positive_reaction
+       ) VALUES ($1, 1, 1, 'approved', 'item', $2, 'client', 'loved')`,
+      [first.postId, first.clientId],
+    ),
+    (error: any) => error?.code === '23514',
   )
   await query(
     `INSERT INTO portal_post_reviews (post_id, revision, completed_status, completed_at)

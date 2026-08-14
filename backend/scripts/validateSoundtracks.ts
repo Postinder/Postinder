@@ -93,7 +93,7 @@ async function main() {
     )
     assert.equal(approvedSoundtrack?.approvalStatus, 'approved')
     assert.deepEqual(await portalRepository.approvePost(postId, scope, contentRevision), {
-      kind: 'completed', status: 'approved', snapshot: [],
+      kind: 'completed', status: 'approved', positiveReaction: null, snapshot: [],
     })
     let post = await pool.query(`SELECT status FROM posts WHERE id = $1`, [postId])
     assert.equal(post.rows[0].status, 'approved', 'approved files and soundtrack should approve the post')
@@ -156,7 +156,7 @@ async function main() {
       { recalculatePostStatus: false },
     )
     assert.deepEqual(await portalRepository.approvePost(duplicated.id, scope, duplicatedRevision), {
-      kind: 'completed', status: 'approved', snapshot: [],
+      kind: 'completed', status: 'approved', positiveReaction: null, snapshot: [],
     })
     const retentionHours = (await settingsService.get()).retention.executed_attachment_hours
     assert.equal(await postRepository.markExecuted(duplicated.id, retentionHours), true)

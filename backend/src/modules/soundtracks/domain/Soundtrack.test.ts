@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import test from 'node:test'
 import { normalizeSoundtrackInput, soundtrackAdjustmentSchema, soundtrackInputSchema } from '../application/dtos/SoundtrackDTO'
 import { derivePostApprovalStatus, soundtrackRequiresApproval } from './Soundtrack'
@@ -50,3 +52,18 @@ test('modo none nao adiciona bloqueio aos arquivos', () => {
   assert.equal(derivePostApprovalStatus({ pendingFiles: 0, rejectedFiles: 0, totalFiles: 1, soundtrackStatus: null }), 'approved')
 })
 
+test('falha ao remover storage fica no estado corrente sem mutar historico append-only', () => {
+  const repository = readFileSync(
+    path.resolve(process.cwd(), 'src/modules/soundtracks/infrastructure/repositories/SoundtrackRepository.ts'),
+    'utf8',
+  )
+  const cleanup = repository.slice(
+    repository.indexOf('private async removePreviousStorage'),
+    repository.indexOf('async decide'),
+  )
+
+  assert.match(cleanup, /UPDATE post_soundtracks/)
+  assert.match(cleanup, /storage_delete_error = \$2/)
+  assert.doesNotMatch(cleanup, /UPDATE post_soundtrack_versions/)
+  assert.match(cleanup, /Failed to persist soundtrack storage deletion error/)
+})

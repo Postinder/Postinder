@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   getConsolidatedReviewStatus,
+  getItemPositiveReaction,
   getItemReviewDecision,
   hasPendingApplicableSoundtrack,
   isItemReviewComplete,
   selectReviewMedia,
 } from './portalReview.js'
+import { countLovedInMonth } from './portalMetrics.js'
 import {
   getPostContentRevision,
   isPortalRevisionConflict,
@@ -35,6 +37,31 @@ test('item decisions stay editable and only the final snapshot determines consol
   assert.equal(getConsolidatedReviewStatus(files), 'rejected')
   files[1].review_decision = 'approved'
   assert.equal(getConsolidatedReviewStatus(files), 'approved')
+})
+
+test('Adorei remains an approved item intent and mixed positive choices consolidate as approved', () => {
+  const mixed = [
+    { id: '1', review_decision: 'approved', review_positive_reaction: 'loved' },
+    { id: '2', review_decision: 'approved', review_positive_reaction: null },
+    { id: '3', review_decision: 'approved', review_positive_reaction: 'loved' },
+  ]
+  assert.deepEqual(mixed.map(getItemPositiveReaction), ['loved', null, 'loved'])
+  assert.equal(isItemReviewComplete(mixed), true)
+  assert.equal(getConsolidatedReviewStatus(mixed), 'approved')
+
+  mixed[1] = { id: '2', review_decision: 'rejected', review_positive_reaction: null }
+  assert.equal(getConsolidatedReviewStatus(mixed), 'rejected')
+})
+
+test('legacy approvals are neutral and enthusiasm metrics use only explicit current signals', () => {
+  const posts = [
+    { approvedAt: '2026-08-01T12:00:00Z', positiveReaction: 'loved' },
+    { approvedAt: '2026-08-02T12:00:00Z', positiveReaction: null },
+    { approvedAt: '2026-08-03T12:00:00Z', itemReviewSnapshot: [{ positiveReaction: 'loved' }] },
+    { approvedAt: '2026-07-31T12:00:00Z', positiveReaction: 'loved' },
+  ]
+  assert.equal(countLovedInMonth(posts, new Date('2026-08-14T12:00:00Z')), 2)
+  assert.equal(getItemPositiveReaction({ review_decision: 'approved' }), null)
 })
 
 test('pending or invalid item state can never be concluded', () => {
