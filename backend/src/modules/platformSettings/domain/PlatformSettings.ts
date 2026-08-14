@@ -16,6 +16,10 @@ export const postFieldPoliciesSchema = z.object({
   funnel_tag: fieldPolicySchema,
 }).strict()
 
+export const postFieldClientVisibilitySchema = z.object({
+  funnel_tag: z.boolean(),
+}).strict()
+
 export const portalSettingsSchema = z.object({
   show_post_list: z.boolean(),
   show_supplementary_info: z.boolean(),
@@ -32,6 +36,7 @@ export const platformSettingsSchema = z.object({
   }).strict(),
   client_fields: clientFieldPoliciesSchema,
   post_fields: postFieldPoliciesSchema,
+  post_field_client_visibility: postFieldClientVisibilitySchema,
   portal: portalSettingsSchema,
 }).strict()
 
@@ -44,6 +49,7 @@ export const platformSettingsPatchSchema = z.object({
   }).strict().optional(),
   client_fields: clientFieldPoliciesSchema.partial().strict().optional(),
   post_fields: postFieldPoliciesSchema.partial().strict().optional(),
+  post_field_client_visibility: postFieldClientVisibilitySchema.partial().strict().optional(),
   portal: portalSettingsSchema.partial().strict().optional(),
 }).strict().refine(value => Object.keys(value).length > 0, 'At least one setting is required')
 
@@ -64,6 +70,9 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = Object.freeze({
     scheduled_date: 'optional',
     funnel_tag: 'hidden',
   }),
+  post_field_client_visibility: Object.freeze({
+    funnel_tag: false,
+  }),
   portal: Object.freeze({
     show_post_list: false,
     show_supplementary_info: false,
@@ -73,6 +82,11 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = Object.freeze({
 })
 
 export type PortalModeOverride = 'simplified' | 'detailed' | null
+
+export function isFunnelClientVisible(settings: Pick<PlatformSettings, 'post_fields' | 'post_field_client_visibility'>) {
+  return settings.post_fields.funnel_tag !== 'hidden'
+    && settings.post_field_client_visibility.funnel_tag === true
+}
 
 export function resolvePortalSettings(
   globalSettings: PlatformSettings['portal'],
@@ -91,11 +105,19 @@ export function mergePlatformSettings(
   current: PlatformSettings,
   patch: PlatformSettingsPatch,
 ): PlatformSettings {
-  return platformSettingsSchema.parse({
+  const merged = platformSettingsSchema.parse({
     retention: { ...current.retention, ...patch.retention },
     features: { ...current.features, ...patch.features },
     client_fields: { ...current.client_fields, ...patch.client_fields },
     post_fields: { ...current.post_fields, ...patch.post_fields },
+    post_field_client_visibility: {
+      ...current.post_field_client_visibility,
+      ...patch.post_field_client_visibility,
+    },
     portal: { ...current.portal, ...patch.portal },
   })
+  if (merged.post_fields.funnel_tag === 'hidden') {
+    merged.post_field_client_visibility.funnel_tag = false
+  }
+  return merged
 }

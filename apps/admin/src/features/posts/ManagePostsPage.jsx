@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Search,
   Send,
+  Tag,
   Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -40,6 +41,7 @@ import {
   uploadPostFiles,
   reorderPostFiles,
   removePostFile,
+  reopenPostForEditing,
   markPostExecuted,
   savePostSoundtrack,
 } from '../../services/posts.service'
@@ -48,7 +50,14 @@ import {
   getBulkSelectionState,
   getBulkSendEligiblePosts,
   getSelectedBulkSendPosts,
+  canEditPostDirectly,
+  canExecutePost,
+  getPostMutationErrorMessage,
+  getPostReopenConfirmation,
+  getRawPostStatus,
   isBulkSendEligible,
+  isPostReopenRequiredError,
+  requiresPostReopenForEditing,
   toggleAllBulkSendPosts,
 } from './postBulkSelection'
 import SortableAttachments, { moveAttachment } from '../../components/posts/SortableAttachments'
@@ -196,7 +205,7 @@ function CompactFeedPreview({ channels, files }) {
 }
 
 function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
-  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', emailLink: '' })
+  const [form, setForm] = useState({ clientId: '', title: '', caption: '', scheduledDate: '', emailLink: '', funnelTag: '' })
   const [channels, setChannels] = useState({})
   const [existingFiles, setExistingFiles] = useState([])
   const [removedExistingFiles, setRemovedExistingFiles] = useState([])
@@ -225,19 +234,15 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
       caption: post.description || '',
       scheduledDate: toDateInput(getScheduledDate(post)),
       emailLink: post.emailLink || post.email_link || '',
+      funnelTag: post.funnelTag || post.funnel_tag || '',
     })
   }, [post])
 
-  if (!post) return null
+  if (!post || !canEditPostDirectly(post)) return null
 
-  const status = computePostStatus(post)
-  const isApproved = status === 'approved'
-  const isSent = ['sent', 'pending_approval'].includes(status)
   const previewFiles = [...existingFiles, ...files]
 
   async function handleSave() {
-    if (isApproved && !confirm('Este post ja foi aprovado. Deseja alterar mesmo assim?')) return
-    if (isSent && !confirm('Este post ja foi enviado ao cliente. Alterar pode afetar uma aprovacao em andamento. Continuar?')) return
     const selectedChannels = Object.keys(channels)
     const hasEmail = selectedChannels.includes('E-mail Marketing')
     const normalizedEmailLink = normalizeEmailPreviewUrl(form.emailLink)
@@ -252,6 +257,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
     for (const [policy, value] of [
       [settings.post_fields.description, form.caption],
       [settings.post_fields.scheduled_date, form.scheduledDate],
+      [settings.post_fields.funnel_tag, form.funnelTag],
     ]) {
       if (requiredFieldIsMissing(policy, value)) {
         toast.error('Preencha todos os campos obrigatorios da postagem.')
@@ -277,6 +283,7 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
       }
       putVisibleField(payload, 'description', form.caption, settings.post_fields.description)
       putVisibleField(payload, 'scheduledDate', form.scheduledDate || null, settings.post_fields.scheduled_date)
+      putVisibleField(payload, 'funnelTag', form.funnelTag || null, settings.post_fields.funnel_tag)
       await updatePost(post.id, payload)
       let uploadedFiles = []
       if (files.length) {
@@ -300,7 +307,11 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
       onSaved()
       onClose()
     } catch (error) {
-      toast.error(error.message)
+      toast.error(getPostMutationErrorMessage(error))
+      if (isPostReopenRequiredError(error)) {
+        onClose()
+        onSaved()
+      }
     } finally {
       setSaving(false)
       setUploadProgress(null)
@@ -319,18 +330,13 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
   return (
     <Modal open={open} onClose={onClose} title="Editar postagem" subtitle="Ajuste o conteudo antes de enviar ou reenviar ao cliente.">
       <div className="space-y-4">
-        {isApproved || isSent ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            {isApproved ? 'Post aprovado: edite apenas se realmente precisar.' : 'Post enviado: alteracoes podem afetar a revisao em andamento.'}
-          </div>
-        ) : null}
-
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Select label="Cliente" value={form.clientId} onChange={event => setForm(current => ({ ...current, clientId: event.target.value }))}>
               {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
             </Select>
             {isFieldVisible(settings.post_fields.scheduled_date) ? <Input label={`Data planejada${isFieldRequired(settings.post_fields.scheduled_date) ? ' *' : ''}`} type="date" value={form.scheduledDate} onChange={event => setForm(current => ({ ...current, scheduledDate: event.target.value }))} /> : null}
+            {isFieldVisible(settings.post_fields.funnel_tag) ? <Input label={`Funil${isFieldRequired(settings.post_fields.funnel_tag) ? ' *' : ''}`} value={form.funnelTag} onChange={event => setForm(current => ({ ...current, funnelTag: event.target.value }))} placeholder="Ex: Topo, Meio ou Fundo" /> : null}
           </div>
 
           <Input label="Titulo" value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
@@ -444,6 +450,62 @@ function EditPostModal({ post, clients, open, onClose, onSaved, settings }) {
   )
 }
 
+function reviewExposesFunnel(post) {
+  return post?.reviewFieldVisibility?.funnel_tag === true
+    || post?.review_field_visibility?.funnel_tag === true
+}
+
+function canEditInternalFunnel(post, settings) {
+  return isFieldVisible(settings.post_fields.funnel_tag)
+    && ['sent', 'pending_approval', 'approved'].includes(getRawPostStatus(post))
+    && !reviewExposesFunnel(post)
+}
+
+function InternalFunnelModal({ post, open, onClose, onSaved, settings }) {
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(post?.funnelTag || post?.funnel_tag || '')
+  }, [post])
+
+  if (!post || !canEditInternalFunnel(post, settings)) return null
+
+  async function save() {
+    if (requiredFieldIsMissing(settings.post_fields.funnel_tag, value)) {
+      toast.error('Preencha o Funil obrigatorio da postagem.')
+      return
+    }
+    setSaving(true)
+    try {
+      await updatePost(post.id, { funnelTag: value || null })
+      toast.success('Funil interno atualizado sem alterar a aprovacao.')
+      onSaved()
+      onClose()
+    } catch (error) {
+      toast.error(getPostMutationErrorMessage(error))
+      if (isPostReopenRequiredError(error)) {
+        onSaved()
+        onClose()
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Editar Funil interno" subtitle="Este Funil nao foi exibido ao cliente na revisao atual e pode ser atualizado sem invalidar a aprovacao.">
+      <div className="space-y-4">
+        <Input label={`Funil${isFieldRequired(settings.post_fields.funnel_tag) ? ' *' : ''}`} value={value} onChange={event => setValue(event.target.value)} placeholder="Ex: Topo, Meio ou Fundo" />
+        <div className="flex gap-3">
+          <Button variant="secondary" onClick={onClose} className="flex-1 justify-center">Cancelar</Button>
+          <Button onClick={save} loading={saving} className="flex-1 justify-center">Salvar Funil</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function BatchSendModal({ posts, clientsById, open, onClose, onConfirm, loading }) {
   const grouped = posts.reduce((acc, post) => {
     const clientId = getPostClientId(post)
@@ -529,6 +591,8 @@ export default function ManagePostsPage() {
   const [view, setView] = useState(['completed', 'executed'].includes(searchParams.get('view')) ? searchParams.get('view') : 'active')
   const [selected, setSelected] = useState([])
   const [editPost, setEditPost] = useState(null)
+  const [internalFunnelPost, setInternalFunnelPost] = useState(null)
+  const [reopeningPostId, setReopeningPostId] = useState('')
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchLoading, setBatchLoading] = useState(false)
   const [executePost, setExecutePost] = useState(null)
@@ -593,11 +657,11 @@ export default function ManagePostsPage() {
   const executedCount = posts.filter(post => clientsById.has(getPostClientId(post)) && computePostStatus(post) === 'executed').length
 
   const eligibleVisiblePosts = useMemo(
-    () => getBulkSendEligiblePosts(filtered, computePostStatus),
+    () => getBulkSendEligiblePosts(filtered, getRawPostStatus),
     [filtered],
   )
   const sendableSelected = useMemo(
-    () => getSelectedBulkSendPosts(filtered, selected, computePostStatus),
+    () => getSelectedBulkSendPosts(filtered, selected, getRawPostStatus),
     [filtered, selected],
   )
   const bulkSelectionState = useMemo(
@@ -623,7 +687,35 @@ export default function ManagePostsPage() {
       toast.success(successMessage)
       load()
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
+      toast.error(getPostMutationErrorMessage(error))
+    }
+  }
+
+  function openPostEditor(post) {
+    if (!canEditPostDirectly(post)) {
+      toast.error(requiresPostReopenForEditing(post)
+        ? 'Reabra esta postagem para edição antes de alterar o conteúdo.'
+        : 'Esta postagem não pode mais ser editada.')
+      return
+    }
+    setEditPost(post)
+  }
+
+  async function handleReopenForEditing(post) {
+    if (!requiresPostReopenForEditing(post)) return
+    if (!confirm(getPostReopenConfirmation(post))) return
+
+    setReopeningPostId(post.id)
+    try {
+      await reopenPostForEditing(post.id)
+      toast.success('Postagem reaberta para edição. A revisão anterior foi invalidada.')
+      setEditPost(null)
+      setSelected(current => current.filter(id => id !== post.id))
+      load()
+    } catch (error) {
+      toast.error(getPostMutationErrorMessage(error, 'Não foi possível reabrir a postagem para edição.'))
+    } finally {
+      setReopeningPostId('')
     }
   }
 
@@ -645,7 +737,7 @@ export default function ManagePostsPage() {
       setBatchOpen(false)
       load()
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
+      toast.error(getPostMutationErrorMessage(error))
     } finally {
       setBatchLoading(false)
     }
@@ -780,9 +872,12 @@ export default function ManagePostsPage() {
           {filtered.map(post => {
             const client = clientsById.get(getPostClientId(post)) || {}
             const status = computePostStatus(post)
-            const canSend = isBulkSendEligible(post, computePostStatus)
-            const canExecute = status === 'approved'
+            const canSend = isBulkSendEligible(post, getRawPostStatus)
+            const canExecute = canExecutePost(post)
             const canDelete = canDeletePost(status, user?.role)
+            const canEdit = canEditPostDirectly(post)
+            const canReopen = requiresPostReopenForEditing(post)
+            const canEditFunnelInternally = canEditInternalFunnel(post, settings)
             return (
               <Card key={post.id} className="p-4">
                 <div className="grid gap-4 lg:grid-cols-[32px_1.1fr_1.6fr_1fr_auto] lg:items-center">
@@ -812,7 +907,9 @@ export default function ManagePostsPage() {
                   </div>
                   <div className="flex flex-wrap justify-end gap-1.5">
                     <button title="Previa" onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-mag-200"><Eye size={16} /></button>
-                    {status !== 'executed' && <button title="Editar" onClick={() => setEditPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-teal-100"><Edit3 size={16} /></button>}
+                    {canEdit && <button title="Editar" onClick={() => openPostEditor(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-teal-100"><Edit3 size={16} /></button>}
+                    {canEditFunnelInternally && <button title="Editar Funil interno" aria-label="Editar Funil interno" onClick={() => setInternalFunnelPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-violet-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-violet-300"><Tag size={16} /></button>}
+                    {canReopen && <button title="Reabrir para edição" aria-label="Reabrir para edição" disabled={reopeningPostId === post.id} onClick={() => handleReopenForEditing(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-amber-50 hover:text-amber-600 disabled:cursor-wait disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"><RotateCcw size={16} className={reopeningPostId === post.id ? 'animate-spin' : ''} /></button>}
                     <button title="Duplicar" onClick={() => runAction(() => duplicatePost(post.id), 'Postagem duplicada.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-blue-300"><Copy size={16} /></button>
                     {status === 'draft' && <button title="Marcar pronto" onClick={() => runAction(() => updatePostStatus(post.id, 'ready'), 'Postagem marcada como pronta.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-green-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-green-300"><CheckCircle size={16} /></button>}
                     {status === 'ready' && <button title="Voltar para rascunho" onClick={() => runAction(() => updatePostStatus(post.id, 'draft'), 'Postagem voltou para rascunho.')} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-amber-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-amber-300"><RotateCcw size={16} /></button>}
@@ -835,6 +932,7 @@ export default function ManagePostsPage() {
       )}
 
       <EditPostModal post={editPost} clients={clients} open={!!editPost} onClose={() => setEditPost(null)} onSaved={load} settings={settings} />
+      <InternalFunnelModal post={internalFunnelPost} open={!!internalFunnelPost} onClose={() => setInternalFunnelPost(null)} onSaved={load} settings={settings} />
       <BatchSendModal
         posts={sendableSelected}
         clientsById={clientsById}

@@ -76,6 +76,11 @@ import {
   isVideoControlsArea,
 } from './portalSwipe'
 import { getItemReviewDecision, hasPendingApplicableSoundtrack, isItemReviewComplete, selectReviewMedia } from './portalReview'
+import {
+  getPostContentRevision,
+  PORTAL_REVISION_CONFLICT_MESSAGE,
+  reloadAfterPortalRevisionConflict,
+} from './portalRevision'
 import './portalBrand.css'
 
 const tabs = [
@@ -414,7 +419,7 @@ function ReviewDots({ files, activeFileId, onSelect, approvalMode }) {
   )
 }
 
-function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onSaveItemDecision, onCompleteItemReview, onApprovePost, onRejectPost, onApproveSoundtrack, onAdjustSoundtrack, onUndo, canUndoLastAction, showPostList, sequentialApproval, soundtrackEnabled, approvalMode, busy }) {
+export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, onSelectProject, onSaveItemDecision, onCompleteItemReview, onApprovePost, onRejectPost, onApproveSoundtrack, onAdjustSoundtrack, onUndo, canUndoLastAction, showPostList, sequentialApproval, soundtrackEnabled, approvalMode, busy, revisionConflictSequence = 0 }) {
   const selectedProject = !sequentialApproval
     ? projects.find(post => post.id === selectedProjectId) || projects[0]
     : projects[0]
@@ -429,7 +434,9 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
   const [rejectOpen, setRejectOpen] = useState(false)
   const [comment, setComment] = useState('')
   const [selectedTags, setSelectedTags] = useState([])
+  const [rejectRevision, setRejectRevision] = useState(null)
   const rejectTextareaRef = useRef(null)
+  const selectedRevision = getPostContentRevision(selectedProject)
 
   useEffect(() => {
     if (!selectedProject && projects[0]) onSelectProject(projects[0].id)
@@ -443,9 +450,17 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
     if (!files.some(file => file.id === activeFileId)) setActiveFileId(files[0].id)
   }, [selectedProject?.id, files, activeFileId])
 
+  useEffect(() => {
+    setRejectOpen(false)
+    setComment('')
+    setSelectedTags([])
+    setRejectRevision(null)
+  }, [revisionConflictSequence, selectedProject?.id, selectedRevision])
+
   function openRejectDialog() {
     setComment(approvalMode === 'item' ? currentFile?.review_reason || '' : '')
     setSelectedTags(approvalMode === 'item' ? currentFile?.review_tags || [] : [])
+    setRejectRevision(selectedRevision)
     setRejectOpen(true)
   }
 
@@ -455,11 +470,13 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
       return
     }
     const decision = currentFile && approvalMode === 'item'
-      ? onSaveItemDecision(selectedProject.id, currentFile.id, 'rejected', comment.trim(), selectedTags)
-      : onRejectPost(selectedProject.id, comment.trim(), selectedTags)
-    decision.then(() => {
+      ? onSaveItemDecision(selectedProject.id, currentFile.id, 'rejected', comment.trim(), selectedTags, rejectRevision)
+      : onRejectPost(selectedProject.id, comment.trim(), selectedTags, rejectRevision)
+    decision.then(saved => {
+      if (saved === false) return
       setComment('')
       setSelectedTags([])
+      setRejectRevision(null)
       setRejectOpen(false)
     })
   }
@@ -468,6 +485,7 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
     setRejectOpen(false)
     setSelectedTags([])
     setComment('')
+    setRejectRevision(null)
   }
 
   if (!projects.length) {
@@ -545,7 +563,7 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             post={selectedProject}
             busy={busy}
             onApprove={() => onApprovePost(selectedProject.id)}
-            onReject={() => setRejectOpen(true)}
+            onReject={openRejectDialog}
           />
         ) : (
           <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center dark:border-green-800 dark:bg-green-950/30">
@@ -575,7 +593,8 @@ function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjectId, on
             soundtrack={selectedProject.soundtrack}
             busy={busy}
             onApprove={() => onApproveSoundtrack(selectedProject.id)}
-            onAdjust={comment => onAdjustSoundtrack(selectedProject.id, comment)}
+            onAdjust={(comment, intentRevision) => onAdjustSoundtrack(selectedProject.id, comment, intentRevision)}
+            revisionConflictSequence={revisionConflictSequence}
           />
         ) : null}
 
@@ -650,6 +669,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [isOverviewExpanded, dispatchPortalOverview] = useReducer(togglePortalOverview, PORTAL_OVERVIEW_INITIAL_STATE)
   const [lastAction, setLastAction] = useState(null)
+  const [revisionConflictSequence, setRevisionConflictSequence] = useState(0)
   const tabRefs = useRef({})
 
   const isAuthenticatedMode = mode === 'auth'
@@ -675,6 +695,39 @@ export default function ClientPortalPage({ mode = 'token' }) {
 
   const posts = payload?.posts || []
   const client = payload?.client
+
+  function getExpectedRevision(projectId) {
+    return getPostContentRevision(posts.find(post => post.id === projectId))
+  }
+
+  async function refreshMissingRevision() {
+    setRevisionConflictSequence(current => current + 1)
+    try {
+      await reload()
+      toast.error(PORTAL_REVISION_CONFLICT_MESSAGE)
+    } catch (reloadError) {
+      setPayload(null)
+      setLoadError(reloadError)
+      toast.error('O conteúdo foi atualizado, mas não foi possível recarregar a versão mais recente. Tente novamente.')
+    }
+  }
+
+  async function handlePortalMutationError(error) {
+    const conflict = await reloadAfterPortalRevisionConflict(error, reload)
+    if (conflict.handled) {
+      setRevisionConflictSequence(current => current + 1)
+      if (conflict.reloaded) {
+        toast.error(PORTAL_REVISION_CONFLICT_MESSAGE)
+      } else {
+        setPayload(null)
+        setLoadError(conflict.reloadError)
+        toast.error('O conteúdo foi atualizado, mas não foi possível recarregar a versão mais recente. Tente novamente.')
+      }
+      return
+    }
+
+    toast.error(error.response?.data?.error || error.message || 'Não foi possível registrar sua decisão.')
+  }
   const legacyDetailedView = client?.portalDetailedView === true || client?.portal_detailed_view === true
   const portalSettings = payload?.portalSettings || client?.portalSettings || {
     show_post_list: legacyDetailedView,
@@ -801,15 +854,22 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }, [lastAction, lastActionKey, posts])
 
-  async function handleSaveItemDecision(projectId, fileId, decision, comment = '', tags = []) {
+  async function handleSaveItemDecision(projectId, fileId, decision, comment = '', tags = [], intentRevision = null) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await saveAuthenticatedPortalItemDecision(projectId, fileId, decision, comment, tags)
-      else await savePortalItemDecision(token, projectId, fileId, decision, comment, tags)
+      const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
+      if (expectedRevision === null) {
+        await refreshMissingRevision()
+        return false
+      }
+      if (isAuthenticatedMode) await saveAuthenticatedPortalItemDecision(projectId, fileId, decision, comment, tags, expectedRevision)
+      else await savePortalItemDecision(token, projectId, fileId, decision, comment, tags, expectedRevision)
       await reload()
       toast.success(decision === 'approved' ? 'Item marcado como aprovado.' : 'Item marcado como reprovado.')
+      return true
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
+      await handlePortalMutationError(error)
+      return false
     } finally {
       setBusy(false)
     }
@@ -818,15 +878,22 @@ export default function ClientPortalPage({ mode = 'token' }) {
   async function handleCompleteItemReview(projectId) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await completeAuthenticatedPortalItemReview(projectId)
-      else await completePortalItemReview(token, projectId)
+      const expectedRevision = getExpectedRevision(projectId)
+      if (expectedRevision === null) {
+        await refreshMissingRevision()
+        return false
+      }
+      if (isAuthenticatedMode) await completeAuthenticatedPortalItemReview(projectId, expectedRevision)
+      else await completePortalItemReview(token, projectId, expectedRevision)
       const action = { projectId, type: 'completed' }
       setLastAction(action)
       localStorage.setItem(lastActionKey, JSON.stringify(action))
       await reload()
       toast.success('Análise concluída.')
+      return true
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
+      await handlePortalMutationError(error)
+      return false
     } finally {
       setBusy(false)
     }
@@ -835,15 +902,22 @@ export default function ClientPortalPage({ mode = 'token' }) {
   async function handleApprovePost(projectId) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId)
-      else await approvePortalPost(token, projectId)
+      const expectedRevision = getExpectedRevision(projectId)
+      if (expectedRevision === null) {
+        await refreshMissingRevision()
+        return false
+      }
+      if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId, expectedRevision)
+      else await approvePortalPost(token, projectId, expectedRevision)
       const action = { projectId, type: 'completed' }
       setLastAction(action)
       localStorage.setItem(lastActionKey, JSON.stringify(action))
       await reload()
       toast.success('Conteúdo aprovado.')
+      return true
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
+      await handlePortalMutationError(error)
+      return false
     } finally {
       setBusy(false)
     }
@@ -852,45 +926,64 @@ export default function ClientPortalPage({ mode = 'token' }) {
   async function handleApproveSoundtrack(projectId) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await approveAuthenticatedPortalSoundtrack(projectId)
-      else await approvePortalSoundtrack(token, projectId)
+      const expectedRevision = getExpectedRevision(projectId)
+      if (expectedRevision === null) {
+        await refreshMissingRevision()
+        return false
+      }
+      if (isAuthenticatedMode) await approveAuthenticatedPortalSoundtrack(projectId, expectedRevision)
+      else await approvePortalSoundtrack(token, projectId, expectedRevision)
       await reload()
       toast.success('Fundo sonoro aprovado.')
+      return true
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
-      throw error
+      await handlePortalMutationError(error)
+      return false
     } finally {
       setBusy(false)
     }
   }
 
-  async function handleAdjustSoundtrack(projectId, comment) {
+  async function handleAdjustSoundtrack(projectId, comment, intentRevision = null) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await adjustAuthenticatedPortalSoundtrack(projectId, comment)
-      else await adjustPortalSoundtrack(token, projectId, comment)
+      const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
+      if (expectedRevision === null) {
+        await refreshMissingRevision()
+        return false
+      }
+      if (isAuthenticatedMode) await adjustAuthenticatedPortalSoundtrack(projectId, comment, expectedRevision)
+      else await adjustPortalSoundtrack(token, projectId, comment, expectedRevision)
       await reload()
       toast.success('Ajuste do fundo sonoro solicitado.')
+      return true
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
-      throw error
+      await handlePortalMutationError(error)
+      return false
     } finally {
       setBusy(false)
     }
   }
 
-  async function handleRejectPost(projectId, comment, tags = []) {
+  async function handleRejectPost(projectId, comment, tags = [], intentRevision = null) {
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await rejectAuthenticatedPortalPost(projectId, comment, tags)
-      else await rejectPortalPost(token, projectId, comment, tags)
+      const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
+      if (expectedRevision === null) {
+        await refreshMissingRevision()
+        return false
+      }
+      if (isAuthenticatedMode) await rejectAuthenticatedPortalPost(projectId, comment, tags, expectedRevision)
+      else await rejectPortalPost(token, projectId, comment, tags, expectedRevision)
       const action = { projectId, type: 'completed' }
       setLastAction(action)
       localStorage.setItem(lastActionKey, JSON.stringify(action))
       await reload()
       toast.success('Conteúdo reprovado.')
+      return true
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
+      await handlePortalMutationError(error)
+      return false
     } finally {
       setBusy(false)
     }
@@ -900,15 +993,22 @@ export default function ClientPortalPage({ mode = 'token' }) {
     if (!lastAction || !canUndoLastAction) return
     setBusy(true)
     try {
-      if (isAuthenticatedMode) await reopenAuthenticatedPortalPost(lastAction.projectId)
-      else await reopenPortalPost(token, lastAction.projectId)
+      const expectedRevision = getExpectedRevision(lastAction.projectId)
+      if (expectedRevision === null) {
+        await refreshMissingRevision()
+        return false
+      }
+      if (isAuthenticatedMode) await reopenAuthenticatedPortalPost(lastAction.projectId, expectedRevision)
+      else await reopenPortalPost(token, lastAction.projectId, expectedRevision)
       setSelectedProjectId(lastAction.projectId)
       setLastAction(null)
       localStorage.removeItem(lastActionKey)
       await reload()
       toast.success('Conteúdo reaberto para revisão.')
+      return true
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message)
+      await handlePortalMutationError(error)
+      return false
     } finally {
       setBusy(false)
     }
@@ -1013,6 +1113,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
             soundtrackEnabled={soundtrackEnabled}
             approvalMode={approvalMode}
             busy={busy}
+            revisionConflictSequence={revisionConflictSequence}
           />
         </section>
 

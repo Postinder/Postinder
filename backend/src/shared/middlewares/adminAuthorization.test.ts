@@ -341,7 +341,7 @@ before(async () => {
   patch(PostsController.prototype, [
     'list', 'create', 'submitBatchForApproval', 'getById', 'update', 'delete',
     'duplicate', 'updateStatus', 'markExecuted', 'uploadFiles', 'reorderFiles',
-    'replaceFile', 'removeFile', 'submitForApproval', 'resubmit',
+    'replaceFile', 'removeFile', 'submitForApproval', 'resubmit', 'reopenForEditing',
   ])
   patch(SoundtracksController.prototype, ['get', 'update', 'upload'])
   patch(ApprovalsController.prototype, ['getQueue', 'approveFile', 'rejectFile', 'listMonthlyFeedbacks', 'submitFeedback'])

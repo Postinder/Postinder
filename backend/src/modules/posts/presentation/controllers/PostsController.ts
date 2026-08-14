@@ -11,7 +11,7 @@ import { removeStoredFile, StoredFile, storeUploadedFile } from '../../../../sha
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
 import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
 import { PlatformSettingsService } from '../../../platformSettings/application/PlatformSettingsService'
-import { DEFAULT_PLATFORM_SETTINGS, PlatformSettings } from '../../../platformSettings/domain/PlatformSettings'
+import { DEFAULT_PLATFORM_SETTINGS, isFunnelClientVisible, PlatformSettings } from '../../../platformSettings/domain/PlatformSettings'
 
 interface AuthRequest extends Request {
   user?: any
@@ -24,13 +24,10 @@ export function applyPostFieldPolicies(
   current?: any,
 ) {
   const result = { ...input }
-  // Funnel data is retained on existing posts for compatibility, but it is no longer
-  // accepted or required as an operational field.
-  delete result.funnelTag
-  delete result.funnel_tag
   const definitions = [
     { policy: settings.post_fields.description, keys: ['description', 'caption'], current: current?.description },
     { policy: settings.post_fields.scheduled_date, keys: ['scheduledDate', 'scheduled_date'], current: current?.scheduledDate },
+    { policy: settings.post_fields.funnel_tag, keys: ['funnelTag', 'funnel_tag'], current: current?.funnelTag },
   ] as const
 
   for (const definition of definitions) {
@@ -46,6 +43,24 @@ export function applyPostFieldPolicies(
     }
   }
   return result
+}
+
+function isFunnelOnlyInput(input: Record<string, any>) {
+  const keys = Object.keys(input)
+  return keys.length > 0 && keys.every(key => key === 'funnelTag' || key === 'funnel_tag')
+}
+
+function reviewExposesFunnel(post: any) {
+  return post?.reviewFieldVisibility?.funnel_tag === true
+    || post?.review_field_visibility?.funnel_tag === true
+}
+
+function assertFunnelReadyForSubmission(post: any, settings: PlatformSettings) {
+  if (settings.post_fields.funnel_tag !== 'required') return
+  const value = post?.funnelTag ?? post?.funnel_tag
+  if (value === undefined || value === null || String(value).trim() === '') {
+    throw new Error('funnelTag is required')
+  }
 }
 
 export class PostsController {
@@ -76,6 +91,20 @@ export class PostsController {
     if (mutationState.allowed) return true
     if (mutationState.reason === 'executed') {
       res.status(409).json({ error: 'Executed posts are historical records and cannot be changed' })
+      return false
+    }
+    if (mutationState.reason === 'reopen_required') {
+      res.status(409).json({
+        error: 'Reabra a postagem para edicao antes de alterar o conteudo',
+        code: 'POST_REOPEN_REQUIRED',
+      })
+      return false
+    }
+    if (mutationState.reason === 'unsupported') {
+      res.status(409).json({
+        error: 'O estado atual da postagem nao permite alteracao de conteudo',
+        code: 'POST_STATUS_NOT_EDITABLE',
+      })
       return false
     }
     res.status(404).json({ error: 'Post not found' })
@@ -126,7 +155,6 @@ export class PostsController {
   }
 
   async update(req: AuthRequest, res: Response) {
-    if (!await this.ensurePostMutable(req, res)) return
     const current = await this.postRepository.findById(req.params.id, req.tenantId)
     if (!current) return res.status(404).json({ error: 'Post not found' })
     const settings = await this.settingsService.get()
@@ -137,6 +165,25 @@ export class PostsController {
       return res.status(400).json({ error: error.message })
     }
     const updates = updatePostSchema.parse(policyInput)
+    const internalFunnelUpdate = isFunnelOnlyInput(req.body || {})
+      && settings.post_fields.funnel_tag !== 'hidden'
+      && !reviewExposesFunnel(current)
+    if (internalFunnelUpdate) {
+      const funnelTag = updates.funnelTag ?? updates.funnel_tag ?? null
+      const post = await this.postRepository.updateInternalFunnelTag(
+        req.params.id,
+        funnelTag,
+        req.tenantId,
+      )
+      if (!post) {
+        return res.status(409).json({
+          error: 'O Funil desta revisao faz parte do conteudo exibido ao cliente. Reabra a postagem antes de altera-lo.',
+          code: 'POST_REOPEN_REQUIRED',
+        })
+      }
+      return res.json(post)
+    }
+    if (!await this.ensurePostMutable(req, res)) return
     const unsupportedNewChannels = (updates.channels || []).filter(channel => (
       !ACTIVE_POST_CHANNELS.includes(channel as any)
       && !(current.channels || []).includes(channel)
@@ -265,16 +312,6 @@ export class PostsController {
     if (!uploadedFile) {
       return res.status(400).json({ error: 'No file uploaded' })
     }
-    const settings = await this.settingsService.get()
-    if (settings.features.soundtrack
-      && await this.soundtrackRepository.isEmbeddedSource(req.params.id, req.params.fileId)
-      && getFileCategory(uploadedFile.mimetype) !== 'VIDEO') {
-      return res.status(400).json({
-        error: 'O arquivo vinculado ao fundo sonoro incorporado deve continuar sendo um video',
-        code: 'INVALID_SOUNDTRACK_SOURCE_MEDIA',
-      })
-    }
-
     const storedFile = await storeUploadedFile(uploadedFile)
     let savedFile
     try {
@@ -291,6 +328,11 @@ export class PostsController {
           fileType: getFileCategory(uploadedFile.mimetype),
         },
         req.tenantId,
+        {
+          id: req.user?.userId,
+          role: req.user?.role,
+          companyId: req.tenantId,
+        },
       )
     } catch (error) {
       await this.compensateUploadedFiles([storedFile])
@@ -300,13 +342,6 @@ export class PostsController {
     if (!savedFile) {
       await this.compensateUploadedFiles([storedFile])
       return res.status(404).json({ error: 'Rejected file not found' })
-    }
-    if (settings.features.soundtrack) {
-      await this.soundtrackRepository.invalidateEmbeddedSource(req.params.id, req.params.fileId, {
-        id: req.user?.userId,
-        role: req.user?.role,
-        companyId: req.tenantId,
-      })
     }
     res.status(200).json({ data: savedFile })
   }
@@ -335,10 +370,22 @@ export class PostsController {
   async submitForApproval(req: AuthRequest, res: Response) {
     if (!await this.ensurePostMutable(req, res)) return
     const settings = await this.settingsService.get()
+    const current = await this.postRepository.findById(req.params.id, req.tenantId)
+    if (!current) return res.status(404).json({ error: 'Post not found' })
+    try {
+      assertFunnelReadyForSubmission(current, settings)
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message })
+    }
     const submitted = await this.postRepository.submitForApproval(
       req.params.id,
       req.tenantId,
       settings.features.soundtrack,
+      { id: req.user?.userId, role: req.user?.role },
+      {
+        funnelTagVisibleToClient: isFunnelClientVisible(settings),
+        funnelTagRequired: settings.post_fields.funnel_tag === 'required',
+      },
     )
     if (!submitted) return res.status(404).json({ error: 'Post not found' })
     await this.activityRepository.createForPost(req.params.id, {
@@ -374,7 +421,6 @@ export class PostsController {
   }
 
   async markExecuted(req: AuthRequest, res: Response) {
-    if (!await this.ensurePostMutable(req, res)) return
     const settings = await this.settingsService.get()
     const retentionHours = settings.retention.executed_attachment_hours
     const executed = await this.postRepository.markExecuted(req.params.id, retentionHours, req.tenantId)
@@ -433,6 +479,11 @@ export class PostsController {
       ids,
       req.tenantId,
       settings.features.soundtrack,
+      { id: req.user?.userId, role: req.user?.role },
+      {
+        funnelTagVisibleToClient: isFunnelClientVisible(settings),
+        funnelTagRequired: settings.post_fields.funnel_tag === 'required',
+      },
     )
     await Promise.all(sent.map(post => this.activityRepository.createForPost(post.id, {
       companyId: req.tenantId,
@@ -447,15 +498,54 @@ export class PostsController {
   }
 
   async resubmit(req: AuthRequest, res: Response) {
-    if (!await this.ensurePostMutable(req, res)) return
     const settings = await this.settingsService.get()
+    const current = await this.postRepository.findById(req.params.id, req.tenantId)
+    if (!current) return res.status(404).json({ error: 'Post not found' })
+    let policyInput
+    try {
+      policyInput = applyPostFieldPolicies(req.body || {}, settings, current)
+      assertFunnelReadyForSubmission({
+        ...current,
+        funnelTag: policyInput.funnelTag ?? policyInput.funnel_tag ?? current.funnelTag,
+      }, settings)
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message })
+    }
     const resubmitted = await this.postRepository.resubmit(
       req.params.id,
-      req.body,
+      policyInput,
       req.tenantId,
       settings.features.soundtrack,
+      { id: req.user?.userId, role: req.user?.role },
+      {
+        funnelTagVisibleToClient: isFunnelClientVisible(settings),
+        funnelTagRequired: settings.post_fields.funnel_tag === 'required',
+      },
     )
-    if (!resubmitted) return res.status(404).json({ error: 'Post not found' })
+    if (!resubmitted) return res.status(409).json({ error: 'Somente postagens rejeitadas podem ser reenviadas', code: 'INVALID_RESUBMIT_STATE' })
     res.json({ success: true })
+  }
+
+  async reopenForEditing(req: AuthRequest, res: Response) {
+    const result = await this.postRepository.reopenForEditing(req.params.id, req.tenantId, {
+      id: req.user?.userId,
+      role: req.user?.role,
+    })
+    if (!result.reopened) {
+      if (result.reason === 'not_found') return res.status(404).json({ error: 'Post not found' })
+      if (result.reason === 'executed') {
+        return res.status(409).json({ error: 'Executed posts are historical records and cannot be changed', code: 'EXECUTED_POST_IMMUTABLE' })
+      }
+      return res.status(409).json({ error: 'A postagem nao esta em um estado que exige reabertura', code: 'INVALID_REOPEN_STATE' })
+    }
+    await this.activityRepository.createForPost(req.params.id, {
+      companyId: req.tenantId,
+      actorId: req.user?.userId,
+      actorRole: req.user?.role,
+      type: 'post_reopened_for_editing',
+      title: 'Postagem reaberta para edicao',
+      metadata: { contentRevision: result.contentRevision },
+    }).catch(() => {})
+    res.json({ success: true, status: result.status, contentRevision: result.contentRevision })
   }
 }

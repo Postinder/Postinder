@@ -16,9 +16,36 @@ function responseState() {
 function request(body: any = {}) {
   return {
     params: { token: 'private-token', postId: 'post-1', fileId: 'file-1' },
-    body,
+    body: { expectedRevision: 7, ...body },
   } as any
 }
+
+test('stale portal decisions return HTTP 409 and create no business activity', async () => {
+  let expectedRevision: number | undefined
+  let activities = 0
+  const repository = {
+    async validateToken() { return { clientId: 'client-1', companyId: 'company-1' } },
+    async approvePost(_postId: string, _session: unknown, revision: number) {
+      expectedRevision = revision
+      return { kind: 'revision_conflict', currentRevision: 8 }
+    },
+  }
+  const controller = new PortalController(repository as any, {
+    async createForPost() { activities += 1 },
+  } as any, {} as any, {} as any)
+  const { state, response } = responseState()
+
+  await controller.approvePost(request({ expectedRevision: 7 }), response)
+
+  assert.equal(expectedRevision, 7)
+  assert.equal(state.status, 409)
+  assert.deepEqual(state.body, {
+    error: 'Esta postagem foi atualizada. Recarregue a pagina antes de continuar.',
+    code: 'REVISION_CONFLICT',
+    currentRevision: 8,
+  })
+  assert.equal(activities, 0)
+})
 
 test('provisional item choices never create official activities', async () => {
   let activities = 0
@@ -131,6 +158,7 @@ test('soundtrack remains an optional secondary condition in item completion', ()
 
   assert.match(completionSection, /if \(settings\.features\.soundtrack\)/)
   assert.match(completionSection, /mode <> 'none'/)
-  assert.match(completionSection, /mediaStatus === 'approved' && soundtrackStatus === 'pending'/)
-  assert.match(controller, /recalculatePostStatus: settings\.portal\.approval_mode !== 'item'/)
+  assert.match(completionSection, /mediaStatus === 'approved' && !soundtrackIsCurrent/)
+  assert.match(completionSection, /soundtrackApprovedRevision === expectedRevision/)
+  assert.match(controller, /recalculatePostStatus: false/)
 })

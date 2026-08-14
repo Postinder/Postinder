@@ -1,3 +1,4 @@
+import { PoolClient } from 'pg'
 import { pool, query } from '../../../../shared/database/pool'
 import { Post } from '../../domain/Post.entity'
 import { IPostRepository, FindPostsFilter, PaginationParams } from '../../domain/repositories/IPostRepository'
@@ -6,16 +7,22 @@ import { logger } from '../../../../shared/utils/Logger'
 import { copyStoredFile, removeStoredFile, StoredFile } from '../../../../shared/upload/storage'
 import { SoundtrackRepository } from '../../../soundtracks/infrastructure/repositories/SoundtrackRepository'
 import { AppException } from '../../../../shared/exceptions/AppException'
+import { classifyPostMutation, isAgencyReopenAllowed } from '../../domain/PostMutationPolicy'
 
 type PostMutationState = {
   allowed: boolean
-  reason?: 'not_found' | 'executed'
+  reason?: 'not_found' | 'executed' | 'reopen_required' | 'unsupported'
 }
 
 type PostDeletionResult = {
   deleted: boolean
   reason?: 'not_found' | 'executed' | 'approved_requires_admin' | 'viewer_forbidden'
   post?: { id: string; clientId: string; title: string | null; status: string }
+}
+
+type ReviewFieldSnapshotPolicy = {
+  funnelTagVisibleToClient?: boolean
+  funnelTagRequired?: boolean
 }
 
 export class PostDuplicationError extends Error {
@@ -43,6 +50,29 @@ export class PostRepository implements IPostRepository {
     }
 
     return { params, conditions }
+  }
+
+  private async lockMaterialPost(client: PoolClient, id: string, companyId?: string) {
+    const { params, conditions } = this.buildPostScope(id, companyId)
+    const result = await client.query(
+      `SELECT id, client_id, company_id, status, content_revision, approved_revision
+       FROM posts
+       WHERE ${conditions.join(' AND ')}
+       FOR UPDATE`,
+      params,
+    )
+    const post = result.rows[0]
+    if (!post) return null
+
+    const mutation = classifyPostMutation(post.status)
+    if (mutation === 'editable') return post
+    if (mutation === 'executed') {
+      throw new AppException('Postagens executadas sao registros historicos e nao podem ser alteradas', 409, 'EXECUTED_POST_IMMUTABLE')
+    }
+    if (mutation === 'reopen_required') {
+      throw new AppException('Reabra a postagem para edicao antes de alterar o conteudo', 409, 'POST_REOPEN_REQUIRED')
+    }
+    throw new AppException('O estado atual da postagem nao permite alteracao de conteudo', 409, 'POST_STATUS_NOT_EDITABLE')
   }
 
   private async deletePostFiles(postId: string) {
@@ -89,19 +119,20 @@ export class PostRepository implements IPostRepository {
       params,
     )
     if (!result.rows[0]) return { allowed: false, reason: 'not_found' }
-    if (result.rows[0].status === 'executed') return { allowed: false, reason: 'executed' }
-    return { allowed: true }
+    const mutation = classifyPostMutation(result.rows[0].status)
+    if (mutation === 'editable') return { allowed: true }
+    return { allowed: false, reason: mutation }
   }
 
   async save(post: Post): Promise<Post> {
     try {
       const data = PostMapper.toPersistence(post)
       const result = await query(
-        `INSERT INTO posts (
+         `INSERT INTO posts (
            id, client_id, company_id, title, description, status, channels, formats,
-           scheduled_date, funnel_tag, email_link, created_at, updated_at
+           scheduled_date, funnel_tag, review_field_visibility, email_link, created_at, updated_at
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14)
          ON CONFLICT (id) DO UPDATE SET
            title = EXCLUDED.title,
            description = EXCLUDED.description,
@@ -110,6 +141,7 @@ export class PostRepository implements IPostRepository {
            formats = EXCLUDED.formats,
            scheduled_date = EXCLUDED.scheduled_date,
            funnel_tag = EXCLUDED.funnel_tag,
+           review_field_visibility = EXCLUDED.review_field_visibility,
            email_link = EXCLUDED.email_link,
            updated_at = EXCLUDED.updated_at
          RETURNING *`,
@@ -124,6 +156,7 @@ export class PostRepository implements IPostRepository {
           JSON.stringify(data.formats || {}),
           data.scheduled_date,
           data.funnel_tag,
+          JSON.stringify(data.review_field_visibility || { funnel_tag: false }),
           data.email_link,
           data.created_at,
           data.updated_at,
@@ -302,20 +335,72 @@ export class PostRepository implements IPostRepository {
       fields.push(`email_link = $${params.length}`)
     }
 
-    params.push(id)
-    const conditions = [`id = $${params.length}`, 'deleted_at IS NULL', "status <> 'executed'"]
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await this.lockMaterialPost(client, id, companyId)
+
+      if (data.clientId !== undefined || data.client_id !== undefined) {
+        const nextClientId = data.clientId ?? data.client_id
+        const target = await client.query(
+          `SELECT id FROM clients
+           WHERE id = $1 AND is_active = TRUE
+             ${companyId ? 'AND company_id = $2' : ''}`,
+          companyId ? [nextClientId, companyId] : [nextClientId],
+        )
+        if (!target.rows[0]) {
+          throw new AppException('Cliente ativo nao encontrado no escopo da empresa', 409, 'INVALID_POST_CLIENT')
+        }
+        if (!companyId) {
+          const postCompany = await client.query('SELECT company_id FROM posts WHERE id = $1', [id])
+          const clientCompany = await client.query('SELECT company_id FROM clients WHERE id = $1', [nextClientId])
+          if (postCompany.rows[0]?.company_id !== clientCompany.rows[0]?.company_id) {
+            throw new AppException('O cliente precisa pertencer a mesma empresa da postagem', 409, 'POST_CLIENT_TENANT_MISMATCH')
+          }
+        }
+      }
+
+      params.push(id)
+      const conditions = [`id = $${params.length}`, 'deleted_at IS NULL', "status IN ('draft', 'ready', 'rejected')"]
+      if (companyId) {
+        params.push(companyId)
+        conditions.push(`company_id = $${params.length}`)
+      }
+      const result = await client.query(
+        `UPDATE posts SET ${fields.join(', ')}
+         WHERE ${conditions.join(' AND ')}
+         RETURNING *`,
+        params,
+      )
+      await client.query('COMMIT')
+      return result.rows[0] || null
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async updateInternalFunnelTag(id: string, funnelTag: string | null, companyId?: string) {
+    const params: any[] = [id, funnelTag]
+    const conditions = [
+      'id = $1',
+      'deleted_at IS NULL',
+      "status IN ('draft', 'ready', 'rejected', 'sent', 'pending_approval', 'approved')",
+      "COALESCE((review_field_visibility->>'funnel_tag')::boolean, FALSE) = FALSE",
+    ]
     if (companyId) {
       params.push(companyId)
       conditions.push(`company_id = $${params.length}`)
     }
-
     const result = await query(
-      `UPDATE posts SET ${fields.join(', ')}
+      `UPDATE posts
+       SET funnel_tag = $2, updated_at = NOW()
        WHERE ${conditions.join(' AND ')}
        RETURNING *`,
       params,
     )
-
     return result.rows[0] || null
   }
 
@@ -379,14 +464,8 @@ export class PostRepository implements IPostRepository {
       await client.query('BEGIN')
       transactionStarted = true
 
-      const params: any[] = [postId]
-      const conditions = ['id = $1', 'deleted_at IS NULL', "status <> 'executed'"]
-      if (companyId) {
-        params.push(companyId)
-        conditions.push(`company_id = $${params.length}`)
-      }
-      const post = await client.query(`SELECT id FROM posts WHERE ${conditions.join(' AND ')} FOR UPDATE`, params)
-      if (!post.rows[0]) {
+      const post = await this.lockMaterialPost(client, postId, companyId)
+      if (!post) {
         await client.query('ROLLBACK')
         transactionStarted = false
         return null
@@ -442,89 +521,133 @@ export class PostRepository implements IPostRepository {
     sizeBytes: number
     originalName: string
     fileType: string
-  }, companyId?: string) {
-    const mutationState = await this.getMutationState(postId, companyId)
-    if (!mutationState.allowed) return null
-
-    const previous = await query(
-      `SELECT bucket, storage_path
-       FROM files
-       WHERE id = $1 AND post_id = $2 AND status = 'rejected'`,
-      [fileId, postId],
-    )
-
-    const result = await query(
-      `UPDATE files
-       SET url = $1,
-            bucket = $2,
-            storage_path = $3,
-            mime_type = $4,
-            size_bytes = $5,
-            original_name = $6,
-            file_type = $7,
-           status = 'pending',
-           rejection_reason = NULL,
-           rejection_tags = NULL,
-           updated_at = NOW()
-        WHERE id = $8
-          AND post_id = $9
-         AND status = 'rejected'
-       RETURNING *`,
-      [
-        file.url,
-        file.bucket,
-        file.storagePath,
-        file.mimeType,
-        file.sizeBytes,
-        file.originalName,
-        file.fileType,
-        fileId,
+  }, companyId?: string, actor: { id?: string; role?: string; companyId?: string } = {}) {
+    const client = await pool.connect()
+    let previousReference: any = null
+    let replacedFile: any = null
+    try {
+      await client.query('BEGIN')
+      if (!await this.lockMaterialPost(client, postId, companyId)) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      const previous = await client.query(
+        `SELECT bucket, storage_path
+         FROM files
+         WHERE id = $1 AND post_id = $2 AND status = 'rejected'
+         FOR UPDATE`,
+        [fileId, postId],
+      )
+      previousReference = previous.rows[0]
+      if (!previousReference) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      const embeddedSoundtrack = await client.query(
+        `SELECT id FROM post_soundtracks
+         WHERE post_id = $1 AND source_media_id = $2
+           AND mode = 'embedded' AND deleted_at IS NULL
+         FOR UPDATE`,
+        [postId, fileId],
+      )
+      if (embeddedSoundtrack.rows[0] && file.fileType !== 'VIDEO') {
+        throw new AppException(
+          'O arquivo vinculado ao fundo sonoro incorporado deve continuar sendo um video',
+          400,
+          'INVALID_SOUNDTRACK_SOURCE_MEDIA',
+        )
+      }
+      const result = await client.query(
+        `UPDATE files
+         SET url = $1,
+             bucket = $2,
+             storage_path = $3,
+             mime_type = $4,
+             size_bytes = $5,
+             original_name = $6,
+             file_type = $7,
+             status = 'pending',
+             rejection_reason = NULL,
+             rejection_tags = NULL,
+             updated_at = NOW()
+         WHERE id = $8 AND post_id = $9 AND status = 'rejected'
+         RETURNING *`,
+        [file.url, file.bucket, file.storagePath, file.mimeType, file.sizeBytes,
+          file.originalName, file.fileType, fileId, postId],
+      )
+      if (!result.rows[0]) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      replacedFile = result.rows[0]
+      await client.query('DELETE FROM portal_item_review_drafts WHERE post_id = $1 AND file_id = $2', [postId, fileId])
+      await this.soundtrackRepository.invalidateEmbeddedSourceInTransaction(
+        client,
         postId,
-      ],
-    )
+        fileId,
+        { ...actor, companyId },
+      )
+      await client.query('UPDATE posts SET updated_at = NOW() WHERE id = $1', [postId])
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
 
-    if (!result.rows[0]) return null
-
-    await query(`DELETE FROM portal_item_review_drafts WHERE post_id = $1 AND file_id = $2`, [postId, fileId])
-
-    const previousReference = previous.rows[0]
-    if (
-      previousReference
-      && (previousReference.bucket !== file.bucket || previousReference.storage_path !== file.storagePath)
-    ) {
+    if (previousReference
+      && (previousReference.bucket !== file.bucket || previousReference.storage_path !== file.storagePath)) {
       await this.removeStorageObjectIfUnreferenced({
         bucket: previousReference.bucket,
         storagePath: previousReference.storage_path,
-      }, [fileId], 'replacement')
+      }, [fileId], 'replacement').catch(error => {
+        logger.error('Replacement committed but old storage cleanup failed', {
+          postId,
+          fileId,
+          bucket: previousReference.bucket,
+          storagePath: previousReference.storage_path,
+          error,
+        })
+      })
     }
-
-    await query(
-      `UPDATE posts
-       SET status = 'pending_approval', updated_at = NOW()
-       WHERE id = $1`,
-      [postId],
-    )
-
-    return result.rows[0]
+    return replacedFile
   }
 
-  async submitForApproval(id: string, companyId?: string, includeSoundtrack = true): Promise<boolean> {
+  async submitForApproval(
+    id: string,
+    companyId?: string,
+    includeSoundtrack = true,
+    actor: { id?: string; role?: string } = {},
+    reviewPolicy: ReviewFieldSnapshotPolicy = {},
+  ): Promise<boolean> {
     const { params, conditions } = this.buildPostScope(id, companyId)
+    params.push(reviewPolicy.funnelTagVisibleToClient === true)
+    const funnelVisibleParam = params.length
+    params.push(reviewPolicy.funnelTagRequired === true)
+    const funnelRequiredParam = params.length
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
       const result = await client.query(
         `UPDATE posts
-         SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
+         SET status = 'sent',
+             content_revision = content_revision + 1,
+             approved_revision = NULL,
+             approved_at = NULL,
+             review_field_visibility = jsonb_set(
+               review_field_visibility, '{funnel_tag}', to_jsonb($${funnelVisibleParam}::boolean), TRUE
+             ),
              submitted_at = NOW(),
              updated_at = NOW()
          WHERE ${conditions.join(' AND ')}
-           AND status IN ('draft', 'ready', 'rejected')
+           AND status IN ('draft', 'ready')
+           AND (NOT $${funnelRequiredParam}::boolean OR NULLIF(BTRIM(funnel_tag), '') IS NOT NULL)
            AND (
              EXISTS (SELECT 1 FROM files f WHERE f.post_id = posts.id)
              OR (channels = ARRAY['E-mail Marketing']::text[] AND email_link IS NOT NULL)
            )
-         RETURNING id`,
+         RETURNING id, content_revision`,
         params,
       )
       if (!result.rows[0]) {
@@ -538,25 +661,27 @@ export class PostRepository implements IPostRepository {
              rejection_tags = NULL,
              updated_at = NOW()
          WHERE post_id = $1
-           AND status = 'rejected'`,
+           AND status <> 'pending'`,
         [id],
       )
-      await client.query(
-        `DELETE FROM portal_item_review_drafts d
-         USING files f
-         WHERE d.file_id = f.id AND d.post_id = $1 AND f.post_id = $1 AND f.status = 'pending'`,
-        [id],
-      )
+      await client.query('DELETE FROM portal_item_review_drafts WHERE post_id = $1', [id])
       await client.query(
         `UPDATE portal_post_reviews SET rewind_used = FALSE, updated_at = NOW() WHERE post_id = $1`,
         [id],
       )
       if (includeSoundtrack) await client.query(
-        `UPDATE post_soundtracks
-         SET approval_status = 'pending', approved_at = NULL,
-             adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
-         WHERE post_id = $1 AND deleted_at IS NULL AND approval_status = 'adjustment_requested'`,
-        [id],
+         `UPDATE post_soundtracks
+          SET approval_status = 'pending', approved_at = NULL,
+              approved_content_revision = NULL,
+              adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+          WHERE post_id = $1 AND deleted_at IS NULL`,
+         [id],
+       )
+      await client.query(
+        `INSERT INTO portal_review_actions (
+           post_id, content_revision, action, actor_id, actor_role
+         ) VALUES ($1, $2, 'submitted', $3, $4)`,
+        [id, result.rows[0].content_revision, actor.id || null, actor.role || 'system'],
       )
       await client.query('COMMIT')
       return true
@@ -569,66 +694,77 @@ export class PostRepository implements IPostRepository {
   }
 
   async reorderFiles(postId: string, files: Array<{ id: string; sort_order: number }>, companyId?: string) {
-    const mutationState = await this.getMutationState(postId, companyId)
-    if (!mutationState.allowed) return false
     if (!files.length) return true
-
-    const fileIds = files.map(file => file.id)
-    const existing = await query(
-      `SELECT id FROM files WHERE post_id = $1 AND id = ANY($2::uuid[])`,
-      [postId, fileIds],
-    )
-    if (existing.rows.length !== fileIds.length) return false
-
-    const valuesSql = files.map((_, index) => `($${index * 2 + 2}::uuid, $${index * 2 + 3}::integer)`).join(', ')
-    const params: any[] = [postId]
-    files.forEach(file => {
-      params.push(file.id, file.sort_order)
-    })
-
-    await query(
-      `UPDATE files f
-       SET sort_order = ordered.sort_order,
-           updated_at = NOW()
-       FROM (VALUES ${valuesSql}) AS ordered(id, sort_order)
-       WHERE f.post_id = $1
-         AND f.id = ordered.id`,
-      params,
-    )
-
-    return true
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      if (!await this.lockMaterialPost(client, postId, companyId)) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      const fileIds = files.map(file => file.id)
+      const existing = await client.query(
+        `SELECT id FROM files WHERE post_id = $1 AND id = ANY($2::uuid[]) FOR UPDATE`,
+        [postId, fileIds],
+      )
+      if (existing.rows.length !== fileIds.length) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      const valuesSql = files.map((_, index) => `($${index * 2 + 2}::uuid, $${index * 2 + 3}::integer)`).join(', ')
+      const params: any[] = [postId]
+      files.forEach(file => params.push(file.id, file.sort_order))
+      await client.query(
+        `UPDATE files f
+         SET sort_order = ordered.sort_order, updated_at = NOW()
+         FROM (VALUES ${valuesSql}) AS ordered(id, sort_order)
+         WHERE f.post_id = $1 AND f.id = ordered.id`,
+        params,
+      )
+      await client.query('UPDATE posts SET updated_at = NOW() WHERE id = $1', [postId])
+      await client.query('COMMIT')
+      return true
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async removeFile(postId: string, fileId: string, companyId?: string, enforceSoundtrackSource = true) {
-    if (enforceSoundtrackSource && await this.soundtrackRepository.isEmbeddedSource(postId, fileId)) {
-      throw new AppException('O video esta vinculado ao fundo sonoro incorporado. Altere a modalidade antes de remove-lo.', 409, 'SOUNDTRACK_SOURCE_IN_USE')
-    }
-    const params: any[] = [postId, fileId]
-    const postConditions = ['p.id = $1', 'p.deleted_at IS NULL', "p.status <> 'executed'"]
-    if (companyId) {
-      params.push(companyId)
-      postConditions.push(`p.company_id = $${params.length}`)
-    }
-
-    const result = await query(
-      `DELETE FROM files f
-       USING posts p
-       WHERE f.post_id = p.id
-         AND ${postConditions.join(' AND ')}
-         AND f.id = $2
-        RETURNING f.id, f.bucket, f.storage_path`,
-      params,
-    )
-
-    if (!result.rows[0]) return false
-
-    await this.removeStorageObjectIfUnreferenced({
-      bucket: result.rows[0].bucket,
-      storagePath: result.rows[0].storage_path,
-    }, [], 'manual removal')
-
-    await query(
-      `WITH ordered AS (
+    const client = await pool.connect()
+    let removed: any = null
+    try {
+      await client.query('BEGIN')
+      if (!await this.lockMaterialPost(client, postId, companyId)) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      if (enforceSoundtrackSource) {
+        const embeddedSource = await client.query(
+          `SELECT id FROM post_soundtracks
+           WHERE post_id = $1 AND source_media_id = $2
+             AND mode = 'embedded' AND deleted_at IS NULL
+           FOR UPDATE`,
+          [postId, fileId],
+        )
+        if (embeddedSource.rows[0]) {
+          throw new AppException('O video esta vinculado ao fundo sonoro incorporado. Altere a modalidade antes de remove-lo.', 409, 'SOUNDTRACK_SOURCE_IN_USE')
+        }
+      }
+      const result = await client.query(
+        `DELETE FROM files WHERE post_id = $1 AND id = $2
+         RETURNING id, bucket, storage_path`,
+        [postId, fileId],
+      )
+      if (!result.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      removed = result.rows[0]
+      await client.query(
+        `WITH ordered AS (
          SELECT id, ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 999999), created_at, id) AS next_order
          FROM files
          WHERE post_id = $1
@@ -638,10 +774,20 @@ export class PostRepository implements IPostRepository {
            updated_at = NOW()
        FROM ordered
        WHERE f.id = ordered.id`,
-      [postId],
-    )
-
-    await query(`UPDATE posts SET updated_at = NOW() WHERE id = $1 AND status <> 'executed'`, [postId])
+        [postId],
+      )
+      await client.query('UPDATE posts SET updated_at = NOW() WHERE id = $1', [postId])
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
+    await this.removeStorageObjectIfUnreferenced({
+      bucket: removed.bucket,
+      storagePath: removed.storage_path,
+    }, [], 'manual removal')
     return true
   }
 
@@ -679,13 +825,19 @@ export class PostRepository implements IPostRepository {
       : { updated: false, reason: 'invalid_transition' }
   }
 
-  async submitManyForApproval(ids: string[], companyId?: string, includeSoundtrack = true) {
+  async submitManyForApproval(
+    ids: string[],
+    companyId?: string,
+    includeSoundtrack = true,
+    actor: { id?: string; role?: string } = {},
+    reviewPolicy: ReviewFieldSnapshotPolicy = {},
+  ) {
     if (!ids.length) return []
     const params: any[] = [ids]
     const conditions = [
       'id = ANY($1::uuid[])',
       'deleted_at IS NULL',
-      "status IN ('draft', 'ready', 'rejected')",
+      "status IN ('draft', 'ready')",
       `(EXISTS (SELECT 1 FROM files f WHERE f.post_id = posts.id)
         OR (channels = ARRAY['E-mail Marketing']::text[] AND email_link IS NOT NULL))`,
     ]
@@ -693,17 +845,28 @@ export class PostRepository implements IPostRepository {
       params.push(companyId)
       conditions.push(`company_id = $${params.length}`)
     }
+    params.push(reviewPolicy.funnelTagVisibleToClient === true)
+    const funnelVisibleParam = params.length
+    params.push(reviewPolicy.funnelTagRequired === true)
+    const funnelRequiredParam = params.length
+    conditions.push(`(NOT $${funnelRequiredParam}::boolean OR NULLIF(BTRIM(funnel_tag), '') IS NOT NULL)`)
 
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
       const result = await client.query(
         `UPDATE posts
-         SET status = CASE WHEN status = 'rejected' THEN 'pending_approval' ELSE 'sent' END,
+         SET status = 'sent',
+             content_revision = content_revision + 1,
+             approved_revision = NULL,
+             approved_at = NULL,
+             review_field_visibility = jsonb_set(
+               review_field_visibility, '{funnel_tag}', to_jsonb($${funnelVisibleParam}::boolean), TRUE
+             ),
              submitted_at = NOW(),
              updated_at = NOW()
          WHERE ${conditions.join(' AND ')}
-         RETURNING id, client_id, title, channels, scheduled_date`,
+         RETURNING id, client_id, title, channels, scheduled_date, content_revision`,
         params,
       )
       const sentIds = result.rows.map(row => row.id)
@@ -715,18 +878,10 @@ export class PostRepository implements IPostRepository {
                rejection_tags = NULL,
                updated_at = NOW()
            WHERE post_id = ANY($1::uuid[])
-             AND status = 'rejected'`,
-          [sentIds],
-        )
-        await client.query(
-          `DELETE FROM portal_item_review_drafts d
-           USING files f
-           WHERE d.file_id = f.id
-             AND d.post_id = f.post_id
-             AND f.post_id = ANY($1::uuid[])
-             AND f.status = 'pending'`,
-          [sentIds],
-        )
+             AND status <> 'pending'`,
+           [sentIds],
+         )
+        await client.query('DELETE FROM portal_item_review_drafts WHERE post_id = ANY($1::uuid[])', [sentIds])
         await client.query(
           `UPDATE portal_post_reviews
            SET rewind_used = FALSE, updated_at = NOW()
@@ -734,13 +889,21 @@ export class PostRepository implements IPostRepository {
           [sentIds],
         )
         if (includeSoundtrack) await client.query(
-          `UPDATE post_soundtracks
-           SET approval_status = 'pending', approved_at = NULL,
-               adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
-           WHERE post_id = ANY($1::uuid[])
-             AND deleted_at IS NULL
-             AND approval_status = 'adjustment_requested'`,
-          [sentIds],
+           `UPDATE post_soundtracks
+            SET approval_status = 'pending', approved_at = NULL,
+                approved_content_revision = NULL,
+                adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+            WHERE post_id = ANY($1::uuid[])
+              AND deleted_at IS NULL`,
+           [sentIds],
+         )
+        await client.query(
+          `INSERT INTO portal_review_actions (
+             post_id, content_revision, action, actor_id, actor_role
+           )
+           SELECT sent.id, sent.content_revision, 'submitted', $2, $3
+           FROM jsonb_to_recordset($1::jsonb) AS sent(id UUID, content_revision INTEGER)`,
+          [JSON.stringify(result.rows.map(row => ({ id: row.id, content_revision: row.content_revision }))), actor.id || null, actor.role || 'system'],
         )
       }
       await client.query('COMMIT')
@@ -950,8 +1113,29 @@ export class PostRepository implements IPostRepository {
     }
   }
 
-  async resubmit(id: string, data: { title?: string; caption?: string; description?: string; justificativa?: string }, companyId?: string, includeSoundtrack = true) {
-    const updates: string[] = [`status = 'pending_approval'`, 'updated_at = NOW()']
+  async resubmit(
+    id: string,
+    data: {
+      title?: string
+      caption?: string
+      description?: string
+      justificativa?: string
+      funnelTag?: string | null
+      funnel_tag?: string | null
+    },
+    companyId?: string,
+    includeSoundtrack = true,
+    actor: { id?: string; role?: string } = {},
+    reviewPolicy: ReviewFieldSnapshotPolicy = {},
+  ) {
+    const updates: string[] = [
+      `status = 'pending_approval'`,
+      'content_revision = content_revision + 1',
+      'approved_revision = NULL',
+      'approved_at = NULL',
+      'submitted_at = NOW()',
+      'updated_at = NOW()',
+    ]
     const params: any[] = []
 
     if (data.title) {
@@ -962,9 +1146,22 @@ export class PostRepository implements IPostRepository {
       params.push(data.caption || data.description)
       updates.push(`description = $${params.length}`)
     }
+    if (Object.prototype.hasOwnProperty.call(data, 'funnelTag')
+      || Object.prototype.hasOwnProperty.call(data, 'funnel_tag')) {
+      params.push(data.funnelTag ?? data.funnel_tag ?? null)
+      updates.push(`funnel_tag = $${params.length}`)
+    }
+    params.push(reviewPolicy.funnelTagVisibleToClient === true)
+    updates.push(`review_field_visibility = jsonb_set(
+      review_field_visibility, '{funnel_tag}', to_jsonb($${params.length}::boolean), TRUE
+    )`)
 
     params.push(id)
-    const conditions = [`id = $${params.length}`, 'deleted_at IS NULL', "status <> 'executed'"]
+    const conditions = [
+      `id = $${params.length}`,
+      'deleted_at IS NULL',
+      "status = 'rejected'",
+    ]
     if (companyId) {
       params.push(companyId)
       conditions.push(`company_id = $${params.length}`)
@@ -976,7 +1173,7 @@ export class PostRepository implements IPostRepository {
       const result = await client.query(
         `UPDATE posts SET ${updates.join(', ')}
          WHERE ${conditions.join(' AND ')}
-         RETURNING id`,
+         RETURNING id, content_revision`,
         params,
       )
 
@@ -985,29 +1182,30 @@ export class PostRepository implements IPostRepository {
         return false
       }
 
-      const resetFiles = await client.query(
-        `UPDATE files SET status = 'pending', updated_at = NOW()
-         WHERE post_id = $1 AND status = 'rejected'
-         RETURNING id`,
+      await client.query(
+        `UPDATE files
+         SET status = 'pending', rejection_reason = NULL, rejection_tags = NULL, updated_at = NOW()
+         WHERE post_id = $1`,
         [id],
       )
-      if (resetFiles.rows.length) {
-        await client.query(
-          `DELETE FROM portal_item_review_drafts
-           WHERE post_id = $1 AND file_id = ANY($2::uuid[])`,
-          [id, resetFiles.rows.map(file => file.id)],
-        )
-      }
+      await client.query('DELETE FROM portal_item_review_drafts WHERE post_id = $1', [id])
       await client.query(
         `UPDATE portal_post_reviews SET rewind_used = FALSE, updated_at = NOW() WHERE post_id = $1`,
         [id],
       )
       if (includeSoundtrack) await client.query(
-        `UPDATE post_soundtracks
-         SET approval_status = 'pending', approved_at = NULL,
-             adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
-         WHERE post_id = $1 AND deleted_at IS NULL AND approval_status = 'adjustment_requested'`,
-        [id],
+         `UPDATE post_soundtracks
+          SET approval_status = 'pending', approved_at = NULL,
+              approved_content_revision = NULL,
+              adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+          WHERE post_id = $1 AND deleted_at IS NULL`,
+         [id],
+       )
+      await client.query(
+        `INSERT INTO portal_review_actions (
+           post_id, content_revision, action, actor_id, actor_role
+         ) VALUES ($1, $2, 'resubmitted', $3, $4)`,
+        [id, result.rows[0].content_revision, actor.id || null, actor.role || 'system'],
       )
       await client.query('COMMIT')
       return true
@@ -1019,24 +1217,168 @@ export class PostRepository implements IPostRepository {
     }
   }
 
+  async reopenForEditing(
+    id: string,
+    companyId?: string,
+    actor: { id?: string; role?: string } = {},
+  ) {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const { params, conditions } = this.buildPostScope(id, companyId)
+      const locked = await client.query(
+        `SELECT id, status, content_revision
+         FROM posts
+         WHERE ${conditions.join(' AND ')}
+         FOR UPDATE`,
+        params,
+      )
+      const post = locked.rows[0]
+      if (!post) {
+        await client.query('ROLLBACK')
+        return { reopened: false as const, reason: 'not_found' as const }
+      }
+      if (!isAgencyReopenAllowed(post.status)) {
+        await client.query('ROLLBACK')
+        return {
+          reopened: false as const,
+          reason: post.status === 'executed' ? 'executed' as const : 'invalid_status' as const,
+        }
+      }
+      const previousDecision = await client.query(
+        `SELECT id FROM portal_review_decisions
+         WHERE post_id = $1 AND content_revision = $2
+         ORDER BY review_sequence DESC LIMIT 1`,
+        [id, post.content_revision],
+      )
+      await client.query(
+        `UPDATE posts
+         SET status = 'ready', approved_revision = NULL, approved_at = NULL, updated_at = NOW()
+         WHERE id = $1`,
+        [id],
+      )
+      await client.query('DELETE FROM portal_item_review_drafts WHERE post_id = $1', [id])
+      await client.query(
+        `UPDATE post_soundtracks
+         SET approval_status = CASE WHEN mode = 'none' THEN approval_status ELSE 'pending' END,
+             approved_at = NULL,
+             approved_content_revision = NULL,
+             adjustment_requested_at = NULL,
+             adjustment_comment = NULL,
+             updated_at = NOW()
+         WHERE post_id = $1 AND deleted_at IS NULL`,
+        [id],
+      )
+      await client.query(
+        `INSERT INTO portal_review_actions (
+           post_id, content_revision, action, actor_id, actor_role, decision_id
+         ) VALUES ($1, $2, 'agency_reopen', $3, $4, $5)`,
+        [id, post.content_revision, actor.id || null, actor.role || 'system', previousDecision.rows[0]?.id || null],
+      )
+      await client.query('COMMIT')
+      return { reopened: true as const, status: 'ready' as const, contentRevision: Number(post.content_revision || 0) }
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   async markExecuted(id: string, retentionHours = 24, companyId?: string) {
-    const { params, conditions } = this.buildPostScope(id, companyId)
-
-    const result = await query(
-      `UPDATE posts
-       SET status = 'executed',
-           executed_at = NOW(),
-           files_delete_after = NOW() + ($${params.length + 1}::text || ' hours')::interval,
-           files_retention_policy = NULL,
-           updated_at = NOW()
-       WHERE ${conditions.join(' AND ')}
-         AND status = 'approved'
-       RETURNING id`,
-       [...params, String(retentionHours)],
-    )
-
-    if (!result.rows[0]) return false
-    return true
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const { params, conditions } = this.buildPostScope(id, companyId, 'p')
+      const locked = await client.query(
+        `SELECT p.id, p.client_id, p.status, p.content_revision, p.approved_revision,
+                c.is_active AS client_active,
+                c.company_id AS client_company_id
+         FROM posts p
+         JOIN clients c ON c.id = p.client_id
+         WHERE ${conditions.join(' AND ')}
+           AND c.company_id IS NOT DISTINCT FROM p.company_id
+         FOR UPDATE OF p`,
+        params,
+      )
+      const post = locked.rows[0]
+      if (!post
+        || post.status !== 'approved'
+        || Number(post.content_revision) <= 0
+        || Number(post.approved_revision) !== Number(post.content_revision)
+        || post.client_active !== true
+        || post.client_company_id !== (companyId || post.client_company_id)) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      const decision = await client.query(
+       `SELECT id FROM portal_review_decisions
+         WHERE post_id = $1
+           AND content_revision = $2
+           AND decision = 'approved'
+           AND client_id = $3
+         ORDER BY review_sequence DESC LIMIT 1`,
+        [id, post.content_revision, post.client_id],
+      )
+      if (!decision.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      const invalidFiles = await client.query(
+        `SELECT COUNT(*)::int AS count
+         FROM files
+         WHERE post_id = $1 AND LOWER(COALESCE(NULLIF(status, ''), 'pending')) <> 'approved'`,
+        [id],
+      )
+      if (Number(invalidFiles.rows[0]?.count || 0) > 0) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      const settings = await client.query(
+        `SELECT COALESCE(soundtrack_enabled, FALSE) AS soundtrack_enabled
+         FROM platform_settings WHERE singleton_key = TRUE`,
+      )
+      if (settings.rows[0]?.soundtrack_enabled) {
+        const invalidSoundtrack = await client.query(
+          `SELECT 1 FROM post_soundtracks
+           WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
+             AND (approval_status <> 'approved' OR approved_content_revision IS DISTINCT FROM $2)
+           LIMIT 1`,
+          [id, post.content_revision],
+        )
+        if (invalidSoundtrack.rows[0]) {
+          await client.query('ROLLBACK')
+          return false
+        }
+      }
+      const result = await client.query(
+        `UPDATE posts
+         SET status = 'executed',
+             executed_revision = content_revision,
+             executed_at = NOW(),
+             files_delete_after = NOW() + ($2::text || ' hours')::interval,
+             files_retention_policy = NULL,
+             updated_at = NOW()
+         WHERE id = $1 AND status = 'approved'
+           AND approved_revision = content_revision
+           AND EXISTS (
+             SELECT 1
+             FROM clients execution_client
+             WHERE execution_client.id = posts.client_id
+               AND execution_client.is_active = TRUE
+               AND execution_client.company_id IS NOT DISTINCT FROM posts.company_id
+           )
+         RETURNING id`,
+        [id, String(retentionHours)],
+      )
+      await client.query('COMMIT')
+      return Boolean(result.rows[0])
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async delete(id: string): Promise<void> {

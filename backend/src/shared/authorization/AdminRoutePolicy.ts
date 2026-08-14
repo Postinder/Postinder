@@ -23,6 +23,7 @@ export const ADMIN_ROUTE_POLICIES = Object.freeze<readonly AdminRoutePolicy[]>([
   { method: 'POST', path: '/api/v1/posts/:id/soundtrack/file', capability: 'soundtracks:upload' },
   { method: 'PATCH', path: '/api/v1/posts/:id/status', capability: 'posts:change-status' },
   { method: 'POST', path: '/api/v1/posts/:id/execute', capability: 'posts:execute' },
+  { method: 'POST', path: '/api/v1/posts/:id/reopen-for-editing', capability: 'posts:update' },
   { method: 'POST', path: '/api/v1/posts/:id/files', capability: 'files:upload' },
   { method: 'PATCH', path: '/api/v1/posts/:id/files/reorder', capability: 'files:reorder' },
   { method: 'POST', path: '/api/v1/posts/:id/files/:fileId/replace', capability: 'files:replace' },

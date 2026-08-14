@@ -2,17 +2,19 @@
 
 ## Configuracoes da plataforma
 
-O pacote local atual adiciona uma configuracao operacional global da instalacao em `/admin/platform-settings`, sem multi-tenancy. Ela controla retencao de arquivos apos `executed`, fundo sonoro, politicas de campos seguros de Clientes/postagens, defaults do portal e a forma de aprovacao do Cliente (`content` ou `item`, com default `content`). Identidade visual continua separada em `/admin/branding`.
+O pacote local atual adiciona uma configuracao operacional global da instalacao em `/admin/platform-settings`, sem multi-tenancy. Ela controla retencao de arquivos apos `executed`, fundo sonoro, politicas de campos seguros de Clientes/postagens, visibilidade do funil para o Cliente, defaults do portal e a forma de aprovacao do Cliente (`content` ou `item`, com default `content`). Identidade visual continua separada em `/admin/branding`.
 
 Somente admin altera a configuracao. O backend valida um schema fechado, usa defaults de dominio quando ainda nao existe registro e persiste atualizacoes parciais de forma transacional no singleton criado por `019_platform_settings.sql`.
 
 A retencao usa 24 horas por default e grava o prazo no momento da execucao. Um scheduler interno varre no startup e a cada hora. Apenas objetos fisicos de postagens executadas com `executed_at` e prazo confiavel sao removidos; registros, metricas e historico permanecem.
 
+Cada submissao oficial possui `content_revision`. A aprovacao sela essa revisao em `approved_revision`, e a execucao so e aceita quando o selo continua corrente, sendo registrada em `executed_revision`. Conteudo protegido precisa ser reaberto antes de qualquer alteracao material; operacoes do portal enviam `expectedRevision` para recusar drafts ou decisoes stale.
+
 Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal permite uma decisao por postagem (`content`) ou escolhas provisórias por midia consolidadas em **Concluir analise** (`item`), sempre com navegacao livre entre as midias.
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. Os pacotes locais nao publicados exigem `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql`, `019_platform_settings.sql` e `020_portal_approval_mode_and_review_drafts.sql`, nessa ordem, antes de uma futura publicacao. Os totais de validacao do pacote atual estao registrados em `PROJECT_STATE.md`. Nenhum deploy deste pacote foi realizado.
+A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. O pacote local, tecnicamente concluido e ainda nao commitado nem publicado, exige as migrations estruturais `017` a `023`, nessa ordem, antes de uma futura publicacao autorizada. Os totais de validacao estao registrados em `PROJECT_STATE.md`. Nenhum deploy deste pacote foi realizado.
 
 ## Interface atual
 
@@ -25,6 +27,7 @@ A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em jul
 - Novos Clientes sao cadastrados sem CPF/CNPJ. Documentos antigos continuam preservados e editaveis, sem limpeza retroativa nem remocao de colunas.
 - O link ativo do portal e recuperavel pelo administrador autorizado; copiar ou abrir nao gera outro token, e substituir exige confirmacao. E-mail Marketing aceita aprovacao por preview web seguro e dispensa anexo quando for o unico canal.
 - `3A3R` foi removido das novas selecoes. Fundo sonoro permanece atras de feature flag, compativel e secundario; desligado, ausente ou `none` nao bloqueia a aprovacao.
+- Funil permanece configuravel como `hidden|optional|required`. Sua visibilidade para o Cliente e independente e conservadoramente `false`; cada submissao salva em `review_field_visibility` o que aquela revisao efetivamente expos.
 - Na lista administrativa, **Selecionar todos** inclui somente postagens elegiveis, carregadas e visiveis nos filtros atuais; checkbox individual, checkbox mestre e envio usam o mesmo conjunto contextual.
 
 ## Arquitetura
@@ -108,7 +111,7 @@ cd backend
 npm run db:migrate
 ```
 
-O startup nao cria nem corrige schema. A migration `002_development_seed.sql` e historica e nao faz parte do migrador estrutural. A `018` adiciona a preferencia de portal do Cliente e a copia cifrada recuperavel do token; a `020` adiciona o modo de aprovacao, drafts provisórios por item e o controle oficial de revisao/rewind sem reescrever posts antigos.
+O startup nao cria nem corrige schema. A migration `002_development_seed.sql` e historica e nao faz parte do migrador estrutural. A `018` adiciona a preferencia de portal do Cliente e a copia cifrada recuperavel do token; a `020` adiciona o modo de aprovacao e drafts provisorios; a `021` introduz revisao/certificacao de conteudo e historico oficial; a `022` adiciona visibilidade e snapshot do funil; e a `023` torna versions/decisions de soundtrack append-only sem bloquear cascatas legitimas.
 
 Em deploy, `npm run db:migrate` deve ser um Pre-Deploy Command/release step bloqueante anterior ao Start Command. Backup logico e preflight do banco sao obrigatorios antes de migrations em producao.
 

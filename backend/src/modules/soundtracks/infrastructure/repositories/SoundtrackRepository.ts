@@ -4,6 +4,7 @@ import { AppException } from '../../../../shared/exceptions/AppException'
 import { removeStoredFile, StoredFile } from '../../../../shared/upload/storage'
 import { logger } from '../../../../shared/utils/Logger'
 import { derivePostApprovalStatus, SoundtrackApprovalStatus, SoundtrackInput } from '../../domain/Soundtrack'
+import { classifyPostMutation } from '../../../posts/domain/PostMutationPolicy'
 
 type Actor = {
   id?: string
@@ -54,6 +55,8 @@ function mapSoundtrack(row: any, history?: { versions?: any[]; decisions?: any[]
     rights_notes: row.rights_notes,
     approvalStatus: row.approval_status,
     approval_status: row.approval_status,
+    approvedContentRevision: row.approved_content_revision == null ? null : Number(row.approved_content_revision),
+    approved_content_revision: row.approved_content_revision == null ? null : Number(row.approved_content_revision),
     approvedAt: row.approved_at,
     approved_at: row.approved_at,
     adjustmentRequestedAt: row.adjustment_requested_at,
@@ -162,27 +165,39 @@ export class SoundtrackRepository {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      const result = await client.query(
-        `UPDATE post_soundtracks
-         SET approval_status = 'pending', approved_at = NULL,
-             adjustment_requested_at = NULL, adjustment_comment = NULL,
-             revision_number = revision_number + 1, updated_at = NOW()
-         WHERE post_id = $1 AND source_media_id = $2
-           AND mode = 'embedded' AND deleted_at IS NULL
-         RETURNING *`,
-        [postId, fileId],
-      )
-      if (result.rows[0]) {
-        await this.createVersion(client, result.rows[0], 'source_media_replaced', actor)
-      }
+      await client.query('SELECT id FROM posts WHERE id = $1 FOR UPDATE', [postId])
+      const invalidated = await this.invalidateEmbeddedSourceInTransaction(client, postId, fileId, actor)
       await client.query('COMMIT')
-      return Boolean(result.rows[0])
+      return invalidated
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
       throw error
     } finally {
       client.release()
     }
+  }
+
+  async invalidateEmbeddedSourceInTransaction(
+    client: PoolClient,
+    postId: string,
+    fileId: string,
+    actor: Actor,
+  ) {
+    const result = await client.query(
+        `UPDATE post_soundtracks
+         SET approval_status = 'pending', approved_at = NULL,
+              approved_content_revision = NULL,
+              adjustment_requested_at = NULL, adjustment_comment = NULL,
+             revision_number = revision_number + 1, updated_at = NOW()
+         WHERE post_id = $1 AND source_media_id = $2
+           AND mode = 'embedded' AND deleted_at IS NULL
+         RETURNING *`,
+        [postId, fileId],
+      )
+    if (result.rows[0]) {
+      await this.createVersion(client, result.rows[0], 'source_media_replaced', actor)
+    }
+    return Boolean(result.rows[0])
   }
 
   private async lockMutablePost(client: PoolClient, postId: string, companyId?: string) {
@@ -193,13 +208,20 @@ export class SoundtrackRepository {
       conditions.push(`company_id = $${params.length}`)
     }
     const result = await client.query(
-      `SELECT id, client_id, company_id, status FROM posts
+      `SELECT id, client_id, company_id, status, content_revision FROM posts
        WHERE ${conditions.join(' AND ')} FOR UPDATE`,
       params,
     )
     if (!result.rows[0]) throw new AppException('Postagem nao encontrada', 404, 'POST_NOT_FOUND')
-    if (result.rows[0].status === 'executed') {
+    const mutation = classifyPostMutation(result.rows[0].status)
+    if (mutation === 'executed') {
       throw new AppException('Postagens executadas nao podem ter o fundo sonoro alterado', 409, 'EXECUTED_POST_IMMUTABLE')
+    }
+    if (mutation === 'reopen_required') {
+      throw new AppException('Reabra a postagem antes de alterar o fundo sonoro', 409, 'POST_REOPEN_REQUIRED')
+    }
+    if (mutation !== 'editable') {
+      throw new AppException('O estado atual da postagem nao permite alterar o fundo sonoro', 409, 'POST_STATUS_NOT_EDITABLE')
     }
     return result.rows[0]
   }
@@ -251,17 +273,10 @@ export class SoundtrackRepository {
   }
 
   private async markPostForReview(client: PoolClient, postId: string, mode: string) {
-    if (mode === 'none') {
-      await this.recalculatePostStatusWithClient(client, postId)
-      return
-    }
     await client.query(
       `UPDATE posts
-       SET status = CASE
-             WHEN status IN ('sent', 'pending_approval', 'rejected', 'approved') THEN 'pending_approval'
-             ELSE status
-           END,
-           approved_at = CASE WHEN status = 'approved' THEN NULL ELSE approved_at END,
+       SET approved_revision = NULL,
+           approved_at = NULL,
            updated_at = NOW()
        WHERE id = $1`,
       [postId],
@@ -301,7 +316,8 @@ export class SoundtrackRepository {
                  usage_source = NULL, usage_notes = NULL, rights_notes = NULL,
                  audio_url = NULL, bucket = NULL, storage_path = NULL, mime_type = NULL,
                  size_bytes = NULL, original_name = NULL, approval_status = 'pending',
-                 approved_at = NULL, adjustment_requested_at = NULL, adjustment_comment = NULL,
+                  approved_at = NULL, approved_content_revision = NULL,
+                  adjustment_requested_at = NULL, adjustment_comment = NULL,
                  revision_number = revision_number + 1, deleted_at = NOW(), updated_at = NOW()
              WHERE id = $1 RETURNING *`,
             [current.id],
@@ -373,7 +389,8 @@ export class SoundtrackRepository {
                usage_source = $9, usage_notes = $10, rights_notes = $11,
                audio_url = $12, bucket = $13, storage_path = $14, mime_type = $15,
                size_bytes = $16, original_name = $17, approval_status = 'pending',
-               approved_at = NULL, adjustment_requested_at = NULL, adjustment_comment = NULL,
+               approved_at = NULL, approved_content_revision = NULL,
+               adjustment_requested_at = NULL, adjustment_comment = NULL,
                revision_number = revision_number + 1, storage_deleted_at = NULL,
                storage_delete_error = NULL, updated_at = NOW()
              WHERE id = $1 RETURNING *`,
@@ -449,6 +466,7 @@ export class SoundtrackRepository {
     comment: string | null,
     scope: SoundtrackScope,
     actorRole: string,
+    expectedRevision: number,
     options: { recalculatePostStatus?: boolean } = {},
   ) {
     const client = await pool.connect()
@@ -456,47 +474,86 @@ export class SoundtrackRepository {
       await client.query('BEGIN')
       const params: any[] = [postId, scope.clientId]
       const conditions = [
-        'ps.post_id = $1',
-        'p.client_id = $2',
-        'p.deleted_at IS NULL',
-        "p.status IN ('sent', 'pending_approval', 'rejected')",
-        'ps.deleted_at IS NULL',
-        "ps.mode <> 'none'",
+        'id = $1',
+        'client_id = $2',
+        'deleted_at IS NULL',
       ]
       if (scope.companyId) {
         params.push(scope.companyId)
-        conditions.push(`p.company_id = $${params.length}`)
+        conditions.push(`company_id = $${params.length}`)
       }
-      const locked = await client.query(
-        `SELECT ps.* FROM post_soundtracks ps
-         JOIN posts p ON p.id = ps.post_id
-         WHERE ${conditions.join(' AND ')} FOR UPDATE OF ps, p`,
+      const lockedPost = await client.query(
+        `SELECT id, status, content_revision FROM posts
+         WHERE ${conditions.join(' AND ')}
+         FOR UPDATE`,
         params,
       )
-      const soundtrack = locked.rows[0]
+      const post = lockedPost.rows[0]
+      if (!post) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      const lockedSoundtrack = await client.query(
+        `SELECT * FROM post_soundtracks
+         WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
+         FOR UPDATE`,
+        [postId],
+      )
+      const soundtrack = lockedSoundtrack.rows[0]
       if (!soundtrack) {
         await client.query('ROLLBACK')
         return null
       }
+      const currentRevision = Number(post.content_revision || 0)
+      if (!Number.isInteger(expectedRevision) || expectedRevision <= 0 || currentRevision !== expectedRevision) {
+        await client.query('ROLLBACK')
+        return { kind: 'revision_conflict' as const, currentRevision }
+      }
       if (decision === 'adjustment_requested' && !cleanText(comment)) {
         throw new AppException('O comentario do ajuste e obrigatorio', 400, 'SOUNDTRACK_ADJUSTMENT_COMMENT_REQUIRED')
+      }
+      const latestDecision = await client.query(
+        `SELECT decision, content_revision
+         FROM post_soundtrack_decisions
+         WHERE soundtrack_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+        [soundtrack.id],
+      )
+      const isIdempotent = latestDecision.rows[0]?.decision === decision
+        && Number(latestDecision.rows[0]?.content_revision) === expectedRevision
+        && soundtrack.approval_status === decision
+      if (isIdempotent) {
+        await client.query('ROLLBACK')
+        const existing = await this.findByPostId(postId)
+        return existing ? { ...existing, idempotent: true } : null
+      }
+      if (Number(latestDecision.rows[0]?.content_revision) === expectedRevision
+        && soundtrack.approval_status !== 'pending') {
+        await client.query('ROLLBACK')
+        return { kind: 'decision_conflict' as const, status: soundtrack.approval_status }
+      }
+      if (!['sent', 'pending_approval'].includes(String(post.status).toLowerCase())) {
+        await client.query('ROLLBACK')
+        return null
       }
 
       await client.query(
         `UPDATE post_soundtracks SET
            approval_status = $2::text,
+           approved_content_revision = CASE WHEN $2::text = 'approved' THEN $4::integer ELSE NULL END,
            approved_at = CASE WHEN $2::text = 'approved' THEN NOW() ELSE NULL END,
            adjustment_requested_at = CASE WHEN $2::text = 'adjustment_requested' THEN NOW() ELSE NULL END,
            adjustment_comment = CASE WHEN $2::text = 'adjustment_requested' THEN $3::text ELSE NULL END,
            updated_at = NOW()
          WHERE id = $1`,
-        [soundtrack.id, decision, cleanText(comment)],
+        [soundtrack.id, decision, cleanText(comment), expectedRevision],
       )
       await client.query(
         `INSERT INTO post_soundtrack_decisions (
-           soundtrack_id, post_id, revision_number, decision, comment, actor_id, actor_role
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [soundtrack.id, postId, soundtrack.revision_number, decision, cleanText(comment), scope.clientId, actorRole],
+           soundtrack_id, post_id, revision_number, content_revision, decision, comment, actor_id, actor_role
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [soundtrack.id, postId, soundtrack.revision_number, expectedRevision, decision, cleanText(comment), scope.clientId, actorRole],
       )
       if (options.recalculatePostStatus !== false) {
         await this.recalculatePostStatusWithClient(client, postId)
@@ -511,33 +568,69 @@ export class SoundtrackRepository {
     }
   }
 
-  async resetDecision(postId: string, scope: SoundtrackScope) {
+  async resetDecision(postId: string, scope: SoundtrackScope, expectedRevision: number, actorRole = 'client') {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
       const params: any[] = [postId, scope.clientId]
       const conditions = [
-        'ps.post_id = $1', 'p.client_id = $2', 'p.deleted_at IS NULL',
-        "p.status IN ('sent', 'pending_approval', 'rejected')", 'ps.deleted_at IS NULL',
-        "ps.approval_status IN ('approved', 'adjustment_requested')",
+        'id = $1', 'client_id = $2', 'deleted_at IS NULL',
       ]
       if (scope.companyId) {
         params.push(scope.companyId)
-        conditions.push(`p.company_id = $${params.length}`)
+        conditions.push(`company_id = $${params.length}`)
+      }
+      const lockedPost = await client.query(
+        `SELECT id, status, content_revision FROM posts
+         WHERE ${conditions.join(' AND ')}
+         FOR UPDATE`,
+        params,
+      )
+      if (!lockedPost.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      const locked = await client.query(
+        `SELECT id, approval_status FROM post_soundtracks
+         WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
+         FOR UPDATE`,
+        [postId],
+      )
+      if (!locked.rows[0]) {
+        await client.query('ROLLBACK')
+        return false
+      }
+      const currentRevision = Number(lockedPost.rows[0].content_revision || 0)
+      if (!Number.isInteger(expectedRevision) || expectedRevision <= 0 || currentRevision !== expectedRevision) {
+        await client.query('ROLLBACK')
+        return { kind: 'revision_conflict' as const, currentRevision }
+      }
+      if (locked.rows[0].approval_status === 'pending') {
+        await client.query('ROLLBACK')
+        return true
+      }
+      if (!['sent', 'pending_approval', 'rejected'].includes(String(lockedPost.rows[0].status).toLowerCase())) {
+        await client.query('ROLLBACK')
+        return false
       }
       const result = await client.query(
-        `UPDATE post_soundtracks ps SET
+        `UPDATE post_soundtracks SET
            approval_status = 'pending', approved_at = NULL, adjustment_requested_at = NULL,
-           adjustment_comment = NULL, updated_at = NOW()
-         FROM posts p
-         WHERE ps.post_id = p.id AND ${conditions.join(' AND ')}
-         RETURNING ps.id`,
-        params,
+           approved_content_revision = NULL, adjustment_comment = NULL, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id`,
+        [locked.rows[0].id],
       )
       if (!result.rows[0]) {
         await client.query('ROLLBACK')
         return false
       }
+      await client.query(
+        `INSERT INTO portal_review_actions (
+           post_id, content_revision, action, actor_id, actor_role
+         ) VALUES ($1, $2, 'soundtrack_reset', $3, $4)`,
+        [postId, expectedRevision, scope.clientId, actorRole],
+      )
       await this.recalculatePostStatusWithClient(client, postId)
       await client.query('COMMIT')
       return true

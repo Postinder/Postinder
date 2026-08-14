@@ -25,6 +25,7 @@ const settings = {
   features: { soundtrack: false },
   client_fields: { whatsapp: 'optional', segment: 'optional', deadline_days: 'optional', document: 'hidden' },
   post_fields: { description: 'optional', scheduled_date: 'optional', funnel_tag: 'hidden' },
+  post_field_client_visibility: { funnel_tag: false },
   portal: { show_post_list: false, show_supplementary_info: false, sequential_approval: true, approval_mode: 'content' },
   updated_at: null,
 }
@@ -68,6 +69,11 @@ describe('platform settings real component flow', () => {
     fireEvent.click(within(clientSection).getAllByRole('button', { name: 'Obrigatorio' })[0])
     const postSection = screen.getByRole('heading', { name: 'Criação de postagens' }).closest('div.rounded-lg')
     fireEvent.click(within(postSection).getAllByRole('button', { name: 'Oculto' })[0])
+    const funnelVisibility = screen.getByLabelText(/Exibir esta informação ao cliente/)
+    expect(funnelVisibility.disabled).toBe(true)
+    fireEvent.click(within(postSection).getAllByRole('button', { name: 'Opcional' })[2])
+    expect(funnelVisibility.disabled).toBe(false)
+    fireEvent.click(funnelVisibility)
     fireEvent.click(screen.getByLabelText(/Mostrar lista de postagens/))
     fireEvent.click(screen.getByRole('button', { name: /Aprovar item por item/ }))
 
@@ -78,7 +84,8 @@ describe('platform settings real component flow', () => {
       retention: { executed_attachment_hours: 48 },
       features: { soundtrack: true },
       client_fields: { ...settings.client_fields, whatsapp: 'required' },
-      post_fields: { ...settings.post_fields, description: 'hidden' },
+      post_fields: { ...settings.post_fields, description: 'hidden', funnel_tag: 'optional' },
+      post_field_client_visibility: { funnel_tag: true },
       portal: { ...settings.portal, show_post_list: true, approval_mode: 'item' },
     })
 

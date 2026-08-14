@@ -2,6 +2,38 @@
 
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
+## Nao publicado - 13/08/2026 - integridade de revisao e historico append-only
+
+### Added
+
+- Revisao/certificacao de conteudo com `content_revision`, `approved_revision` e `executed_revision`, protecao stale por `expectedRevision` e fluxo explicito de reabertura antes de alteracao material.
+- Historico oficial append-only do portal em `portal_review_decisions` e `portal_review_actions`, separado de drafts provisorios e de historico legado nao certificado.
+- Funil novamente configuravel como `hidden|optional|required`, com visibilidade independente para o Cliente e snapshot por revisao em `review_field_visibility`.
+- Migrations `021_content_revision_and_review_history.sql`, `022_funnel_visibility_and_revision_snapshot.sql` e `023_soundtrack_history_append_only.sql`.
+
+### Changed
+
+- Execucao passou a exigir revisao aprovada corrente, decisao oficial do Cliente, Cliente ativo e tenant coerente. `approved` legado sem selo precisa cumprir `reopen -> submit -> aprovacao oficial -> execucao`.
+- Soundtrack passou a participar da revisao material; aprovacoes antigas nao recebem certificacao artificial e mudancas materiais invalidam o selo corrente.
+- O default de `platform_settings.post_field_client_visibility` e conservador: `{"funnel_tag": false}`. Valores historicos de funil sao preservados, e mudanca global posterior nao altera o snapshot revisado.
+
+### Fixed
+
+- Eliminada a possibilidade de editar conteudo aprovado e executa-lo com uma aprovacao referente a outra versao.
+- `post_soundtrack_versions` e `post_soundtrack_decisions` agora bloqueiam UPDATE/DELETE direto no PostgreSQL, preservando INSERT e hard deletes legitimos por cascade de soundtrack, post ou Cliente.
+- Validator integrado de soundtrack atualizado para o contrato atual de revisao, aprovacao oficial, execucao e retention.
+
+### Compatibility
+
+- `sent`, `pending_approval` e `rejected` historicos recebem revisao 1; `draft` e `ready` permanecem em zero. `approved` e `executed` preservam status sem selo artificial.
+- Nenhuma decisao oficial ou certificacao de soundtrack e fabricada. Drafts antigos sem revisao confiavel sao descartados, e funil/historico permanecem preservados com visibilidade conservadora.
+
+### Validation
+
+- Typecheck e build backend aprovados; backend 211/211; PostgreSQL de revisao 26/26; portal approval 12/12; soundtrack focal 8/8; retention focal 7/7; validator integrado e gate append-only aprovados; `git diff --check` aprovado.
+- `021`/`022` validadas sobre dump sanitizado representativo; `023` validada em PostgreSQL 18.4 descartavel. A segunda execucao do migrador foi no-op.
+- Pacote tecnicamente concluido, ainda sem commit e sem deploy. Nenhum ambiente remoto foi acessado nesta validacao.
+
 ## Nao publicado - 11/08/2026 - aprovacao configuravel do Cliente
 
 ### Added
@@ -15,7 +47,7 @@ Este changelog registra os principais marcos funcionais e arquiteturais do proje
 
 - Navegacao por midias passou a ser livre e independente de rewind. O rewind agora reabre a postagem concluida elegivel mais recente, uma vez por ciclo, sem acoplamento a `fileId`.
 - A UI do portal passou a mostrar titulo e legenda completos, **Data de publicacao**, canais com icones compartilhados e **Reprovar**, sem filename tecnico ou **Ver mais**. Tags atuais: Design, Foto, Video, Legenda, Texto do conteudo, Titulo/chamada e Outro.
-- Funil e formato sairam do preenchimento manual, preservando schema, dados historicos e compatibilidade tecnica.
+- Naquela etapa, funil e formato sairam do preenchimento manual, preservando schema e dados. A decisao de funil foi posteriormente substituida pela configuracao e snapshot documentados na entrada de 13/08/2026; formato continua fora do preenchimento manual.
 - Contadores operacionais de aprovacao/reprovacao passaram a representar somente o estado canonico atual da postagem; drafts, cliques, arquivos e revisoes intermediarias nao multiplicam postagens. Analises historicas de Insights permanecem separadas.
 - Soundtrack foi mantido como recurso compativel, opcional e secundario. Ausencia, feature desabilitada ou modo `none` nunca bloqueiam; no modo `item`, uma decisao isolada da trilha nao conclui/reprova o post.
 

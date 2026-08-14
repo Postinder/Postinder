@@ -5,8 +5,10 @@
 - Ha uma unica configuracao por instalacao. Nao existem agencia, organizacao, tenant, selecao no login ou white label adicional. Branding permanece separado.
 - Defaults preservam a experiencia simplificada: retencao 24h; fundo sonoro desligado; documento de Cliente oculto; demais campos seguros opcionais; portal sem lista/informacoes complementares, com fluxo sequencial e aprovacao `content`.
 - Campos configuraveis de Cliente: WhatsApp, segmento, prazo de aceite e CPF/CNPJ. Nome, e-mail, senha e identidade tecnica permanecem fixos; cor do avatar nao foi generalizada.
-- Campos configuraveis de postagem: legenda/descricao e data prevista. Cliente, titulo e canal continuam obrigatorios; preview HTTP(S) de E-mail Marketing e anexos seguem regras condicionais existentes. Funil e formato sairam do preenchimento manual porque nao justificavam o custo operacional, mas schema, dados historicos e contratos de compatibilidade foram preservados.
+- Campos configuraveis de postagem: legenda/descricao, data prevista e funil, cada um com politica `hidden|optional|required`. Cliente, titulo e canal continuam obrigatorios; preview HTTP(S) de E-mail Marketing e anexos seguem regras condicionais existentes. Formato saiu do preenchimento manual, mas schema, valores historicos e contratos de compatibilidade foram preservados.
 - Ocultar preserva valores historicos e impede envio/validacao desnecessarios. Obrigatorio exige o valor efetivo no backend, sem converter dados antigos.
+- A visibilidade do funil para o Cliente e independente da politica interna. `platform_settings.post_field_client_visibility` usa `{"funnel_tag": false}` como default conservador, sem apagar o valor interno.
+- Cada submissao salva em `posts.review_field_visibility` o snapshot do que o Cliente podia ver. Funil invisivel pode mudar internamente sem invalidar a aprovacao; quando visivel naquele snapshot, passa a ser conteudo material protegido. Alterar a configuracao global depois nao reescreve revisoes anteriores.
 - A retencao e definida na transicao para `executed`. Mudancas do prazo valem para novas execucoes e nao antecipam retroativamente a remocao de objetos antigos.
 - `NULL` no override do Cliente herda o portal global; modos simplificado/detalhado permanecem estaveis quando o global muda.
 - A migration 018 nao registrava se `false` era escolha ou default. Sem reescrever Clientes, `true` legado continua detalhado e `false` legado herda ate um override explicito ser salvo.
@@ -51,6 +53,10 @@
 - No modo `content`, navegar entre imagens e videos nao multiplica aprovacoes: o Cliente toma uma unica decisao de aprovar ou reprovar a postagem. No modo `item`, cada midia permanece no carrossel, pode ser revisitada e ter sua escolha alterada ate a conclusao.
 - Navegacao interna e rewind sao conceitos separados. Avancar, voltar ou selecionar livremente qualquer midia da postagem nao consome rewind e nao altera o estado oficial. O rewind opera no nivel da postagem concluida e permite reabrir somente a conclusao elegivel mais recente do Cliente, uma vez por ciclo; envio ou reenvio inicia novo ciclo.
 - Escolhas provisórias no modo `item` nao alimentam estado canonico, metricas, feedback, atividade ou notificacao oficial. Na conclusao, todos os itens aplicaveis precisam estar resolvidos; todos aprovados resultam em postagem `approved`, e qualquer item reprovado resulta em `rejected`. Nao existe estado de produto "parcialmente aprovado".
+- Cada envio/reenvio oficial possui `content_revision`. A aprovacao sela a revisao corrente em `approved_revision`; a execucao exige esse selo e registra `executed_revision`. Alteracao material de post, anexos ou soundtrack protegido exige reabertura e novo ciclo de revisao.
+- Operacoes de draft, decisao, rewind e soundtrack carregam `expectedRevision`. Uma acao stale nao pode ser aplicada sobre conteudo mais novo.
+- `portal_review_decisions` e `portal_review_actions` sao fatos oficiais append-only. Historico anterior nao e promovido artificialmente; drafts antigos sem revisao confiavel sao descartados pela migration `021`.
+- Um `approved` legado sem `approved_revision` continua visivel como aprovado historico, mas nao esta certificado para execucao. O caminho obrigatorio e `reopen -> submit -> aprovacao oficial -> execucao`.
 - E-mail Marketing sem anexos permanece uma excecao deliberada de conteudo revisavel: quando for o unico canal e tiver URL HTTP(S), a decisao ocorre na postagem depois da abertura opcional do preview externo.
 - O portal deve priorizar o conteudo que exige decisao do Cliente. Metricas, calendario, historico, arquivos e feedbacks sao informacoes complementares e iniciam recolhidos, permanecendo disponiveis sob demanda.
 - Swipe deve oferecer experiencia equivalente em imagens e videos sem substituir os botoes explicitos.
@@ -93,6 +99,8 @@
 - No modo `item`, uma decisao isolada de soundtrack nao conclui nem reprova a postagem. Se o snapshot visual resultar em aprovacao, uma trilha aplicavel ainda pendente precisa ser resolvida; se a midia visual ja determina reprovacao, a trilha secundaria nao impede a conclusao. O modo `content` preserva a compatibilidade existente.
 - `embedded` referencia exclusivamente um video ativo da mesma postagem e possui decisao semantica propria, mesmo quando audio e imagem estao no mesmo arquivo. `uploaded` aceita um unico arquivo de audio ativo. `external_reference` registra apenas a indicacao e nao simula player quando nao existe arquivo local.
 - Alteracao material, substituicao ou troca de modalidade invalida a aprovacao vigente, abre nova revisao e preserva versoes e decisoes anteriores. Postagens `executed` nao podem ter o fundo sonoro alterado.
+- A aprovacao da trilha vale somente para a `content_revision` selada. A migration nao certifica retroativamente aprovacoes antigas de soundtrack.
+- Estado corrente e fatos historicos permanecem separados. `post_soundtrack_versions` e `post_soundtrack_decisions` sao append-only: INSERT legitimo e permitido; UPDATE e DELETE direto sao bloqueados no banco. Hard delete autorizado de soundtrack, post ou Cliente continua removendo o historico relacionado por cascade.
 - Na primeira versao nao existem busca, download de fonte externa, integracao com plataformas, multiplas opcoes, mixagem, renderizacao definitiva nem controle avancado de volume.
 
 ## Historico e comunicacao

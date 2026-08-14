@@ -35,14 +35,14 @@ const APPROVAL_MODES = [
   },
 ]
 
-function Toggle({ checked, onChange, label, description }) {
+function Toggle({ checked, onChange, label, description, disabled = false }) {
   return (
-    <label className="flex items-start justify-between gap-4 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+    <label className={`flex items-start justify-between gap-4 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800 ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}>
       <span>
         <span className="block text-sm font-bold">{label}</span>
         <span className="mt-1 block text-xs text-neutral-500">{description}</span>
       </span>
-      <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} className="mt-1 h-5 w-5 accent-mag-600" />
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} className="mt-1 h-5 w-5 accent-mag-600" />
     </label>
   )
 }
@@ -91,6 +91,15 @@ export default function PlatformSettingsPage() {
     [section]: { ...current[section], [key]: value },
   }))
 
+  const setFunnelPolicy = value => setForm(current => ({
+    ...current,
+    post_fields: { ...current.post_fields, funnel_tag: value },
+    post_field_client_visibility: {
+      ...current.post_field_client_visibility,
+      funnel_tag: value === 'hidden' ? false : current.post_field_client_visibility.funnel_tag,
+    },
+  }))
+
   async function save() {
     setSaving(true)
     try {
@@ -99,6 +108,7 @@ export default function PlatformSettingsPage() {
         features: form.features,
         client_fields: form.client_fields,
         post_fields: form.post_fields,
+        post_field_client_visibility: form.post_field_client_visibility,
         portal: form.portal,
       })
       queryClient.setQueryData(PLATFORM_SETTINGS_QUERY_KEY, saved)
@@ -138,6 +148,20 @@ export default function PlatformSettingsPage() {
 
       <SettingsSection title="Criação de postagens" description="Cliente, título e canais permanecem obrigatórios; anexos e preview seguem as regras de canal.">
         {POST_FIELDS.map(([key, label]) => <PolicyRow key={key} label={label} value={form.post_fields[key]} onChange={value => setSection('post_fields', key, value)} />)}
+        <div className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+          <PolicyRow label="Funil" value={form.post_fields.funnel_tag} onChange={setFunnelPolicy} />
+          <div className="mt-3">
+            <Toggle
+              checked={form.post_field_client_visibility.funnel_tag}
+              disabled={form.post_fields.funnel_tag === 'hidden'}
+              onChange={value => setSection('post_field_client_visibility', 'funnel_tag', value)}
+              label="Exibir esta informação ao cliente"
+              description={form.post_fields.funnel_tag === 'hidden'
+                ? 'Defina o uso como opcional ou obrigatório para permitir a exibição.'
+                : 'A visibilidade é capturada no momento do envio e permanece estável durante a revisão.'}
+            />
+          </div>
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Portal do cliente" description="Clientes sem override explícito usam estes valores imediatamente.">

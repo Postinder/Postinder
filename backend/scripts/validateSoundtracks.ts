@@ -6,6 +6,8 @@ import { pool } from '../src/shared/database/pool'
 import { SoundtrackRepository } from '../src/modules/soundtracks/infrastructure/repositories/SoundtrackRepository'
 import { PostRepository } from '../src/modules/posts/infrastructure/repositories/PostRepository'
 import { StorageRetentionCleanupService } from '../src/modules/posts/application/services/StorageRetentionCleanupService'
+import { PortalRepository } from '../src/modules/portal/infrastructure/repositories/PortalRepository'
+import { PlatformSettingsService } from '../src/modules/platformSettings/application/PlatformSettingsService'
 
 async function writeFixture(storagePath: string, data: Buffer) {
   const absolute = path.resolve(process.cwd(), 'uploads', storagePath)
@@ -25,12 +27,31 @@ async function main() {
   const audioPath = `soundtrack-tests/${marker}/track.mp3`
   const soundtrackRepository = new SoundtrackRepository()
   const postRepository = new PostRepository()
+  const settingsService = new PlatformSettingsService()
+  const portalRepository = new PortalRepository(settingsService)
+  const scope = { clientId }
+  let previousSettings: Awaited<ReturnType<PlatformSettingsService['get']>> | null = null
+
+  const readExpectedRevision = async (id: string) => {
+    const result = await pool.query(
+      'SELECT content_revision FROM posts WHERE id = $1',
+      [id],
+    )
+    const revision = Number(result.rows[0]?.content_revision)
+    assert.ok(Number.isInteger(revision) && revision > 0, 'submitted post should expose a positive content revision')
+    return revision
+  }
 
   await writeFixture(videoPath, Buffer.from('video-fixture'))
   await writeFixture(otherVideoPath, Buffer.from('other-video-fixture'))
   await writeFixture(audioPath, Buffer.from('ID3soundtrack-fixture'))
 
   try {
+    previousSettings = await settingsService.get()
+    await settingsService.update({
+      features: { soundtrack: true },
+      portal: { approval_mode: 'content' },
+    })
     await pool.query(
       `INSERT INTO clients (id, email, name, password_hash, is_active)
        VALUES ($1, $2, 'Soundtrack Test', 'test', true)`,
@@ -64,17 +85,27 @@ async function main() {
       /nao pertence a esta postagem/i,
     )
 
-    await pool.query(`UPDATE posts SET status = 'sent' WHERE id = $1`, [postId])
-    await soundtrackRepository.decide(postId, 'approved', null, { clientId }, 'client')
+    assert.equal(await postRepository.submitForApproval(postId), true)
+    const contentRevision = await readExpectedRevision(postId)
+    const approvedSoundtrack = await soundtrackRepository.decide(
+      postId, 'approved', null, scope, 'client', contentRevision,
+      { recalculatePostStatus: false },
+    )
+    assert.equal(approvedSoundtrack?.approvalStatus, 'approved')
+    assert.deepEqual(await portalRepository.approvePost(postId, scope, contentRevision), {
+      kind: 'completed', status: 'approved', snapshot: [],
+    })
     let post = await pool.query(`SELECT status FROM posts WHERE id = $1`, [postId])
     assert.equal(post.rows[0].status, 'approved', 'approved files and soundtrack should approve the post')
 
-    await pool.query(`UPDATE posts SET status = 'pending_approval' WHERE id = $1`, [postId])
+    assert.deepEqual(await portalRepository.reopenPost(postId, scope, contentRevision), { kind: 'reopened' })
     await assert.rejects(
-      soundtrackRepository.decide(postId, 'adjustment_requested', ' ', { clientId }, 'client'),
+      soundtrackRepository.decide(postId, 'adjustment_requested', ' ', scope, 'client', contentRevision),
       /comentario/i,
     )
-    await soundtrackRepository.decide(postId, 'adjustment_requested', 'Trocar a trilha.', { clientId }, 'client')
+    await soundtrackRepository.decide(
+      postId, 'adjustment_requested', 'Trocar a trilha.', scope, 'client', contentRevision,
+    )
     post = await pool.query(`SELECT status FROM posts WHERE id = $1`, [postId])
     assert.equal(post.rows[0].status, 'rejected')
 
@@ -118,10 +149,24 @@ async function main() {
       [duplicated.id, `/uploads/${duplicatedStorage.rows[0].soundtrack_path}`, duplicatedStorage.rows[0].soundtrack_path],
     )
 
-    await pool.query(`UPDATE files SET status = 'approved' WHERE post_id = $1`, [duplicated.id])
-    await pool.query(`UPDATE posts SET status = 'sent' WHERE id = $1`, [duplicated.id])
-    await soundtrackRepository.decide(duplicated.id, 'approved', null, { clientId }, 'client')
-    assert.equal(await postRepository.markExecuted(duplicated.id, 'immediate'), true)
+    assert.equal(await postRepository.submitForApproval(duplicated.id), true)
+    const duplicatedRevision = await readExpectedRevision(duplicated.id)
+    await soundtrackRepository.decide(
+      duplicated.id, 'approved', null, scope, 'client', duplicatedRevision,
+      { recalculatePostStatus: false },
+    )
+    assert.deepEqual(await portalRepository.approvePost(duplicated.id, scope, duplicatedRevision), {
+      kind: 'completed', status: 'approved', snapshot: [],
+    })
+    const retentionHours = (await settingsService.get()).retention.executed_attachment_hours
+    assert.equal(await postRepository.markExecuted(duplicated.id, retentionHours), true)
+    await pool.query(
+      `UPDATE posts
+       SET executed_at = NOW() - INTERVAL '2 hours',
+           files_delete_after = NOW() - INTERVAL '1 hour'
+       WHERE id = $1`,
+      [duplicated.id],
+    )
     const cleanup = await new StorageRetentionCleanupService().execute()
     assert.ok(cleanup.storageObjectsDeleted >= 2, 'retention should process attachment and soundtrack')
     assert.ok(cleanup.fileRecordsMarked >= 3, 'shared attachment and soundtrack references should be audited together')
@@ -154,6 +199,10 @@ async function main() {
       .filter(row => row.bucket === 'local' && row.storage_path)
       .map(row => fs.unlink(path.resolve(process.cwd(), 'uploads', row.storage_path)).catch(() => {})))
     await fs.rm(path.resolve(process.cwd(), 'uploads', 'soundtrack-tests', marker), { recursive: true, force: true }).catch(() => {})
+    if (previousSettings) {
+      const { updated_at: _updatedAt, ...settings } = previousSettings
+      await settingsService.update(settings)
+    }
     await pool.end()
   }
 }

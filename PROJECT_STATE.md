@@ -2,7 +2,7 @@
 
 ## Fluxo configuravel de aprovacao do Cliente - pacote local auditado e nao publicado
 
-- Branch atual: `configuracoes-gerais-plataforma`. Implementacao e auditoria ocorreram sem commits intermediarios; o pacote esta consolidado por este commit local de revisao final e permanece sem deploy.
+- Branch atual: `configuracoes-gerais-plataforma`. Implementacao, auditoria e documentacao ocorreram sem commits intermediarios; o pacote esta tecnicamente concluido no worktree, mas ainda nao foi commitado nem publicado.
 - A configuracao global **Forma de aprovacao do cliente** aceita `content` e `item`. O default e fallback para instalacoes antigas e `content`; overrides simplificado/detalhado do portal nao alteram essa escolha global.
 - Em `content`, a postagem inteira recebe uma unica decisao. Em `item`, cada midia recebe um draft provisorio editavel e todas as escolhas so se tornam oficiais em **Concluir analise**. Todos aprovados resultam em `approved`; qualquer reprovado resulta em `rejected`.
 - Navegacao dentro da postagem e livre, inclusive por indicadores clicaveis, e nunca consome rewind. O rewind reabre no nivel da postagem apenas a conclusao elegivel mais recente do Cliente, uma vez por ciclo; um novo envio/reenvio reseta a permissao do novo ciclo.
@@ -11,11 +11,13 @@
 - Contadores operacionais por estado representam o estado canonico atual da postagem. Quantidade de arquivos, cliques, drafts ou revisoes intermediarias nao multiplica o total de posts aprovados/reprovados; analises historicas de primeira decisao, arquivos e feedbacks continuam separadas em Insights.
 - **Selecionar todos** usa a lista carregada e visivel nos filtros atuais e inclui somente `draft`, `ready` ou `rejected` com ao menos uma midia, ou E-mail Marketing como unico canal com URL nao vazia. Checkbox individual, mestre, estado `indeterminate`, modal e API usam o mesmo conjunto contextual.
 - Soundtrack permanece compativel, opcional e secundario. Ausente, desabilitado ou `none` nunca bloqueia. No modo `item`, sua decisao isolada nao conclui/reprova a postagem; uma trilha aplicavel pendente so bloqueia quando o snapshot visual resultaria em aprovacao.
-- A migration local mais recente e `020_portal_approval_mode_and_review_drafts.sql`. Ela adiciona `platform_settings.portal_approval_mode`, `portal_item_review_drafts`, `portal_post_reviews`, a constraint `content|item` e a FK composta que impede draft ligado a arquivo de outra postagem.
+- Cada submissao oficial possui `content_revision`; aprovacao e execucao selam `approved_revision` e `executed_revision`. Conteudo protegido exige reabertura para alteracao material, e operacoes stale sao recusadas por `expectedRevision`.
+- Funil permanece configuravel como `hidden|optional|required`. `platform_settings.post_field_client_visibility` usa `{"funnel_tag": false}` por default, e `posts.review_field_visibility` preserva o snapshot de cada revisao sem reescrita retroativa.
+- A migration local mais recente e `023_soundtrack_history_append_only.sql`. A `021` introduz revisao/certificacao e historico oficial, a `022` adiciona visibilidade/snapshot do funil e a `023` protege versions/decisions de soundtrack como append-only preservando hard deletes em cascade.
 - A auditoria independente corrigiu: SQL PostgreSQL `42P08`, corrida autosave/conclusao, drafts obsoletos, elegibilidade divergente no lote, estado intermediario causado por soundtrack, reset de rewind em E-mail Marketing sem arquivo, integridade cruzada de drafts e default legado de funil.
-- Validacao final do pacote: admin focalizado 26/26; backend focalizado 5/5; integracao PostgreSQL real 12/12; backend 202/202; admin 95/95; builds backend/admin e `git diff --check` aprovados. Migrations `001` a `020` foram aplicadas em PostgreSQL temporario e a segunda rodada foi no-op; nenhum banco remoto foi acessado e o banco temporario foi removido.
+- Gate tecnico final: typecheck e build backend aprovados; backend 211/211; PostgreSQL de revisao 26/26; portal approval 12/12; soundtrack focal 8/8; retention focal 7/7; validator integrado de soundtrack e gate append-only aprovados; `git diff --check` aprovado. As migrations `021`/`022` foram ensaiadas sobre dump sanitizado representativo, e a `023` em PostgreSQL 18.4 descartavel; a segunda execucao do migrador foi no-op.
 - Ressalva tecnica baixa: estado oficial, revisao e feedback sao atomicos, mas `activity_events` e gravado pelo controller depois do commit transacional da decisao oficial no banco, em modo best-effort. Uma falha pode omitir esse evento secundario sem corromper postagem, revisao, feedback ou metricas. Outbox/transacao compartilhada nao foi implementada.
-- Depois do commit local desta revisao, o proximo passo seguro e planejar um deploy manual explicitamente autorizado, com migration 020 e smoke test no ambiente publicado.
+- O proximo passo seguro e auditar o diff final e criar um commit local autorizado. Deploy continua pendente e exigira migrations `017` a `023`, backup/preflight e smoke tests no ambiente publicado.
 
 ## Configuracoes gerais da plataforma — pacote local nao publicado
 
@@ -25,17 +27,17 @@
 - A limpeza roda no startup e a cada hora, em lotes globais de ate 50, com lock por objeto, rechecagem transacional e retry. Remove apenas o objeto fisico; registros, decisoes, historico e metricas permanecem. `storage_deleted_at` marca sucesso e a interface mostra o arquivo removido sem URL quebrada.
 - O toggle de fundo sonoro preserva tabelas e historico. Desligado, novas postagens usam `none` e a trilha nao bloqueia; ligado, somente uma trilha existente e aplicavel participa como condicao secundaria conforme o modo de aprovacao.
 - O portal usa defaults globais de lista, informacoes complementares, sequencia e forma de aprovacao. `clients.portal_mode_override` e anulavel: `NULL` herda imediatamente a plataforma; `simplified` e `detailed` alteram apresentacao/sequencia sem substituir `approval_mode`. O booleano legado da migration 018 continua aceito e `true` historico permanece detalhado.
-- `019_platform_settings.sql` cria o singleton e o override sem backfill; `020_portal_approval_mode_and_review_drafts.sql` amplia esse singleton e cria a persistencia da revisao. Ambas permanecem nao publicadas. A cadeia completa ate 020 foi posteriormente validada em PostgreSQL local temporario.
+- `019_platform_settings.sql` cria o singleton e o override sem backfill; `020_portal_approval_mode_and_review_drafts.sql` adiciona modo de aprovacao e drafts; `021` a `023` completam revisao/certificacao, snapshot de visibilidade e imutabilidade do historico de soundtrack. Todas permanecem nao publicadas. A cadeia completa ate `023` foi validada em PostgreSQL local descartavel.
 - Branding permanece em area, tabela e endpoints proprios; cores, white label e multiempresa nao foram adicionados.
 
 ## Status da auditoria e da publicacao
 
 - A auditoria tecnica pre-deploy foi concluida.
 - Os bloqueadores tecnicos C-01, C-02, H-02, H-03 e H-04 foram corrigidos e validados localmente.
-- O pacote local auditado possui 202 testes de backend e 95 testes admin aprovados, alem de 12 testes de integracao PostgreSQL do fluxo de aprovacao. Os dois builds e a validacao final do diff tambem foram aprovados.
+- O gate atual aprovou 211 testes de backend, 26 testes PostgreSQL de revisao, 12 de portal approval, 8 focais de soundtrack e 7 de retention, alem do validator integrado, typecheck, build backend e validacao final do diff.
 - As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; no codigo local, `017`, `018`, `019` e `020` permanecem pendentes.
+- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; no codigo local, as migrations `017` a `023` permanecem pendentes.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Rodada local para novos testes com Clientes
@@ -150,18 +152,18 @@ Os modulos ativos incluem autenticacao, usuarios, Clientes, postagens, aprovacoe
 
 `database/migrations` e a unica fonte de verdade do schema. O migrador registra aplicacoes em `schema_migrations`; o startup nao cria nem repara tabelas, colunas, indices ou dados.
 
-Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais locais vigentes vao de `001` e `003` a `020`, incluindo branding, preferencias do portal, configuracoes operacionais globais e revisoes do portal.
+Uma instalacao vazia usa `npm run db:migrate` no diretorio `backend`. A migration `002_development_seed.sql` e historica e nao integra a cadeia estrutural. As migrations estruturais locais vigentes vao de `001` e `003` a `023`, incluindo branding, preferencias do portal, configuracoes operacionais, revisao/certificacao de conteudo, snapshot do funil e historico append-only de soundtrack.
 
 O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da publicacao da hotfix em 31/07/2026 e:
 
 - `001`, a `002` historica e `003` a `016` estao registradas;
 - `016_client_documents.sql` foi aplicada com sucesso;
 - o banco publicado esta em `016`;
-- aquele deploy terminou sem migration pendente; `017`, `018`, `019` e `020`, criadas depois, continuam ausentes do banco publicado.
+- aquele deploy terminou sem migration pendente; `017` a `023`, criadas depois, continuam ausentes do banco publicado.
 
 O backup logico foi criado, preservado e validado. A restauracao foi comprovada em stack Supabase local compativel, em transacao unica, usando copia de `roles.sql` com somente a instrucao de `statement_timeout` de `supabase_admin` comentada; schema e dados permaneceram identicos. O backup e restauravel com esse procedimento documentado de compatibilidade, mas nao inclui objetos fisicos do Supabase Storage.
 
-Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. `017`, `018`, `019` e `020` ainda nao integram o banco publicado. Em validacao local posterior, a cadeia `001` a `020` foi aplicada em PostgreSQL temporario e a segunda execucao foi no-op.
+Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. `017` a `023` ainda nao integram o banco publicado. Em validacao local posterior, a cadeia `001`, `003` a `023` foi aplicada em PostgreSQL descartavel e a segunda execucao foi no-op.
 
 ## Seguranca e demonstracao
 
@@ -196,9 +198,9 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 
 ## Estado operacional e limitacoes
 
-- O pacote local mais recente foi validado com backend 202/202, admin 95/95, integracao PostgreSQL 12/12, focalizados admin 26/26 e backend 5/5, alem dos builds dos dois projetos e `git diff --check`. As validacoes publicadas anteriores e seus health checks permanecem historicamente registradas.
+- O pacote local mais recente passou por typecheck e build backend, backend 211/211, PostgreSQL de revisao 26/26, portal approval 12/12, soundtrack focal 8/8, retention focal 7/7, validator integrado de soundtrack, gate append-only e `git diff --check`. As validacoes publicadas anteriores e seus health checks permanecem historicamente registradas.
 - O script `npm run lint` do frontend existe, mas ESLint e sua configuracao nao estao disponiveis. O comando nao foi aprovado. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; por isso, a pendencia e tecnica e nao bloqueante para a publicacao atual. A verificacao administrativa da Vercel continua necessaria para confirmar que nao existe override remoto.
-- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado continua em `016`; as migrations locais `017` a `020` devem integrar, em ordem, um futuro deploy autorizado.
+- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado continua em `016`; as migrations locais `017` a `023` devem integrar, em ordem, um futuro deploy autorizado.
 - A verificacao manual da Vercel continua pendente para nomes de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews. Eventual segredo historico exigira rotacao ou invalidacao em etapa separada.
 - A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend da hotfix foi publicado em 31/07/2026 e os tres endpoints de health responderam com sucesso.
 - O ambiente publicado continua em modo demo, disponivel em `https://portal-20cinco.vercel.app` e preparado para testes pela 20Cinco.

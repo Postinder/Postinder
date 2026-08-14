@@ -49,9 +49,25 @@ export class PortalController {
   }
 
   private respondToReviewResult(result: any, res: Response) {
-    if (result?.kind === 'completed' || result?.kind === 'saved') return false
+    if (result?.kind === 'completed' || result?.kind === 'saved' || result?.kind === 'reopened') return false
+    if (result?.kind === 'revision_conflict') {
+      res.status(409).json({
+        error: 'Esta postagem foi atualizada. Recarregue a pagina antes de continuar.',
+        code: 'REVISION_CONFLICT',
+        currentRevision: result.currentRevision,
+      })
+      return true
+    }
     if (result?.kind === 'already_completed') {
       res.json({ success: true, idempotent: true, status: result.status })
+      return true
+    }
+    if (result?.kind === 'decision_conflict') {
+      res.status(409).json({
+        error: 'Esta revisao ja recebeu uma decisao diferente.',
+        code: 'DECISION_CONFLICT',
+        status: result.status,
+      })
       return true
     }
     if (result?.kind === 'wrong_mode') {
@@ -72,6 +88,10 @@ export class PortalController {
     }
     res.status(404).json({ error: 'Post or item not found' })
     return true
+  }
+
+  private expectedRevision(req: Request) {
+    return Number(req.body?.expectedRevision)
   }
 
   async createClientLink(req: AuthRequest, res: Response) {
@@ -201,7 +221,7 @@ export class PortalController {
     const approved = await this.portalRepository.approvePost(req.params.postId, {
       clientId: session.clientId,
       companyId: session.companyId,
-    })
+    }, this.expectedRevision(req), 'client_portal')
     if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -228,7 +248,7 @@ export class PortalController {
     const approved = await this.portalRepository.approvePost(req.params.postId, {
       clientId: session.clientId,
       companyId: session.companyId,
-    })
+    }, this.expectedRevision(req), 'client')
     if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -260,7 +280,7 @@ export class PortalController {
     const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, tags, {
       clientId: session.clientId,
       companyId: session.companyId,
-    })
+    }, this.expectedRevision(req), 'client_portal')
     if (this.respondToReviewResult(rejected, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -299,7 +319,7 @@ export class PortalController {
     const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, tags, {
       clientId: session.clientId,
       companyId: session.companyId,
-    })
+    }, this.expectedRevision(req), 'client')
     if (this.respondToReviewResult(rejected, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -346,6 +366,7 @@ export class PortalController {
         tags: Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : [],
       },
       session,
+      this.expectedRevision(req),
     )
     if (this.respondToReviewResult(result, res)) return
     res.json({ success: true, draft: result.draft })
@@ -369,7 +390,12 @@ export class PortalController {
     session: { clientId: string; companyId?: string },
     actorRole: string,
   ) {
-    const result = await this.portalRepository.completeItemReview(req.params.postId, session)
+    const result = await this.portalRepository.completeItemReview(
+      req.params.postId,
+      session,
+      this.expectedRevision(req),
+      actorRole,
+    )
     if (this.respondToReviewResult(result, res)) return
     await this.activityRepository.createForPost(req.params.postId, {
       companyId: session.companyId,
@@ -402,22 +428,29 @@ export class PortalController {
     req: Request,
     res: Response,
     session: { clientId: string; companyId?: string },
+    actorRole: string,
   ) {
-    const reopened = await this.portalRepository.reopenPost(req.params.postId, session)
+    const reopened = await this.portalRepository.reopenPost(
+      req.params.postId,
+      session,
+      this.expectedRevision(req),
+      actorRole,
+    )
     if (!reopened) return res.status(409).json({ error: 'Este conteúdo não pode mais ser reaberto.' })
+    if (this.respondToReviewResult(reopened, res)) return
     res.json({ success: true })
   }
 
   async reopenPost(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
-    return this.reopenReview(req, res, session)
+    return this.reopenReview(req, res, session, 'client_portal')
   }
 
   async reopenAuthenticatedPost(req: AuthRequest, res: Response) {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
-    return this.reopenReview(req, res, session)
+    return this.reopenReview(req, res, session, 'client')
   }
 
   async resetFile(req: Request, res: Response) {
@@ -449,30 +482,37 @@ export class PortalController {
     if (decision === 'adjustment_requested' && !comment) {
       return res.status(400).json({ error: 'comment is required' })
     }
-    const soundtrack = await this.soundtrackRepository.decide(
+    const soundtrack: any = await this.soundtrackRepository.decide(
       req.params.postId,
       decision,
       comment,
       { clientId: session.clientId, companyId: session.companyId },
       actorRole,
-      { recalculatePostStatus: settings.portal.approval_mode !== 'item' },
+      this.expectedRevision(req),
+      { recalculatePostStatus: false },
     )
+    if (soundtrack?.kind === 'revision_conflict') {
+      this.respondToReviewResult(soundtrack, res)
+      return
+    }
     if (!soundtrack) return res.status(404).json({ error: 'Fundo sonoro nao encontrado ou indisponivel para decisao' })
 
-    await this.activityRepository.createForPost(req.params.postId, {
-      companyId: session.companyId,
-      actorId: session.clientId,
-      actorRole,
-      type: decision === 'approved' ? 'soundtrack_approved' : 'soundtrack_adjustment_requested',
-      title: decision === 'approved' ? 'Fundo sonoro aprovado' : 'Ajuste solicitado no fundo sonoro',
-      metadata: this.sanitizeActivityValue(req, {
-        soundtrackId: soundtrack.id,
-        mode: soundtrack.mode,
-        revisionNumber: soundtrack.revisionNumber,
-        comment,
-      }) as Record<string, unknown>,
-    }).catch(() => {})
-    res.json({ success: true, data: soundtrack })
+    if (!soundtrack.idempotent) {
+      await this.activityRepository.createForPost(req.params.postId, {
+        companyId: session.companyId,
+        actorId: session.clientId,
+        actorRole,
+        type: decision === 'approved' ? 'soundtrack_approved' : 'soundtrack_adjustment_requested',
+        title: decision === 'approved' ? 'Fundo sonoro aprovado' : 'Ajuste solicitado no fundo sonoro',
+        metadata: this.sanitizeActivityValue(req, {
+          soundtrackId: soundtrack.id,
+          mode: soundtrack.mode,
+          revisionNumber: soundtrack.revisionNumber,
+          comment,
+        }) as Record<string, unknown>,
+      }).catch(() => {})
+    }
+    res.json({ success: true, idempotent: Boolean(soundtrack.idempotent), data: soundtrack })
   }
 
   async approveSoundtrack(req: Request, res: Response) {
@@ -490,7 +530,10 @@ export class PortalController {
   async resetSoundtrack(req: Request, res: Response) {
     const session = await this.getSession(req, res)
     if (!session) return
-    const reset = await this.soundtrackRepository.resetDecision(req.params.postId, session)
+    const reset = await this.soundtrackRepository.resetDecision(
+      req.params.postId, session, this.expectedRevision(req), 'client_portal',
+    )
+    if (typeof reset === 'object' && this.respondToReviewResult(reset, res)) return
     if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })
     res.json({ success: true })
   }
@@ -510,7 +553,10 @@ export class PortalController {
   async resetAuthenticatedSoundtrack(req: AuthRequest, res: Response) {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
-    const reset = await this.soundtrackRepository.resetDecision(req.params.postId, session)
+    const reset = await this.soundtrackRepository.resetDecision(
+      req.params.postId, session, this.expectedRevision(req), 'client',
+    )
+    if (typeof reset === 'object' && this.respondToReviewResult(reset, res)) return
     if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })
     res.json({ success: true })
   }

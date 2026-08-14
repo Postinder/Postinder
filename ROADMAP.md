@@ -13,6 +13,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 | Auditoria operacional da Vercel | pendente |
 | Ajustes pontuais de layout definidos na rodada atual | concluidos e validados localmente |
 | Aprovacao configuravel `content|item`, UX do portal e rewind por postagem | concluidos, auditados e nao publicados |
+| Revisao/certificacao de conteudo, funil com snapshot e historico append-only de soundtrack | concluidos, validados e nao publicados |
 | Selecao contextual em lote | concluida, auditada e nao publicada |
 | Preparacao final de deploy | pendente |
 | Deploy | pendente e nao autorizado |
@@ -34,7 +35,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 - Configurar a demo publicada com `DEPLOYMENT_MODE=demo`, `ENABLE_DEMO_RESET=true` e `VITE_DEPLOYMENT_MODE=demo`.
 - Decidir se a IA sera habilitada; se for, configurar a credencial somente no backend.
 - Criar novo backup logico e executar novo preflight imediatamente antes do deploy.
-- [x] Revisar o diff final e criar o commit local autorizado. Antes do deploy, reconfirmar o preflight das migrations `017` a `020` e manter `npm run db:migrate` como release step bloqueante anterior ao Start Command.
+- [ ] Auditar o diff final e criar o commit local autorizado. Antes do deploy, reconfirmar o preflight das migrations `017` a `023` e manter `npm run db:migrate` como release step bloqueante anterior ao Start Command.
 - Publicar primeiro o backend, confirmar migrations e startup, depois publicar o frontend.
 - Confirmar commits e bundles ativos e executar smoke tests, conferencia de logs sanitizados e teste controlado do reset demo.
 - Validar no ambiente publicado metadados de Storage, copia fisica e limpeza manual de Retencao somente com dados descartaveis.
@@ -70,7 +71,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 ## P1 - Historico, metricas e notificacoes
 
 - Validar metricas em reenvios, Retencao, fusos horarios e multiplas rodadas de correcao.
-- Avaliar estrutura persistida para decisao inicial, versao e notificacoes.
+- Expandir, quando houver requisito de produto, as estruturas atuais de revisao e decisao oficial para novas metricas/notificacoes sem substituir o historico append-only existente.
 - Avaliar outbox ou transacao compartilhada para `activity_events`, hoje best-effort depois do commit transacional da decisao oficial no banco. A ressalva e baixa e nao afeta estado, revisao, feedback ou metricas.
 - Definir tratamento de Clientes desativados e exclusao definitiva em relatorios e exportacoes.
 - Definir o tratamento de postagens excluidas por `deleted_at`: separar metricas operacionais do estado canonico vigente das metricas e revisoes historicas, inclusive para postagem `approved` excluida, preservando feedbacks em relatorios, insights, exportacoes e indicadores de aprovacao.

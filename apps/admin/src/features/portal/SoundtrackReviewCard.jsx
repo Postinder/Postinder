@@ -4,6 +4,7 @@ import { resolveMediaUrl } from '../../utils/mediaUrl'
 import PortalDialog from './PortalDialog'
 import PortalStatusBadge from './PortalStatusBadge'
 import { applySoundtrackStartTime, playExclusiveSoundtrack, stopSoundtrack, toggleSoundtrackMute } from '../../utils/soundtrackPlayback'
+import { getPostContentRevision } from './portalRevision'
 
 const MODE_LABELS = {
   embedded: 'Ja incluida no video',
@@ -11,13 +12,14 @@ const MODE_LABELS = {
   external_reference: 'Musica ou referencia indicada',
 }
 
-export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAdjust, busy }) {
+export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAdjust, busy, revisionConflictSequence = 0 }) {
   const audioRef = useRef(null)
   const commentRef = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [comment, setComment] = useState('')
+  const [adjustRevision, setAdjustRevision] = useState(null)
   const audioFile = soundtrack?.audioFile
   const audioUrl = resolveMediaUrl(audioFile?.storage_url || audioFile?.url)
   const status = soundtrack?.approvalStatus || soundtrack?.approval_status || 'pending'
@@ -44,6 +46,12 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
     return () => window.removeEventListener('postinder:soundtrack-play', stopOtherSoundtrack)
   }, [soundtrack?.id])
 
+  useEffect(() => {
+    setAdjustOpen(false)
+    setComment('')
+    setAdjustRevision(null)
+  }, [revisionConflictSequence, post?.id, post?.contentRevision, post?.content_revision])
+
   async function togglePlayback() {
     const audio = audioRef.current
     if (!audio) return
@@ -68,9 +76,11 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
 
   function submitAdjustment() {
     if (!comment.trim()) return
-    onAdjust(comment.trim()).then(() => {
+    onAdjust(comment.trim(), adjustRevision).then(saved => {
+      if (saved === false) return
       setComment('')
       setAdjustOpen(false)
+      setAdjustRevision(null)
     })
   }
 
@@ -142,7 +152,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
 
       {status === 'pending' ? (
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={() => setAdjustOpen(true)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-bold text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 dark:border-red-900"><XCircle size={16} /> Reprovar</button>
+          <button type="button" onClick={() => { setAdjustRevision(getPostContentRevision(post)); setAdjustOpen(true) }} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-bold text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 dark:border-red-900"><XCircle size={16} /> Reprovar</button>
           <button type="button" onClick={onApprove} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"><CheckCircle size={16} /> Aprovar fundo sonoro</button>
         </div>
       ) : null}
@@ -153,12 +163,12 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
       ) : null}
 
       {adjustOpen ? (
-        <PortalDialog labelledBy="soundtrack-adjust-title" describedBy="soundtrack-adjust-description" onClose={() => setAdjustOpen(false)} initialFocusRef={commentRef}>
+        <PortalDialog labelledBy="soundtrack-adjust-title" describedBy="soundtrack-adjust-description" onClose={() => { setAdjustOpen(false); setComment(''); setAdjustRevision(null) }} initialFocusRef={commentRef}>
           <h3 id="soundtrack-adjust-title" className="text-lg font-black">Reprovar fundo sonoro</h3>
           <p id="soundtrack-adjust-description" className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">Explique obrigatoriamente o que precisa ser alterado.</p>
           <textarea ref={commentRef} value={comment} onChange={event => setComment(event.target.value)} className="mt-4 h-28 w-full resize-none rounded-lg border border-neutral-200 bg-white p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-neutral-700 dark:bg-neutral-950" aria-label="Comentario do ajuste do fundo sonoro" />
           <div className="mt-4 flex gap-3">
-            <button type="button" onClick={() => setAdjustOpen(false)} className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold dark:border-neutral-700">Cancelar</button>
+            <button type="button" onClick={() => { setAdjustOpen(false); setComment(''); setAdjustRevision(null) }} className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-bold dark:border-neutral-700">Cancelar</button>
             <button type="button" onClick={submitAdjustment} disabled={busy || !comment.trim()} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Reprovar</button>
           </div>
         </PortalDialog>
