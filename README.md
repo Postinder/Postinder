@@ -3,6 +3,7 @@
 **A forma mais rápida de aprovar conteúdo entre agência e cliente.**
 
 Postinder é uma plataforma de aprovação de conteúdo para agências de marketing e social media. A agência monta postagens com múltiplos arquivos — imagens, vídeos, áudios, PDFs, planilhas, apresentações — e envia para o cliente aprovar. O cliente recebe um aviso no WhatsApp, abre o portal, e aprova ou reprova o conteúdo com navegação livre entre as mídias. Tudo fica registrado: quem aprovou, quando, por quê, e com que taxa de retrabalho.
+link para a documentação do projeto no google drive: https://docs.google.com/document/d/1iqKbtGClYvOEEF0KqxlCMJMjf6QFJNZb3WiAYi5NmnY/edit?usp=drive_link
 
 ---
 
