@@ -2,11 +2,19 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   getConsolidatedReviewStatus,
+  getItemPositiveReaction,
   getItemReviewDecision,
   hasPendingApplicableSoundtrack,
   isItemReviewComplete,
   selectReviewMedia,
 } from './portalReview.js'
+import { countLovedInMonth } from './portalMetrics.js'
+import {
+  getPostContentRevision,
+  isPortalRevisionConflict,
+  PORTAL_REVISION_CONFLICT_MESSAGE,
+  reloadAfterPortalRevisionConflict,
+} from './portalRevision.js'
 
 test('media selection is free, repeatable and independent from review decisions', () => {
   const files = [1, 2, 3, 4, 5].map(id => ({ id: String(id), review_decision: null }))
@@ -31,6 +39,31 @@ test('item decisions stay editable and only the final snapshot determines consol
   assert.equal(getConsolidatedReviewStatus(files), 'approved')
 })
 
+test('Adorei remains an approved item intent and mixed positive choices consolidate as approved', () => {
+  const mixed = [
+    { id: '1', review_decision: 'approved', review_positive_reaction: 'loved' },
+    { id: '2', review_decision: 'approved', review_positive_reaction: null },
+    { id: '3', review_decision: 'approved', review_positive_reaction: 'loved' },
+  ]
+  assert.deepEqual(mixed.map(getItemPositiveReaction), ['loved', null, 'loved'])
+  assert.equal(isItemReviewComplete(mixed), true)
+  assert.equal(getConsolidatedReviewStatus(mixed), 'approved')
+
+  mixed[1] = { id: '2', review_decision: 'rejected', review_positive_reaction: null }
+  assert.equal(getConsolidatedReviewStatus(mixed), 'rejected')
+})
+
+test('legacy approvals are neutral and enthusiasm metrics use only explicit current signals', () => {
+  const posts = [
+    { approvedAt: '2026-08-01T12:00:00Z', positiveReaction: 'loved' },
+    { approvedAt: '2026-08-02T12:00:00Z', positiveReaction: null },
+    { approvedAt: '2026-08-03T12:00:00Z', itemReviewSnapshot: [{ positiveReaction: 'loved' }] },
+    { approvedAt: '2026-07-31T12:00:00Z', positiveReaction: 'loved' },
+  ]
+  assert.equal(countLovedInMonth(posts, new Date('2026-08-14T12:00:00Z')), 2)
+  assert.equal(getItemPositiveReaction({ review_decision: 'approved' }), null)
+})
+
 test('pending or invalid item state can never be concluded', () => {
   assert.equal(getConsolidatedReviewStatus([]), null)
   assert.equal(getConsolidatedReviewStatus([{ id: '1', review_decision: 'pending' }]), null)
@@ -46,4 +79,57 @@ test('only an existing applicable soundtrack with a pending decision participate
   assert.equal(hasPendingApplicableSoundtrack(true, { mode: 'uploaded', approvalStatus: 'pending' }), true)
   assert.equal(hasPendingApplicableSoundtrack(true, { mode: 'reference', approval_status: 'approved' }), false)
   assert.equal(hasPendingApplicableSoundtrack(true, { mode: 'embedded', approvalStatus: 'adjustment_requested' }), false)
+})
+
+test('content revision accepts both API naming conventions and rejects unversioned legacy zero', () => {
+  assert.equal(getPostContentRevision({ contentRevision: 4, content_revision: 2 }), 4)
+  assert.equal(getPostContentRevision({ content_revision: 3 }), 3)
+  assert.equal(getPostContentRevision({ contentRevision: 0 }), null)
+  assert.equal(getPostContentRevision({ contentRevision: '5' }), 5)
+})
+
+test('missing or invalid content revision cannot be sent as optimistic concurrency state', () => {
+  for (const post of [null, {}, { contentRevision: '' }, { contentRevision: -1 }, { contentRevision: 1.5 }, { contentRevision: 'old' }]) {
+    assert.equal(getPostContentRevision(post), null)
+  }
+})
+
+test('revision conflicts accept backend code casing only with HTTP 409', () => {
+  assert.equal(isPortalRevisionConflict({ response: { status: 409, data: { code: 'REVISION_CONFLICT' } } }), true)
+  assert.equal(isPortalRevisionConflict({ response: { status: 409, data: { code: 'revision_conflict' } } }), true)
+  assert.equal(isPortalRevisionConflict({ response: { status: 400, data: { code: 'REVISION_CONFLICT' } } }), false)
+  assert.equal(isPortalRevisionConflict({ response: { status: 409, data: { code: 'wrong_mode' } } }), false)
+  assert.match(PORTAL_REVISION_CONFLICT_MESSAGE, /atualizado/i)
+})
+
+test('a revision conflict reloads the portal exactly once and reports it as handled', async () => {
+  let reloads = 0
+  const result = await reloadAfterPortalRevisionConflict(
+    { response: { status: 409, data: { code: 'REVISION_CONFLICT', currentRevision: 8 } } },
+    async () => { reloads += 1 },
+  )
+
+  assert.deepEqual(result, { handled: true, reloaded: true })
+  assert.equal(reloads, 1)
+})
+
+test('non-conflicts do not reload and reload failure remains distinguishable', async () => {
+  let reloads = 0
+  assert.deepEqual(
+    await reloadAfterPortalRevisionConflict(
+      { response: { status: 422, data: { code: 'VALIDATION_ERROR' } } },
+      async () => { reloads += 1 },
+    ),
+    { handled: false, reloaded: false },
+  )
+  assert.equal(reloads, 0)
+
+  const reloadError = new Error('offline')
+  const result = await reloadAfterPortalRevisionConflict(
+    { response: { status: 409, data: { code: 'revision_conflict' } } },
+    async () => { throw reloadError },
+  )
+  assert.equal(result.handled, true)
+  assert.equal(result.reloaded, false)
+  assert.equal(result.reloadError, reloadError)
 })

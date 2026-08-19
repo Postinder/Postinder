@@ -5,7 +5,7 @@ import {
   Building2, SlidersHorizontal, X, ArrowUpDown, CalendarDays, Paperclip, UploadCloud,
   Activity, CheckCircle, MessageSquare, UserPlus, ChevronDown
 } from 'lucide-react'
-import { fetchPosts, softDeletePost, computePostStatus, updatePost, resubmitPost, replacePostFile } from '../../services/posts.service'
+import { fetchPosts, softDeletePost, computePostStatus, updatePost, resubmitPost, replacePostFile, reopenPostForEditing } from '../../services/posts.service'
 import { fetchClients, notifyClient } from '../../services/clients.service'
 import { fetchActivities } from '../../services/activities.service'
 import { useAuthStore } from '../../store/authStore'
@@ -21,6 +21,15 @@ import { validateUploadFile } from '../../utils/uploadValidation'
 import DeletePostModal, { canDeletePost } from '../../components/posts/DeletePostModal'
 import MediaPreview from '../../components/media/MediaPreview'
 import { DASHBOARD_PANELS_INITIAL_STATE, toggleDashboardPanel } from '../../utils/collapsiblePanels'
+import {
+  canEditPostDirectly,
+  getPostEditingAction,
+  getPostMutationErrorMessage,
+  getPostReopenConfirmation,
+  isPostReopenRequiredError,
+} from '../posts/postBulkSelection'
+import { usePlatformSettings } from '../../hooks/usePlatformSettings'
+import { isFieldRequired, isFieldVisible, putVisibleField, requiredFieldIsMissing } from '../../utils/fieldPolicies'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTIONS = [
@@ -252,10 +261,11 @@ function getActivityToneClass(tone) {
   return 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300'
 }
 
-function EditPostModal({ post, open, onClose, onSave }) {
+function EditPostModal({ post, open, onClose, onSave, settings }) {
   const [title, setTitle] = useState('')
   const [caption, setCaption] = useState('')
   const [just, setJust] = useState('')
+  const [funnelTag, setFunnelTag] = useState('')
   const [replacementFiles, setReplacementFiles] = useState({})
   const [saving, setSaving] = useState(false)
 
@@ -264,16 +274,30 @@ function EditPostModal({ post, open, onClose, onSave }) {
       setTitle(post.title || '')
       setCaption(post.description || '')
       setJust('')
+      setFunnelTag(post.funnelTag || post.funnel_tag || '')
       setReplacementFiles({})
     }
   }, [post])
 
-  const isRej = post?.status === 'rejected'
+  const editingAction = getPostEditingAction(post)
+  const isRej = editingAction === 'resubmit'
   const rejectedFiles = (post?.files || []).filter(file => file.status === 'rejected')
 
   async function handleSave() {
+    if (!canEditPostDirectly(post)) {
+      toast.error('Esta postagem precisa ser reaberta antes da edição.')
+      onClose()
+      await onSave({ resubmitted: false })
+      return
+    }
+    if (requiredFieldIsMissing(settings.post_fields.funnel_tag, funnelTag)) {
+      toast.error('Preencha o Funil obrigatório da postagem.')
+      return
+    }
     setSaving(true)
     try {
+      const funnelPayload = {}
+      putVisibleField(funnelPayload, 'funnelTag', funnelTag || null, settings.post_fields.funnel_tag)
       if (isRej) {
         if (!rejectedFiles.length) {
           toast.error('Nenhum arquivo reprovado para corrigir.')
@@ -291,22 +315,26 @@ function EditPostModal({ post, open, onClose, onSave }) {
           return
         }
         await Promise.all(rejectedFiles.map(file => replacePostFile(post.id, file.id, replacementFiles[file.id])))
-        await resubmitPost(post.id, { title, caption, justificativa: just })
+        await resubmitPost(post.id, { title, caption, justificativa: just, ...funnelPayload })
         toast.success('Reenviado para aprovação!')
       } else {
-        await updatePost(post.id, { title, description: caption })
+        await updatePost(post.id, { title, description: caption, ...funnelPayload })
         toast.success('Postagem atualizada!')
       }
-      onSave()
+      await onSave({ resubmitted: isRej })
       onClose()
     } catch (e) {
-      toast.error(e.message)
+      toast.error(getPostMutationErrorMessage(e))
+      if (isPostReopenRequiredError(e)) {
+        onClose()
+        await onSave({ resubmitted: false })
+      }
     } finally {
       setSaving(false)
     }
   }
 
-  if (!post) return null
+  if (!post || !canEditPostDirectly(post)) return null
   return (
     <Modal
       open={open}
@@ -369,6 +397,10 @@ function EditPostModal({ post, open, onClose, onSave }) {
           </>
         )}
 
+        {isFieldVisible(settings.post_fields.funnel_tag) ? (
+          <Input label={`Funil${isFieldRequired(settings.post_fields.funnel_tag) ? ' *' : ''}`} value={funnelTag} onChange={event => setFunnelTag(event.target.value)} placeholder="Ex: Topo, Meio ou Fundo" />
+        ) : null}
+
         {isRej && (
           <Textarea
             label="O que foi corrigido? *"
@@ -392,6 +424,7 @@ export default function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuthStore()
+  const { settings } = usePlatformSettings()
   const [posts, setPosts] = useState([])
   const [clients, setClients] = useState([])
   const [activities, setActivities] = useState([])
@@ -405,6 +438,7 @@ export default function DashboardPage() {
   const [dashboardPanels, dispatchDashboardPanel] = useReducer(toggleDashboardPanel, DASHBOARD_PANELS_INITIAL_STATE)
   const { activity: isActivityExpanded, posts: isPostsExpanded } = dashboardPanels
   const [editPost, setEditPost] = useState(null)
+  const [reopeningPostId, setReopeningPostId] = useState('')
   const [postToDelete, setPostToDelete] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
@@ -492,6 +526,23 @@ export default function DashboardPage() {
     approved: scopedPosts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'approved').length,
     rejected: scopedPosts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'rejected').length,
     draft: scopedPosts.filter(p => isCurrentClient(p) && computePostStatus(p) === 'draft').length,
+  }
+
+  async function handleReopenForEditing(post) {
+    if (getPostEditingAction(post) !== 'reopen') return
+    if (!confirm(getPostReopenConfirmation(post))) return
+
+    setReopeningPostId(post.id)
+    try {
+      await reopenPostForEditing(post.id)
+      toast.success('Postagem reaberta para edição. A revisão anterior foi invalidada.')
+      setEditPost(null)
+      load()
+    } catch (error) {
+      toast.error(getPostMutationErrorMessage(error, 'Não foi possível reabrir a postagem para edição.'))
+    } finally {
+      setReopeningPostId('')
+    }
   }
   const metricCards = [
     { label: 'Total de Posts', value: counts.all, color: 'text-neutral-900 dark:text-white', key: 'all', description: 'Postagens no contexto atual' },
@@ -844,7 +895,8 @@ export default function DashboardPage() {
                 const st = computePostStatus(post)
                 const client = getPostClient(post)
                 const files = post.files || []
-                const isRej = st === 'rejected'
+                const editingAction = getPostEditingAction(post)
+                const isRej = editingAction === 'resubmit'
                 const canDelete = canDeletePost(st, user?.role)
                 const firstFile = files[0]
                 const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
@@ -880,8 +932,10 @@ export default function DashboardPage() {
                         <>
                           {isRej ? (
                             <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-3 py-2 text-xs font-bold text-teal-600 dark:bg-teal-900/30 dark:text-teal-400"><RotateCcw size={13} /> Corrigir</button>
-                          ) : st !== 'executed' ? (
+                          ) : editingAction === 'edit' ? (
                             <button onClick={() => setEditPost(post)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-bold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"><Edit3 size={13} /> Editar</button>
+                          ) : editingAction === 'reopen' ? (
+                            <button disabled={reopeningPostId === post.id} onClick={() => handleReopenForEditing(post)} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 disabled:cursor-wait disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"><RotateCcw size={13} className={reopeningPostId === post.id ? 'animate-spin' : ''} /> Reabrir para edição</button>
                           ) : null}
                           {canDelete ? <button onClick={() => setPostToDelete(post)} className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-950/30"><Trash2 size={13} /> Excluir</button> : null}
                         </>
@@ -916,7 +970,8 @@ export default function DashboardPage() {
                   const st = computePostStatus(post)
                   const client = getPostClient(post)
                   const files = post.files || []
-                  const isRej = st === 'rejected'
+                  const editingAction = getPostEditingAction(post)
+                  const isRej = editingAction === 'resubmit'
                   const canDelete = canDeletePost(st, user?.role)
                   const firstFile = files[0]
                   const updatedAt = post.updatedAt || post.updated_at || post.createdAt || post.created_at
@@ -979,10 +1034,15 @@ export default function DashboardPage() {
                                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 text-xs font-semibold">
                                   <RotateCcw size={11} /> Corrigir
                                 </button>
-                              ) : st !== 'executed' ? (
+                              ) : editingAction === 'edit' ? (
                                 <button onClick={() => setEditPost(post)}
                                   className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-teal-500" title="Editar">
                                   <Edit3 size={14} />
+                                </button>
+                              ) : editingAction === 'reopen' ? (
+                                <button disabled={reopeningPostId === post.id} onClick={() => handleReopenForEditing(post)}
+                                  className="flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-50 dark:bg-amber-950/30 dark:text-amber-300" title="Reabrir para edição">
+                                  <RotateCcw size={11} className={reopeningPostId === post.id ? 'animate-spin' : ''} /> Reabrir
                                 </button>
                               ) : null}
                               {canDelete ? <button onClick={() => setPostToDelete(post)}
@@ -1004,8 +1064,8 @@ export default function DashboardPage() {
         </div>
       </Card>
 
-      <EditPostModal post={editPost} open={!!editPost} onClose={() => setEditPost(null)} onSave={async () => {
-        if (editPost?.status === 'rejected') {
+      <EditPostModal post={editPost} open={!!editPost} settings={settings} onClose={() => setEditPost(null)} onSave={async ({ resubmitted } = {}) => {
+        if (resubmitted) {
           await sendApprovalNotification(getPostClientId(editPost))
         }
         load()

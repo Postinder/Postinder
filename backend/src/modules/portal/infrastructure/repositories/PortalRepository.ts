@@ -22,6 +22,11 @@ export function normalizePortalEmailLink(value: unknown) {
 }
 
 function normalizePost(row: any) {
+  const funnelTag = typeof row.portal_funnel_tag === 'string' && row.portal_funnel_tag.trim()
+    ? row.portal_funnel_tag.trim()
+    : null
+  const itemReviewSnapshot = Array.isArray(row.item_review_snapshot) ? row.item_review_snapshot : []
+  const positiveReaction = row.positive_reaction === 'loved' ? 'loved' : null
   return {
     id: row.id,
     clientId: row.client_id,
@@ -36,7 +41,18 @@ function normalizePost(row: any) {
     updatedAt: row.updated_at,
     submittedAt: row.submitted_at,
     approvedAt: row.approved_at,
+    contentRevision: Number(row.content_revision || 0),
+    content_revision: Number(row.content_revision || 0),
+    approvedRevision: row.approved_revision === null ? null : Number(row.approved_revision),
+    approved_revision: row.approved_revision === null ? null : Number(row.approved_revision),
+    positiveReaction,
+    positive_reaction: positiveReaction,
+    itemReviewSnapshot,
+    item_review_snapshot: itemReviewSnapshot,
+    hasPositiveReaction: positiveReaction === 'loved'
+      || itemReviewSnapshot.some((item: any) => item?.positiveReaction === 'loved' || item?.positive_reaction === 'loved'),
     emailLink: normalizePortalEmailLink(row.email_link),
+    ...(funnelTag ? { funnelTag, funnel_tag: funnelTag } : {}),
     files: row.files || [],
   }
 }
@@ -60,9 +76,38 @@ export function comparePortalQueueItems(left: any, right: any) {
   return String(left.id || '').localeCompare(String(right.id || ''))
 }
 
+export function isCanonicalReviewDecisionCurrent(
+  post: any,
+  completed: any,
+  contentRevision: number,
+) {
+  if (!completed) return false
+  if (completed.decision === 'approved') {
+    return ['approved', 'executed'].includes(String(post.status).toLowerCase())
+      && Number(post.approved_revision) === contentRevision
+  }
+  if (completed.decision === 'rejected') {
+    if (String(post.status).toLowerCase() !== 'rejected' || !completed.completed_at) return false
+    return new Date(post.updated_at).getTime() <= new Date(completed.completed_at).getTime()
+  }
+  return false
+}
+
 const pendingFileStatusSql = "LOWER(COALESCE(NULLIF(f.status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent')"
 const approvableFileStatusSql = "LOWER(COALESCE(NULLIF(f.status, ''), 'pending')) IN ('pending', 'pending_approval', 'sent', 'rejected')"
-const clientVisiblePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval', 'rejected', 'approved', 'executed')"
+const clientVisiblePostStatusSql = `(
+  LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval', 'rejected', 'approved', 'executed')
+  AND (
+    LOWER(COALESCE(p.status, '')) <> 'rejected'
+    OR NOT EXISTS (
+      SELECT 1
+      FROM portal_post_reviews visible_review
+      WHERE visible_review.post_id = p.id
+        AND visible_review.completed_at IS NOT NULL
+        AND p.updated_at > visible_review.completed_at
+    )
+  )
+)`
 const clientReviewablePostStatusSql = "LOWER(COALESCE(p.status, '')) IN ('sent', 'pending_approval')"
 
 export class PortalRepository {
@@ -304,8 +349,33 @@ export class PortalRepository {
     }
 
     const result = await query(
-      `SELECT
+       `SELECT
          p.*,
+          (
+            SELECT decision.positive_reaction
+            FROM portal_review_decisions decision
+            WHERE decision.post_id = p.id
+              AND decision.content_revision = p.content_revision
+              AND LOWER(p.status) IN ('approved', 'executed')
+              AND p.approved_revision = p.content_revision
+            ORDER BY decision.review_sequence DESC
+            LIMIT 1
+          ) AS positive_reaction,
+          COALESCE((
+            SELECT decision.item_snapshot
+            FROM portal_review_decisions decision
+            WHERE decision.post_id = p.id
+              AND decision.content_revision = p.content_revision
+              AND LOWER(p.status) IN ('approved', 'executed')
+              AND p.approved_revision = p.content_revision
+            ORDER BY decision.review_sequence DESC
+            LIMIT 1
+          ), '[]'::jsonb) AS item_review_snapshot,
+         CASE
+           WHEN COALESCE((p.review_field_visibility->>'funnel_tag')::boolean, FALSE)
+             THEN p.funnel_tag
+           ELSE NULL
+         END AS portal_funnel_tag,
          COALESCE(
            json_agg(
              json_build_object(
@@ -320,7 +390,8 @@ export class PortalRepository {
                'sort_order', f.sort_order,
                'rejection_reason', f.rejection_reason,
                'rejection_tags', f.rejection_tags,
-               'review_decision', d.decision,
+                'review_decision', d.decision,
+                'review_positive_reaction', d.positive_reaction,
                'review_reason', d.rejection_reason,
                'review_tags', d.rejection_tags,
                'review_updated_at', d.updated_at,
@@ -333,7 +404,10 @@ export class PortalRepository {
          ) AS files
        FROM posts p
        LEFT JOIN files f ON f.post_id = p.id
-       LEFT JOIN portal_item_review_drafts d ON d.post_id = p.id AND d.file_id = f.id
+        LEFT JOIN portal_item_review_drafts d
+          ON d.post_id = p.id
+         AND d.file_id = f.id
+         AND d.content_revision = p.content_revision
        WHERE ${conditions.join(' AND ')}
        GROUP BY p.id
        ORDER BY p.scheduled_date ASC NULLS LAST, p.created_at ASC, p.id ASC`,
@@ -354,10 +428,15 @@ export class PortalRepository {
   private async saveOfficialReview(
     client: any,
     postId: string,
+    contentRevision: number,
     status: 'approved' | 'rejected',
+    approvalMode: 'content' | 'item',
+    reviewer: { clientId: string; actorRole: string },
     resetRewind: boolean,
+    positiveReaction: 'loved' | null = null,
+    itemSnapshot: any[] = [],
   ) {
-    await client.query(
+    const review = await client.query(
       `INSERT INTO portal_post_reviews (
          post_id, revision, completed_status, completed_at, rewind_used, updated_at
        ) VALUES ($1, 1, $2, NOW(), FALSE, NOW())
@@ -366,9 +445,29 @@ export class PortalRepository {
          completed_status = EXCLUDED.completed_status,
          completed_at = NOW(),
          rewind_used = CASE WHEN $3 THEN FALSE ELSE portal_post_reviews.rewind_used END,
-         updated_at = NOW()`,
+         updated_at = NOW()
+       RETURNING revision`,
       [postId, status, resetRewind],
     )
+    const decision = await client.query(
+      `INSERT INTO portal_review_decisions (
+         post_id, content_revision, review_sequence, decision, approval_mode, client_id, actor_role,
+         positive_reaction, item_snapshot
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+       RETURNING id`,
+      [
+        postId,
+        contentRevision,
+        review.rows[0].revision,
+        status,
+        approvalMode,
+        reviewer.clientId,
+        reviewer.actorRole,
+        positiveReaction,
+        JSON.stringify(itemSnapshot),
+      ],
+    )
+    return decision.rows[0]
   }
 
   private async completeContentReview(
@@ -377,6 +476,9 @@ export class PortalRepository {
     comment: string | null,
     tags: string[],
     scope: { clientId: string; companyId?: string },
+    expectedRevision: number,
+    actorRole = 'client',
+    positiveReaction: 'loved' | null = null,
   ) {
     const settings = await this.settingsService.get()
     const client = await pool.connect()
@@ -389,7 +491,7 @@ export class PortalRepository {
         conditions.push(`company_id = $${params.length}`)
       }
       const postResult = await client.query(
-        `SELECT id, status, email_link FROM posts
+         `SELECT id, status, email_link, content_revision, approved_revision, updated_at FROM posts
          WHERE ${conditions.join(' AND ')}
          FOR UPDATE`,
         params,
@@ -399,9 +501,35 @@ export class PortalRepository {
         await client.query('ROLLBACK')
         return { kind: 'not_found' as const }
       }
-      if (!['sent', 'pending_approval'].includes(String(post.status).toLowerCase())) {
+      if (!Number.isInteger(expectedRevision) || expectedRevision <= 0
+        || Number(post.content_revision) !== expectedRevision) {
         await client.query('ROLLBACK')
-        return { kind: 'already_completed' as const, status: post.status }
+        return { kind: 'revision_conflict' as const, currentRevision: Number(post.content_revision || 0) }
+      }
+      if (!['sent', 'pending_approval'].includes(String(post.status).toLowerCase())) {
+        const completed = await client.query(
+          `SELECT d.decision, d.positive_reaction, r.completed_at
+           FROM portal_review_decisions d
+           LEFT JOIN portal_post_reviews r ON r.post_id = d.post_id
+           WHERE d.post_id = $1 AND d.content_revision = $2
+           ORDER BY d.review_sequence DESC LIMIT 1`,
+          [postId, expectedRevision],
+        )
+        await client.query('ROLLBACK')
+        if (!isCanonicalReviewDecisionCurrent(post, completed.rows[0], expectedRevision)) {
+          return { kind: 'revision_conflict' as const, currentRevision: Number(post.content_revision || 0) }
+        }
+        if (completed.rows[0].decision === decision
+          && (decision !== 'approved' || (completed.rows[0].positive_reaction || null) === positiveReaction)) {
+          return {
+            kind: 'already_completed' as const,
+            status: completed.rows[0].decision,
+            positiveReaction: completed.rows[0].positive_reaction || null,
+          }
+        }
+        return completed.rows[0]
+          ? { kind: 'decision_conflict' as const, status: completed.rows[0].decision }
+          : { kind: 'revision_conflict' as const, currentRevision: Number(post.content_revision || 0) }
       }
       const fileState = await client.query(
         `SELECT id, status FROM files WHERE post_id = $1 ORDER BY COALESCE(sort_order, 999999), created_at, id`,
@@ -413,12 +541,14 @@ export class PortalRepository {
       }
       if (decision === 'approved' && settings.features.soundtrack) {
         const soundtrack = await client.query(
-          `SELECT approval_status FROM post_soundtracks
+          `SELECT approval_status, approved_content_revision FROM post_soundtracks
            WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
            FOR UPDATE`,
           [postId],
         )
-        if (soundtrack.rows[0]?.approval_status === 'pending') {
+        if (soundtrack.rows[0]
+          && (soundtrack.rows[0].approval_status !== 'approved'
+            || Number(soundtrack.rows[0].approved_content_revision) !== expectedRevision)) {
           await client.query('ROLLBACK')
           return { kind: 'soundtrack_incomplete' as const }
         }
@@ -434,9 +564,10 @@ export class PortalRepository {
         [postId, decision, comment, tags],
       )
       await client.query(
-        `UPDATE posts
-         SET status = $2::text,
-             approved_at = CASE WHEN $2::text = 'approved' THEN NOW() ELSE NULL END,
+         `UPDATE posts
+          SET status = $2::text,
+              approved_revision = CASE WHEN $2::text = 'approved' THEN content_revision ELSE NULL END,
+              approved_at = CASE WHEN $2::text = 'approved' THEN NOW() ELSE NULL END,
              updated_at = NOW()
          WHERE id = $1`,
         [postId, decision],
@@ -449,9 +580,12 @@ export class PortalRepository {
           [scope.clientId, postId, comment],
         )
       }
-      await this.saveOfficialReview(client, postId, decision, startsNewCycle)
+      await this.saveOfficialReview(
+        client, postId, expectedRevision, decision, 'content',
+        { clientId: scope.clientId, actorRole }, startsNewCycle, positiveReaction,
+      )
       await client.query('COMMIT')
-      return { kind: 'completed' as const, status: decision, snapshot: [] }
+      return { kind: 'completed' as const, status: decision, positiveReaction, snapshot: [] }
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
       throw error
@@ -460,8 +594,14 @@ export class PortalRepository {
     }
   }
 
-  async approvePost(postId: string, scope: { clientId: string; companyId?: string }) {
-    return this.completeContentReview(postId, 'approved', null, [], scope)
+  async approvePost(
+    postId: string,
+    scope: { clientId: string; companyId?: string },
+    expectedRevision: number,
+    actorRole = 'client',
+    positiveReaction: 'loved' | null = null,
+  ) {
+    return this.completeContentReview(postId, 'approved', null, [], scope, expectedRevision, actorRole, positiveReaction)
   }
 
   private async recalculatePostStatus(postId: string) {
@@ -593,32 +733,41 @@ export class PortalRepository {
     return { postId: result.rows[0].post_id }
   }
 
-  async rejectPost(postId: string, comment: string, tags: string[], scope: { clientId: string; companyId?: string }) {
-    return this.completeContentReview(postId, 'rejected', comment, tags, scope)
+  async rejectPost(
+    postId: string,
+    comment: string,
+    tags: string[],
+    scope: { clientId: string; companyId?: string },
+    expectedRevision: number,
+    actorRole = 'client',
+  ) {
+    return this.completeContentReview(postId, 'rejected', comment, tags, scope, expectedRevision, actorRole)
   }
 
   async saveItemDecision(
     postId: string,
     fileId: string,
-    input: { decision: 'approved' | 'rejected'; comment?: string; tags?: string[] },
+    input: { decision: 'approved' | 'rejected'; comment?: string; tags?: string[]; positiveReaction?: 'loved' | null },
     scope: { clientId: string; companyId?: string },
+    expectedRevision: number,
   ) {
     const settings = await this.settingsService.get()
     if (settings.portal.approval_mode !== 'item') return { kind: 'wrong_mode' as const }
     const comment = String(input.comment || '').trim()
     if (input.decision === 'rejected' && !comment) return { kind: 'comment_required' as const }
+    const positiveReaction = input.positiveReaction === 'loved' ? 'loved' : null
     const tags = Array.isArray(input.tags) ? input.tags : []
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
       const params: any[] = [postId, fileId, scope.clientId]
-      const conditions = ['p.id = $1', 'f.id = $2', 'p.client_id = $3', 'p.deleted_at IS NULL', clientReviewablePostStatusSql]
+      const conditions = ['p.id = $1', 'f.id = $2', 'p.client_id = $3', 'p.deleted_at IS NULL']
       if (scope.companyId) {
         params.push(scope.companyId)
         conditions.push(`p.company_id = $${params.length}`)
       }
       const file = await client.query(
-        `SELECT f.id FROM files f JOIN posts p ON p.id = f.post_id
+        `SELECT f.id, p.status, p.content_revision FROM files f JOIN posts p ON p.id = f.post_id
          WHERE ${conditions.join(' AND ')}
          FOR UPDATE OF p, f`,
         params,
@@ -627,17 +776,37 @@ export class PortalRepository {
         await client.query('ROLLBACK')
         return { kind: 'not_found' as const }
       }
+      const currentRevision = Number(file.rows[0].content_revision || 0)
+      if (!Number.isInteger(expectedRevision) || expectedRevision <= 0 || currentRevision !== expectedRevision) {
+        await client.query('ROLLBACK')
+        return { kind: 'revision_conflict' as const, currentRevision }
+      }
+      if (!['sent', 'pending_approval'].includes(String(file.rows[0].status).toLowerCase())) {
+        await client.query('ROLLBACK')
+        return { kind: 'revision_conflict' as const, currentRevision }
+      }
       const saved = await client.query(
-        `INSERT INTO portal_item_review_drafts (
-           post_id, file_id, decision, rejection_reason, rejection_tags, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, NOW())
-         ON CONFLICT (post_id, file_id) DO UPDATE SET
-           decision = EXCLUDED.decision,
-           rejection_reason = EXCLUDED.rejection_reason,
-           rejection_tags = EXCLUDED.rejection_tags,
-           updated_at = NOW()
-         RETURNING decision, rejection_reason, rejection_tags, updated_at`,
-        [postId, fileId, input.decision, input.decision === 'rejected' ? comment : null, input.decision === 'rejected' ? tags : []],
+         `INSERT INTO portal_item_review_drafts (
+            post_id, file_id, content_revision, decision, positive_reaction,
+            rejection_reason, rejection_tags, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+          ON CONFLICT (post_id, file_id) DO UPDATE SET
+            content_revision = EXCLUDED.content_revision,
+            decision = EXCLUDED.decision,
+            positive_reaction = EXCLUDED.positive_reaction,
+            rejection_reason = EXCLUDED.rejection_reason,
+            rejection_tags = EXCLUDED.rejection_tags,
+            updated_at = NOW()
+          RETURNING content_revision, decision, positive_reaction, rejection_reason, rejection_tags, updated_at`,
+        [
+          postId,
+          fileId,
+          expectedRevision,
+          input.decision,
+          input.decision === 'approved' ? positiveReaction : null,
+          input.decision === 'rejected' ? comment : null,
+          input.decision === 'rejected' ? tags : [],
+        ],
       )
       await client.query('COMMIT')
       return { kind: 'saved' as const, draft: saved.rows[0] }
@@ -649,7 +818,12 @@ export class PortalRepository {
     }
   }
 
-  async completeItemReview(postId: string, scope: { clientId: string; companyId?: string }) {
+  async completeItemReview(
+    postId: string,
+    scope: { clientId: string; companyId?: string },
+    expectedRevision: number,
+    actorRole = 'client',
+  ) {
     const settings = await this.settingsService.get()
     if (settings.portal.approval_mode !== 'item') return { kind: 'wrong_mode' as const }
     const client = await pool.connect()
@@ -662,7 +836,8 @@ export class PortalRepository {
         conditions.push(`company_id = $${params.length}`)
       }
       const postResult = await client.query(
-        `SELECT id, status FROM posts WHERE ${conditions.join(' AND ')} FOR UPDATE`,
+        `SELECT id, status, content_revision, approved_revision, updated_at
+         FROM posts WHERE ${conditions.join(' AND ')} FOR UPDATE`,
         params,
       )
       const post = postResult.rows[0]
@@ -670,19 +845,37 @@ export class PortalRepository {
         await client.query('ROLLBACK')
         return { kind: 'not_found' as const }
       }
-      if (!['sent', 'pending_approval'].includes(String(post.status).toLowerCase())) {
+      const currentRevision = Number(post.content_revision || 0)
+      if (!Number.isInteger(expectedRevision) || expectedRevision <= 0 || currentRevision !== expectedRevision) {
         await client.query('ROLLBACK')
-        return { kind: 'already_completed' as const, status: post.status }
+        return { kind: 'revision_conflict' as const, currentRevision }
+      }
+      if (!['sent', 'pending_approval'].includes(String(post.status).toLowerCase())) {
+        const completed = await client.query(
+          `SELECT d.decision, r.completed_at
+           FROM portal_review_decisions d
+           LEFT JOIN portal_post_reviews r ON r.post_id = d.post_id
+           WHERE d.post_id = $1 AND d.content_revision = $2
+           ORDER BY d.review_sequence DESC LIMIT 1`,
+          [postId, expectedRevision],
+        )
+        await client.query('ROLLBACK')
+        return isCanonicalReviewDecisionCurrent(post, completed.rows[0], expectedRevision)
+          ? { kind: 'already_completed' as const, status: completed.rows[0].decision }
+          : { kind: 'revision_conflict' as const, currentRevision }
       }
       const snapshotResult = await client.query(
         `SELECT f.id AS file_id, f.sort_order, f.status AS canonical_status,
-                d.decision, d.rejection_reason, d.rejection_tags
+                 d.decision, d.positive_reaction, d.rejection_reason, d.rejection_tags
          FROM files f
-         LEFT JOIN portal_item_review_drafts d ON d.post_id = f.post_id AND d.file_id = f.id
-         WHERE f.post_id = $1
+          LEFT JOIN portal_item_review_drafts d
+            ON d.post_id = f.post_id
+           AND d.file_id = f.id
+           AND d.content_revision = $2
+          WHERE f.post_id = $1
          ORDER BY COALESCE(f.sort_order, 999999), f.created_at, f.id
          FOR UPDATE OF f`,
-        [postId],
+        [postId, expectedRevision],
       )
       const snapshot = snapshotResult.rows
       if (!snapshot.length || snapshot.some((item: any) => !['approved', 'rejected'].includes(item.decision))) {
@@ -692,16 +885,35 @@ export class PortalRepository {
       const startsNewCycle = snapshot.some((item: any) => ['pending', 'pending_approval', 'sent'].includes(String(item.canonical_status).toLowerCase()))
       const mediaStatus: 'approved' | 'rejected' = snapshot.some((item: any) => item.decision === 'rejected') ? 'rejected' : 'approved'
       let soundtrackStatus: string | null = null
+      let soundtrackApprovedRevision: number | null = null
+      let soundtrackDecisionRevision: number | null = null
       if (settings.features.soundtrack) {
         const soundtrack = await client.query(
-          `SELECT approval_status FROM post_soundtracks
-           WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'
+          `SELECT ps.approval_status, ps.approved_content_revision,
+                  (SELECT d.content_revision
+                   FROM post_soundtrack_decisions d
+                   WHERE d.soundtrack_id = ps.id
+                   ORDER BY d.created_at DESC, d.id DESC
+                   LIMIT 1) AS decision_content_revision
+           FROM post_soundtracks ps
+           WHERE ps.post_id = $1 AND ps.deleted_at IS NULL AND ps.mode <> 'none'
            LIMIT 1`,
           [postId],
         )
         soundtrackStatus = soundtrack.rows[0]?.approval_status || null
+        soundtrackApprovedRevision = soundtrack.rows[0]?.approved_content_revision == null
+          ? null
+          : Number(soundtrack.rows[0].approved_content_revision)
+        soundtrackDecisionRevision = soundtrack.rows[0]?.decision_content_revision == null
+          ? null
+          : Number(soundtrack.rows[0].decision_content_revision)
       }
-      if (mediaStatus === 'approved' && soundtrackStatus === 'pending') {
+      const soundtrackIsCurrent = soundtrackStatus === 'approved'
+        ? soundtrackApprovedRevision === expectedRevision
+        : soundtrackStatus === 'adjustment_requested'
+          ? soundtrackDecisionRevision === expectedRevision
+          : !soundtrackStatus
+      if (mediaStatus === 'approved' && !soundtrackIsCurrent) {
         await client.query('ROLLBACK')
         return { kind: 'soundtrack_incomplete' as const }
       }
@@ -715,13 +927,17 @@ export class PortalRepository {
              rejection_tags = CASE WHEN d.decision = 'rejected' THEN d.rejection_tags ELSE NULL END,
              updated_at = NOW()
          FROM portal_item_review_drafts d
-         WHERE f.post_id = $1 AND d.post_id = f.post_id AND d.file_id = f.id`,
-        [postId],
+          WHERE f.post_id = $1
+            AND d.post_id = f.post_id
+            AND d.file_id = f.id
+            AND d.content_revision = $2`,
+        [postId, expectedRevision],
       )
       await client.query(
         `UPDATE posts
-         SET status = $2::text,
-             approved_at = CASE WHEN $2::text = 'approved' THEN NOW() ELSE NULL END,
+          SET status = $2::text,
+              approved_revision = CASE WHEN $2::text = 'approved' THEN content_revision ELSE NULL END,
+              approved_at = CASE WHEN $2::text = 'approved' THEN NOW() ELSE NULL END,
              updated_at = NOW()
          WHERE id = $1`,
         [postId, status],
@@ -737,17 +953,22 @@ export class PortalRepository {
           [scope.clientId, postId, summary],
         )
       }
-      await this.saveOfficialReview(client, postId, status, startsNewCycle)
+      const officialSnapshot = snapshot.map((item: any) => ({
+        fileId: item.file_id,
+        decision: item.decision,
+        positiveReaction: item.decision === 'approved' && item.positive_reaction === 'loved' ? 'loved' : null,
+        comment: item.decision === 'rejected' ? item.rejection_reason : null,
+        tags: item.decision === 'rejected' ? item.rejection_tags || [] : [],
+      }))
+      await this.saveOfficialReview(
+        client, postId, expectedRevision, status, 'item',
+        { clientId: scope.clientId, actorRole }, startsNewCycle, null, officialSnapshot,
+      )
       await client.query('COMMIT')
       return {
         kind: 'completed' as const,
         status,
-        snapshot: snapshot.map((item: any) => ({
-          fileId: item.file_id,
-          decision: item.decision,
-          comment: item.decision === 'rejected' ? item.rejection_reason : null,
-          tags: item.decision === 'rejected' ? item.rejection_tags || [] : [],
-        })),
+        snapshot: officialSnapshot,
       }
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
@@ -757,7 +978,12 @@ export class PortalRepository {
     }
   }
 
-  async reopenPost(postId: string, scope: { clientId: string; companyId?: string }) {
+  async reopenPost(
+    postId: string,
+    scope: { clientId: string; companyId?: string },
+    expectedRevision: number,
+    actorRole = 'client',
+  ) {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -765,13 +991,15 @@ export class PortalRepository {
       const company = scope.companyId ? 'AND p.company_id = $3' : ''
       if (scope.companyId) params.push(scope.companyId)
       const result = await client.query(
-        `SELECT p.id, p.status, r.completed_at, COALESCE(r.rewind_used, FALSE) AS rewind_used
+        `SELECT p.id, p.status, p.content_revision, r.completed_at, COALESCE(r.rewind_used, FALSE) AS rewind_used
          FROM posts p
          LEFT JOIN portal_post_reviews r ON r.post_id = p.id
          WHERE p.id = $1 AND p.client_id = $2 ${company}
            AND p.deleted_at IS NULL
-           AND p.status IN ('approved', 'rejected')
-           AND COALESCE(r.rewind_used, FALSE) = FALSE
+            AND p.status IN ('approved', 'rejected')
+            AND r.completed_at IS NOT NULL
+            AND p.updated_at <= r.completed_at
+            AND COALESCE(r.rewind_used, FALSE) = FALSE
            AND COALESCE(r.completed_at, p.updated_at) = (
              SELECT MAX(COALESCE(r2.completed_at, p2.updated_at))
              FROM posts p2
@@ -787,6 +1015,17 @@ export class PortalRepository {
         await client.query('ROLLBACK')
         return false
       }
+      const currentRevision = Number(result.rows[0].content_revision || 0)
+      if (!Number.isInteger(expectedRevision) || expectedRevision <= 0 || currentRevision !== expectedRevision) {
+        await client.query('ROLLBACK')
+        return { kind: 'revision_conflict' as const, currentRevision }
+      }
+      const previousDecision = await client.query(
+        `SELECT id FROM portal_review_decisions
+         WHERE post_id = $1 AND content_revision = $2
+         ORDER BY review_sequence DESC LIMIT 1`,
+        [postId, expectedRevision],
+      )
       await client.query(
         `INSERT INTO portal_post_reviews (
            post_id, revision, completed_status, completed_at, rewind_used, updated_at
@@ -795,11 +1034,27 @@ export class PortalRepository {
         [postId, result.rows[0].status, result.rows[0].completed_at],
       )
       await client.query(
-        `UPDATE posts SET status = 'pending_approval', approved_at = NULL, updated_at = NOW() WHERE id = $1`,
+        `UPDATE posts
+         SET status = 'pending_approval', approved_revision = NULL, approved_at = NULL, updated_at = NOW()
+         WHERE id = $1`,
         [postId],
       )
+      await client.query('DELETE FROM portal_item_review_drafts WHERE post_id = $1', [postId])
+      await client.query(
+        `UPDATE post_soundtracks
+         SET approval_status = 'pending', approved_content_revision = NULL, approved_at = NULL,
+             adjustment_requested_at = NULL, adjustment_comment = NULL, updated_at = NOW()
+         WHERE post_id = $1 AND deleted_at IS NULL AND mode <> 'none'`,
+        [postId],
+      )
+      await client.query(
+        `INSERT INTO portal_review_actions (
+           post_id, content_revision, action, actor_id, actor_role, decision_id
+         ) VALUES ($1, $2, 'client_rewind', $3, $4, $5)`,
+        [postId, expectedRevision, scope.clientId, actorRole, previousDecision.rows[0]?.id || null],
+      )
       await client.query('COMMIT')
-      return true
+      return { kind: 'reopened' as const }
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
       throw error

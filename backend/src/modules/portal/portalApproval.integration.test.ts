@@ -1,15 +1,41 @@
 import assert from 'node:assert/strict'
-import { after, beforeEach, test } from 'node:test'
-import { pool, query } from '../../shared/database/pool'
-import { PlatformSettingsService } from '../platformSettings/application/PlatformSettingsService'
-import { PortalRepository } from './infrastructure/repositories/PortalRepository'
-import { PostRepository } from '../posts/infrastructure/repositories/PostRepository'
-import { SoundtrackRepository } from '../soundtracks/infrastructure/repositories/SoundtrackRepository'
+import { after, before, beforeEach, test } from 'node:test'
+import { resolvePostRevisionTestDatabase } from '../../testing/postRevisionTestDatabase'
 
 const enabled = process.env.PORTAL_APPROVAL_INTEGRATION === '1'
+const databaseConfig = enabled ? resolvePostRevisionTestDatabase(process.env) : { enabled: false as const }
 const integrationTest = enabled ? test : test.skip
 const companyId = '10000000-0000-4000-8000-000000000001'
 let sequence = 0
+let pool: any
+let query: any
+let PlatformSettingsService: any
+let PortalRepository: any
+let PostRepository: any
+let SoundtrackRepository: any
+
+before(async () => {
+  if (!enabled) return
+  if (!databaseConfig.enabled || !databaseConfig.databaseUrl) {
+    throw new Error('The isolated portal approval database was not configured')
+  }
+  process.env.DATABASE_URL = databaseConfig.databaseUrl
+  process.env.NODE_ENV = 'test'
+  process.env.JWT_SECRET ||= 'portal-approval-integration-only'
+  const [poolModule, settingsModule, portalModule, postModule, soundtrackModule] = await Promise.all([
+    import('../../shared/database/pool'),
+    import('../platformSettings/application/PlatformSettingsService'),
+    import('./infrastructure/repositories/PortalRepository'),
+    import('../posts/infrastructure/repositories/PostRepository'),
+    import('../soundtracks/infrastructure/repositories/SoundtrackRepository'),
+  ])
+  pool = poolModule.pool
+  query = poolModule.query
+  PlatformSettingsService = settingsModule.PlatformSettingsService
+  PortalRepository = portalModule.PortalRepository
+  PostRepository = postModule.PostRepository
+  SoundtrackRepository = soundtrackModule.SoundtrackRepository
+})
 
 async function setSettings(approvalMode: 'content' | 'item', soundtrack = false) {
   await new PlatformSettingsService().update({
@@ -23,8 +49,9 @@ async function seedPost(input: {
   files?: Array<{ status?: string; fileType?: string }>
   emailLink?: string | null
   soundtrack?: { mode: string; status: string } | null
-} = {}) {
+  } = {}) {
   sequence += 1
+  const targetStatus = input.status || 'sent'
   const client = await query(
     `INSERT INTO clients (email, name, password_hash, company_id)
      VALUES ($1, $2, 'audit-password', $3)
@@ -32,14 +59,13 @@ async function seedPost(input: {
     [`portal-audit-${sequence}@example.test`, `Portal audit ${sequence}`, companyId],
   )
   const post = await query(
-    `INSERT INTO posts (client_id, company_id, title, status, channels, email_link, submitted_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW())
+    `INSERT INTO posts (client_id, company_id, title, status, channels, email_link, submitted_at, content_revision)
+     VALUES ($1, $2, $3, 'ready', $4, $5, NOW(), 1)
      RETURNING id`,
     [
       client.rows[0].id,
       companyId,
       `Audit post ${sequence}`,
-      input.status || 'sent',
       input.emailLink ? ['E-mail Marketing'] : ['Instagram'],
       input.emailLink || null,
     ],
@@ -59,6 +85,12 @@ async function seedPost(input: {
       `INSERT INTO post_soundtracks (post_id, mode, approval_status, external_url)
        VALUES ($1, $2, $3, 'https://example.test/audio')`,
       [post.rows[0].id, input.soundtrack.mode, input.soundtrack.status],
+    )
+  }
+  if (targetStatus !== 'ready') {
+    await query(
+      `UPDATE posts SET status = $2, updated_at = NOW() WHERE id = $1`,
+      [post.rows[0].id, targetStatus],
     )
   }
   return { clientId: client.rows[0].id, postId: post.rows[0].id, files }
@@ -81,12 +113,12 @@ integrationTest('draft churn has no official side effects and only final snapsho
   const repository = new PortalRepository(new PlatformSettingsService())
   const [a, b, c] = seeded.files.map(file => file.id)
 
-  await repository.saveItemDecision(seeded.postId, a, { decision: 'approved' }, scope)
-  await repository.saveItemDecision(seeded.postId, a, { decision: 'rejected', comment: 'A1' }, scope)
-  await repository.saveItemDecision(seeded.postId, a, { decision: 'approved' }, scope)
-  await repository.saveItemDecision(seeded.postId, b, { decision: 'rejected', comment: 'B1' }, scope)
-  await repository.saveItemDecision(seeded.postId, b, { decision: 'approved' }, scope)
-  await repository.saveItemDecision(seeded.postId, c, { decision: 'rejected', comment: 'C1' }, scope)
+  await repository.saveItemDecision(seeded.postId, a, { decision: 'approved' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, a, { decision: 'rejected', comment: 'A1' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, a, { decision: 'approved' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, b, { decision: 'rejected', comment: 'B1' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, b, { decision: 'approved' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, c, { decision: 'rejected', comment: 'C1' }, scope, 1)
 
   const provisional = await query(
     `SELECT p.status,
@@ -99,16 +131,18 @@ integrationTest('draft churn has no official side effects and only final snapsho
   )
   assert.deepEqual(provisional.rows[0], { status: 'sent', pending_files: 3, feedback_count: 0, activity_count: 0 })
 
-  const first = await repository.completeItemReview(seeded.postId, scope)
+  const first = await repository.completeItemReview(seeded.postId, scope, 1)
   assert.equal(first.kind, 'completed')
   assert.equal(first.status, 'rejected')
   assert.deepEqual(first.snapshot.map((item: any) => item.decision), ['approved', 'approved', 'rejected'])
-  const retry = await repository.completeItemReview(seeded.postId, scope)
+  const retry = await repository.completeItemReview(seeded.postId, scope, 1)
   assert.equal(retry.kind, 'already_completed')
 
-  assert.equal(await repository.reopenPost(seeded.postId, scope), true)
-  await repository.saveItemDecision(seeded.postId, c, { decision: 'approved' }, scope)
-  const second = await repository.completeItemReview(seeded.postId, scope)
+  assert.equal((await repository.reopenPost(seeded.postId, scope, 1)).kind, 'reopened')
+  await repository.saveItemDecision(seeded.postId, a, { decision: 'approved' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, b, { decision: 'approved' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, c, { decision: 'approved' }, scope, 1)
+  const second = await repository.completeItemReview(seeded.postId, scope, 1)
   assert.equal(second.kind, 'completed')
   assert.equal(second.status, 'approved')
 
@@ -121,7 +155,7 @@ integrationTest('draft churn has no official side effects and only final snapsho
   assert.deepEqual(official.rows[0], {
     status: 'approved', revision: 2, completed_status: 'approved', rewind_used: true, feedback_count: 1,
   })
-  assert.equal(await repository.reopenPost(seeded.postId, scope), false)
+  assert.equal(await repository.reopenPost(seeded.postId, scope, 1), false)
 })
 
 integrationTest('completion is idempotent under simultaneous requests', async () => {
@@ -130,11 +164,11 @@ integrationTest('completion is idempotent under simultaneous requests', async ()
   const scope = { clientId: seeded.clientId, companyId }
   const repository = new PortalRepository(new PlatformSettingsService())
   for (const file of seeded.files) {
-    await repository.saveItemDecision(seeded.postId, file.id, { decision: 'approved' }, scope)
+    await repository.saveItemDecision(seeded.postId, file.id, { decision: 'approved' }, scope, 1)
   }
   const results = await Promise.all([
-    repository.completeItemReview(seeded.postId, scope),
-    repository.completeItemReview(seeded.postId, scope),
+    repository.completeItemReview(seeded.postId, scope, 1),
+    repository.completeItemReview(seeded.postId, scope, 1),
   ])
   assert.deepEqual(results.map(result => result.kind).sort(), ['already_completed', 'completed'])
   const state = await query(
@@ -152,12 +186,13 @@ integrationTest('approved rewind rejected replaces the current metric without du
   const scope = { clientId: seeded.clientId, companyId }
   const repository = new PortalRepository(new PlatformSettingsService())
   for (const file of seeded.files) {
-    await repository.saveItemDecision(seeded.postId, file.id, { decision: 'approved' }, scope)
+    await repository.saveItemDecision(seeded.postId, file.id, { decision: 'approved' }, scope, 1)
   }
-  assert.equal((await repository.completeItemReview(seeded.postId, scope)).status, 'approved')
-  assert.equal(await repository.reopenPost(seeded.postId, scope), true)
-  await repository.saveItemDecision(seeded.postId, seeded.files[1].id, { decision: 'rejected', comment: 'final rejection' }, scope)
-  assert.equal((await repository.completeItemReview(seeded.postId, scope)).status, 'rejected')
+  assert.equal((await repository.completeItemReview(seeded.postId, scope, 1)).status, 'approved')
+  assert.equal((await repository.reopenPost(seeded.postId, scope, 1)).kind, 'reopened')
+  await repository.saveItemDecision(seeded.postId, seeded.files[0].id, { decision: 'approved' }, scope, 1)
+  await repository.saveItemDecision(seeded.postId, seeded.files[1].id, { decision: 'rejected', comment: 'final rejection' }, scope, 1)
+  assert.equal((await repository.completeItemReview(seeded.postId, scope, 1)).status, 'rejected')
 
   const state = await query(
     `SELECT p.status, r.revision, r.completed_status,
@@ -185,6 +220,7 @@ integrationTest('a draft save cannot cross a concurrent post completion boundary
     seeded.files[0].id,
     { decision: 'approved' },
     scope,
+    1,
   ).finally(() => { settled = true })
   await new Promise(resolve => setTimeout(resolve, 100))
   const saveWaitedForPostLock = !settled
@@ -194,7 +230,7 @@ integrationTest('a draft save cannot cross a concurrent post completion boundary
 
   const saveResult = await saving
   assert.equal(saveWaitedForPostLock, true)
-  assert.equal(saveResult.kind, 'not_found')
+  assert.equal(saveResult.kind, 'revision_conflict')
   const drafts = await query('SELECT COUNT(*)::int AS count FROM portal_item_review_drafts WHERE post_id = $1', [seeded.postId])
   assert.equal(drafts.rows[0].count, 0)
 })
@@ -204,9 +240,9 @@ integrationTest('content completion discards obsolete item drafts and waits for 
   const seeded = await seedPost({ files: [{}] })
   const scope = { clientId: seeded.clientId, companyId }
   const repository = new PortalRepository(new PlatformSettingsService())
-  await repository.saveItemDecision(seeded.postId, seeded.files[0].id, { decision: 'rejected', comment: 'old draft' }, scope)
+  await repository.saveItemDecision(seeded.postId, seeded.files[0].id, { decision: 'rejected', comment: 'old draft' }, scope, 1)
   await setSettings('content')
-  assert.equal((await repository.approvePost(seeded.postId, scope)).kind, 'completed')
+  assert.equal((await repository.approvePost(seeded.postId, scope, 1)).kind, 'completed')
   const drafts = await query('SELECT COUNT(*)::int AS count FROM portal_item_review_drafts WHERE post_id = $1', [seeded.postId])
   assert.equal(drafts.rows[0].count, 0)
 
@@ -215,7 +251,7 @@ integrationTest('content completion discards obsolete item drafts and waits for 
     files: [{}],
     soundtrack: { mode: 'external_reference', status: 'pending' },
   })
-  const blocked = await repository.approvePost(withSoundtrack.postId, { clientId: withSoundtrack.clientId, companyId })
+  const blocked = await repository.approvePost(withSoundtrack.postId, { clientId: withSoundtrack.clientId, companyId }, 1)
   assert.equal(blocked.kind, 'soundtrack_incomplete')
   const unchanged = await query('SELECT status FROM posts WHERE id = $1', [withSoundtrack.postId])
   assert.equal(unchanged.rows[0].status, 'sent')
@@ -228,8 +264,8 @@ integrationTest('content mode creates one official decision for mixed image and 
     const seeded = await seedPost({ files: [{ fileType: 'IMAGE' }, { fileType: 'VIDEO' }, { fileType: 'IMAGE' }] })
     const scope = { clientId: seeded.clientId, companyId }
     const result = decision === 'approved'
-      ? await repository.approvePost(seeded.postId, scope)
-      : await repository.rejectPost(seeded.postId, 'one content rejection', ['Vídeo'], scope)
+      ? await repository.approvePost(seeded.postId, scope, 1)
+      : await repository.rejectPost(seeded.postId, 'one content rejection', ['Vídeo'], scope, 1)
     assert.equal(result.kind, 'completed')
     assert.equal(result.status, decision)
     const state = await query(
@@ -253,6 +289,135 @@ integrationTest('content mode creates one official decision for mixed image and 
   }
 })
 
+integrationTest('content Adorei is an idempotent approved fact, stays revision-bound, and survives rewind only in history', async () => {
+  await setSettings('content')
+  const repository = new PortalRepository(new PlatformSettingsService())
+
+  const staleSeed = await seedPost({ files: [{}] })
+  const staleScope = { clientId: staleSeed.clientId, companyId }
+  assert.equal((await repository.approvePost(staleSeed.postId, staleScope, 2, 'client', 'loved')).kind, 'revision_conflict')
+  assert.equal((await query('SELECT COUNT(*)::int AS count FROM portal_review_decisions WHERE post_id = $1', [staleSeed.postId])).rows[0].count, 0)
+
+  const normalSeed = await seedPost({ files: [{}] })
+  const normalScope = { clientId: normalSeed.clientId, companyId }
+  assert.equal((await repository.approvePost(normalSeed.postId, normalScope, 1)).status, 'approved')
+  assert.deepEqual((await query(
+    'SELECT decision, positive_reaction, item_snapshot FROM portal_review_decisions WHERE post_id = $1',
+    [normalSeed.postId],
+  )).rows[0], { decision: 'approved', positive_reaction: null, item_snapshot: [] })
+
+  const lovedSeed = await seedPost({ files: [{}] })
+  const lovedScope = { clientId: lovedSeed.clientId, companyId }
+  const loved = await repository.approvePost(lovedSeed.postId, lovedScope, 1, 'client', 'loved')
+  assert.equal(loved.status, 'approved')
+  assert.equal(loved.positiveReaction, 'loved')
+  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1, 'client', 'loved')).kind, 'already_completed')
+  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1)).kind, 'decision_conflict')
+
+  const official = await query(
+    `SELECT decision, positive_reaction, item_snapshot
+     FROM portal_review_decisions WHERE post_id = $1 ORDER BY review_sequence`,
+    [lovedSeed.postId],
+  )
+  assert.deepEqual(official.rows, [{ decision: 'approved', positive_reaction: 'loved', item_snapshot: [] }])
+  await assert.rejects(
+    query("UPDATE portal_review_decisions SET positive_reaction = NULL WHERE post_id = $1", [lovedSeed.postId]),
+    (error: any) => error?.code === '23514',
+  )
+  assert.equal((await repository.listPosts(lovedSeed.clientId, companyId))[0].hasPositiveReaction, true)
+
+  assert.equal((await repository.reopenPost(lovedSeed.postId, lovedScope, 1)).kind, 'reopened')
+  const reopened = (await repository.listPosts(lovedSeed.clientId, companyId))[0]
+  assert.equal(reopened.positiveReaction, null)
+  assert.equal(reopened.hasPositiveReaction, false)
+  assert.equal((await query(
+    'SELECT positive_reaction FROM portal_review_decisions WHERE post_id = $1',
+    [lovedSeed.postId],
+  )).rows[0].positive_reaction, 'loved')
+
+  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1)).status, 'approved')
+  const history = await query(
+    'SELECT positive_reaction FROM portal_review_decisions WHERE post_id = $1 ORDER BY review_sequence',
+    [lovedSeed.postId],
+  )
+  assert.deepEqual(history.rows, [{ positive_reaction: 'loved' }, { positive_reaction: null }])
+})
+
+integrationTest('item Adorei drafts consolidate on the positive side and the official snapshot identifies every loved item', async () => {
+  await setSettings('item')
+  const repository = new PortalRepository(new PlatformSettingsService())
+
+  async function completeWith(reactions: Array<'normal' | 'loved' | 'rejected'>) {
+    const seeded = await seedPost({ files: reactions.map(() => ({})) })
+    const scope = { clientId: seeded.clientId, companyId }
+    for (const [index, reaction] of reactions.entries()) {
+      await repository.saveItemDecision(
+        seeded.postId,
+        seeded.files[index].id,
+        reaction === 'rejected'
+          ? { decision: 'rejected', comment: `Ajuste ${index}` }
+          : { decision: 'approved', positiveReaction: reaction === 'loved' ? 'loved' : null },
+        scope,
+        1,
+      )
+    }
+    const drafts = await query(
+      `SELECT decision, positive_reaction FROM portal_item_review_drafts
+       WHERE post_id = $1 ORDER BY file_id`,
+      [seeded.postId],
+    )
+    const result = await repository.completeItemReview(seeded.postId, scope, 1)
+    const official = await query(
+      `SELECT decision, positive_reaction, item_snapshot
+       FROM portal_review_decisions WHERE post_id = $1`,
+      [seeded.postId],
+    )
+    return { seeded, scope, drafts: drafts.rows, result, official: official.rows[0] }
+  }
+
+  const allNormal = await completeWith(['normal', 'normal', 'normal'])
+  assert.equal(allNormal.result.status, 'approved')
+  assert.equal(allNormal.official.positive_reaction, null)
+  assert.deepEqual(allNormal.official.item_snapshot.map((item: any) => item.positiveReaction), [null, null, null])
+  assert.equal((await repository.listPosts(allNormal.seeded.clientId, companyId))[0].hasPositiveReaction, false)
+
+  const mixed = await completeWith(['loved', 'normal', 'loved'])
+  assert.equal(mixed.result.status, 'approved')
+  assert.deepEqual(mixed.result.snapshot.map((item: any) => item.positiveReaction), ['loved', null, 'loved'])
+  assert.deepEqual(mixed.official.item_snapshot.map((item: any) => item.positiveReaction), ['loved', null, 'loved'])
+  assert.equal((await repository.listPosts(mixed.seeded.clientId, companyId))[0].hasPositiveReaction, true)
+  assert.equal((await repository.completeItemReview(mixed.seeded.postId, mixed.scope, 1)).kind, 'already_completed')
+  assert.equal((await query('SELECT COUNT(*)::int AS count FROM portal_review_decisions WHERE post_id = $1', [mixed.seeded.postId])).rows[0].count, 1)
+
+  const allLoved = await completeWith(['loved', 'loved', 'loved'])
+  assert.equal(allLoved.result.status, 'approved')
+  assert.ok(allLoved.official.item_snapshot.every((item: any) => item.positiveReaction === 'loved'))
+
+  const withAdjustment = await completeWith(['loved', 'rejected', 'normal'])
+  assert.equal(withAdjustment.result.status, 'rejected')
+  assert.equal(withAdjustment.official.decision, 'rejected')
+  assert.equal(withAdjustment.official.item_snapshot[0].positiveReaction, 'loved')
+
+  const postRepository = new PostRepository()
+  assert.equal(await postRepository.resubmit(withAdjustment.seeded.postId, {}, companyId, false), true)
+  assert.equal((await repository.saveItemDecision(
+    withAdjustment.seeded.postId,
+    withAdjustment.seeded.files[0].id,
+    { decision: 'approved', positiveReaction: 'loved' },
+    withAdjustment.scope,
+    1,
+  )).kind, 'revision_conflict')
+  const newRevisionDrafts = await query(
+    'SELECT COUNT(*)::int AS count FROM portal_item_review_drafts WHERE post_id = $1',
+    [withAdjustment.seeded.postId],
+  )
+  assert.equal(newRevisionDrafts.rows[0].count, 0)
+  assert.equal((await query(
+    'SELECT item_snapshot->0->>\'positiveReaction\' AS reaction FROM portal_review_decisions WHERE post_id = $1',
+    [withAdjustment.seeded.postId],
+  )).rows[0].reaction, 'loved')
+})
+
 integrationTest('soundtrack decisions remain subordinate and cannot conclude item review', async () => {
   await setSettings('item', true)
   const seeded = await seedPost({
@@ -268,23 +433,24 @@ integrationTest('soundtrack decisions remain subordinate and cannot conclude ite
     null,
     scope,
     'client_portal',
+    1,
     { recalculatePostStatus: false },
   )
   assert.equal(soundtrack?.approvalStatus, 'approved')
   assert.equal((await query('SELECT status FROM posts WHERE id = $1', [seeded.postId])).rows[0].status, 'sent')
-  assert.equal((await repository.completeItemReview(seeded.postId, scope)).kind, 'incomplete')
+  assert.equal((await repository.completeItemReview(seeded.postId, scope, 1)).kind, 'incomplete')
   for (const file of seeded.files) {
-    await repository.saveItemDecision(seeded.postId, file.id, { decision: 'approved' }, scope)
+    await repository.saveItemDecision(seeded.postId, file.id, { decision: 'approved' }, scope, 1)
   }
-  assert.equal((await repository.completeItemReview(seeded.postId, scope)).status, 'approved')
+  assert.equal((await repository.completeItemReview(seeded.postId, scope, 1)).status, 'approved')
 })
 
 integrationTest('agency resubmission removes the obsolete draft of each reset rejected file', async () => {
   await setSettings('item')
   const seeded = await seedPost({ status: 'rejected', files: [{ status: 'rejected' }, { status: 'approved' }] })
   await query(
-    `INSERT INTO portal_item_review_drafts (post_id, file_id, decision, rejection_reason)
-     VALUES ($1, $2, 'rejected', 'old'), ($1, $3, 'approved', NULL)`,
+    `INSERT INTO portal_item_review_drafts (post_id, file_id, content_revision, decision, rejection_reason)
+     VALUES ($1, $2, 1, 'rejected', 'old'), ($1, $3, 1, 'approved', NULL)`,
     [seeded.postId, seeded.files[0].id, seeded.files[1].id],
   )
   const repository = new PostRepository()
@@ -293,7 +459,7 @@ integrationTest('agency resubmission removes the obsolete draft of each reset re
     'SELECT file_id, decision FROM portal_item_review_drafts WHERE post_id = $1 ORDER BY file_id',
     [seeded.postId],
   )
-  assert.deepEqual(drafts.rows, [{ file_id: seeded.files[1].id, decision: 'approved' }])
+  assert.deepEqual(drafts.rows, [])
 })
 
 integrationTest('batch submission sends only reviewable eligible posts and clears stale drafts atomically', async () => {
@@ -302,8 +468,8 @@ integrationTest('batch submission sends only reviewable eligible posts and clear
   const empty = await seedPost({ status: 'ready' })
   const email = await seedPost({ status: 'ready', emailLink: 'https://example.test/email-preview' })
   await query(
-    `INSERT INTO portal_item_review_drafts (post_id, file_id, decision, rejection_reason)
-     VALUES ($1, $2, 'rejected', 'old batch draft')`,
+    `INSERT INTO portal_item_review_drafts (post_id, file_id, content_revision, decision, rejection_reason)
+     VALUES ($1, $2, 1, 'rejected', 'old batch draft')`,
     [rejected.postId, rejected.files[0].id],
   )
   const repository = new PostRepository()
@@ -312,15 +478,15 @@ integrationTest('batch submission sends only reviewable eligible posts and clear
     companyId,
     false,
   )
-  assert.deepEqual(new Set(sent.map(post => post.id)), new Set([rejected.postId, email.postId]))
+  assert.deepEqual(new Set(sent.map((post: any) => post.id)), new Set([email.postId]))
   const states = await query(
     `SELECT id, status FROM posts WHERE id = ANY($1::uuid[]) ORDER BY id`,
     [[rejected.postId, empty.postId, email.postId]],
   )
-  assert.equal(states.rows.find(post => post.id === rejected.postId).status, 'pending_approval')
-  assert.equal(states.rows.find(post => post.id === empty.postId).status, 'ready')
-  assert.equal(states.rows.find(post => post.id === email.postId).status, 'sent')
-  assert.equal((await query('SELECT COUNT(*)::int AS count FROM portal_item_review_drafts WHERE post_id = $1', [rejected.postId])).rows[0].count, 0)
+  assert.equal(states.rows.find((post: any) => post.id === rejected.postId).status, 'rejected')
+  assert.equal(states.rows.find((post: any) => post.id === empty.postId).status, 'ready')
+  assert.equal(states.rows.find((post: any) => post.id === email.postId).status, 'sent')
+  assert.equal((await query('SELECT COUNT(*)::int AS count FROM portal_item_review_drafts WHERE post_id = $1', [rejected.postId])).rows[0].count, 1)
 })
 
 integrationTest('email-only content remains a single review item in either approval mode', async () => {
@@ -328,7 +494,7 @@ integrationTest('email-only content remains a single review item in either appro
   for (const mode of ['content', 'item'] as const) {
     await setSettings(mode)
     const seeded = await seedPost({ emailLink: 'https://example.test/email-preview' })
-    const result = await repository.approvePost(seeded.postId, { clientId: seeded.clientId, companyId })
+    const result = await repository.approvePost(seeded.postId, { clientId: seeded.clientId, companyId }, 1)
     assert.equal(result.kind, 'completed')
     const reviews = await query('SELECT revision FROM portal_post_reviews WHERE post_id = $1', [seeded.postId])
     assert.equal(reviews.rows.length, 1)
@@ -342,14 +508,14 @@ integrationTest('an email-only agency resubmission starts a fresh rewind cycle',
   const scope = { clientId: seeded.clientId, companyId }
   const portalRepository = new PortalRepository(new PlatformSettingsService())
   const postRepository = new PostRepository()
-  assert.equal((await portalRepository.rejectPost(seeded.postId, 'first rejection', [], scope)).status, 'rejected')
-  assert.equal(await portalRepository.reopenPost(seeded.postId, scope), true)
-  assert.equal((await portalRepository.rejectPost(seeded.postId, 'changed rejection', [], scope)).status, 'rejected')
-  assert.equal(await portalRepository.reopenPost(seeded.postId, scope), false)
+  assert.equal((await portalRepository.rejectPost(seeded.postId, 'first rejection', [], scope, 1)).status, 'rejected')
+  assert.equal((await portalRepository.reopenPost(seeded.postId, scope, 1)).kind, 'reopened')
+  assert.equal((await portalRepository.rejectPost(seeded.postId, 'changed rejection', [], scope, 1)).status, 'rejected')
+  assert.equal(await portalRepository.reopenPost(seeded.postId, scope, 1), false)
 
   assert.equal(await postRepository.resubmit(seeded.postId, {}, companyId, false), true)
-  assert.equal((await portalRepository.approvePost(seeded.postId, scope)).status, 'approved')
-  assert.equal(await portalRepository.reopenPost(seeded.postId, scope), true)
+  assert.equal((await portalRepository.approvePost(seeded.postId, scope, 2)).status, 'approved')
+  assert.equal((await portalRepository.reopenPost(seeded.postId, scope, 2)).kind, 'reopened')
 })
 
 integrationTest('migration constraints enforce defaults, valid modes, file ownership and cascades', async () => {
@@ -372,16 +538,36 @@ integrationTest('migration constraints enforce defaults, valid modes, file owner
   const second = await seedPost({ files: [{}] })
   await assert.rejects(
     query(
-      `INSERT INTO portal_item_review_drafts (post_id, file_id, decision)
-       VALUES ($1, $2, 'approved')`,
+      `INSERT INTO portal_item_review_drafts (post_id, file_id, content_revision, decision)
+       VALUES ($1, $2, 1, 'approved')`,
       [first.postId, second.files[0].id],
     ),
     (error: any) => error?.code === '23503',
   )
+  await assert.rejects(
+    query(
+      `INSERT INTO portal_item_review_drafts (
+         post_id, file_id, content_revision, decision, positive_reaction, rejection_reason
+       ) VALUES ($1, $2, 1, 'rejected', 'loved', 'Ajustar')`,
+      [first.postId, first.files[0].id],
+    ),
+    (error: any) => error?.code === '23514',
+  )
   await query(
-    `INSERT INTO portal_item_review_drafts (post_id, file_id, decision)
-     VALUES ($1, $2, 'approved')`,
+    `INSERT INTO portal_item_review_drafts (
+       post_id, file_id, content_revision, decision, positive_reaction
+     ) VALUES ($1, $2, 1, 'approved', 'loved')`,
     [first.postId, first.files[0].id],
+  )
+  await assert.rejects(
+    query(
+      `INSERT INTO portal_review_decisions (
+         post_id, content_revision, review_sequence, decision, approval_mode,
+         client_id, actor_role, positive_reaction
+       ) VALUES ($1, 1, 1, 'approved', 'item', $2, 'client', 'loved')`,
+      [first.postId, first.clientId],
+    ),
+    (error: any) => error?.code === '23514',
   )
   await query(
     `INSERT INTO portal_post_reviews (post_id, revision, completed_status, completed_at)

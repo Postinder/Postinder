@@ -4,6 +4,7 @@ import { formatDate, isCorrectionPost } from './portalStatus'
 
 export default function PortalReviewHeader({ content, currentPosition, totalFiles, onUndo, canUndo, busy }) {
   const date = content?.scheduledDate || content?.scheduled_date
+  const funnelTag = content?.funnelTag || content?.funnel_tag
 
   return (
     <header className="mb-1 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:px-4">
@@ -20,6 +21,11 @@ export default function PortalReviewHeader({ content, currentPosition, totalFile
           {content?.title || 'Conteúdo sem título'}
         </h2>
         <PortalChannelChips channels={content?.channels || []} compact />
+        {funnelTag ? (
+          <span className="shrink-0 rounded-full border border-neutral-200 px-2.5 py-1 text-xs font-bold text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+            Funil: {funnelTag}
+          </span>
+        ) : null}
         <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-300/80">
           <CalendarDays size={14} aria-hidden="true" />
           Data de publicação: {formatDate(date, 'Sem data prevista')}

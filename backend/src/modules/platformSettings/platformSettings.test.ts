@@ -10,12 +10,13 @@ process.env.LOG_LEVEL = 'error'
 
 import {
   DEFAULT_PLATFORM_SETTINGS,
+  isFunnelClientVisible,
   mergePlatformSettings,
   platformSettingsPatchSchema,
   resolvePortalSettings,
 } from './domain/PlatformSettings'
 import { PlatformSettingsService } from './application/PlatformSettingsService'
-import { applyPostFieldPolicies } from '../posts/presentation/controllers/PostsController'
+import { applyPostFieldPolicies, PostsController } from '../posts/presentation/controllers/PostsController'
 
 test('platform settings domain owns safe installation defaults', () => {
   assert.equal(DEFAULT_PLATFORM_SETTINGS.retention.executed_attachment_hours, 24)
@@ -31,6 +32,9 @@ test('platform settings domain owns safe installation defaults', () => {
     scheduled_date: 'optional',
     funnel_tag: 'hidden',
   })
+  assert.deepEqual(DEFAULT_PLATFORM_SETTINGS.post_field_client_visibility, {
+    funnel_tag: false,
+  })
   assert.deepEqual(DEFAULT_PLATFORM_SETTINGS.portal, {
     show_post_list: false,
     show_supplementary_info: false,
@@ -43,6 +47,9 @@ test('strict patch schema accepts partial known settings and rejects invalid or 
   assert.deepEqual(platformSettingsPatchSchema.parse({ features: { soundtrack: true } }), {
     features: { soundtrack: true },
   })
+  assert.deepEqual(platformSettingsPatchSchema.parse({
+    post_field_client_visibility: { funnel_tag: true },
+  }), { post_field_client_visibility: { funnel_tag: true } })
   for (const input of [
     {},
     { retention: { executed_attachment_hours: 0 } },
@@ -51,6 +58,7 @@ test('strict patch schema accepts partial known settings and rejects invalid or 
     { features: { soundtrack: 'yes' } },
     { client_fields: { unknown: 'optional' } },
     { post_fields: { description: 'sometimes' } },
+    { post_field_client_visibility: { funnel_tag: 'yes' } },
     { portal: { approval_mode: 'file' } },
     { arbitrary: true },
   ]) {
@@ -68,6 +76,26 @@ test('partial updates preserve every unrelated setting', () => {
   assert.equal(updated.client_fields.document, 'hidden')
   assert.deepEqual(updated.features, DEFAULT_PLATFORM_SETTINGS.features)
   assert.deepEqual(updated.portal, DEFAULT_PLATFORM_SETTINGS.portal)
+})
+
+test('funnel agency use and client visibility are independent except for hidden policy', () => {
+  const cases = [
+    { policy: 'hidden' as const, visible: false, effective: false },
+    { policy: 'hidden' as const, visible: true, effective: false },
+    { policy: 'optional' as const, visible: false, effective: false },
+    { policy: 'required' as const, visible: false, effective: false },
+    { policy: 'optional' as const, visible: true, effective: true },
+    { policy: 'required' as const, visible: true, effective: true },
+  ]
+
+  for (const entry of cases) {
+    const settings = mergePlatformSettings(DEFAULT_PLATFORM_SETTINGS, {
+      post_fields: { funnel_tag: entry.policy },
+      post_field_client_visibility: { funnel_tag: entry.visible },
+    })
+    assert.equal(settings.post_field_client_visibility.funnel_tag, entry.effective)
+    assert.equal(isFunnelClientVisible(settings), entry.effective)
+  }
 })
 
 test('portal resolution centralizes global inheritance and explicit client overrides', () => {
@@ -116,6 +144,7 @@ test('service delegates a validated partial patch to one atomic repository updat
 test('migration and repository enforce one additive singleton and an atomic merge', () => {
   const migration = readFileSync(path.resolve(process.cwd(), '../database/migrations/019_platform_settings.sql'), 'utf8')
   const approvalMigration = readFileSync(path.resolve(process.cwd(), '../database/migrations/020_portal_approval_mode_and_review_drafts.sql'), 'utf8')
+  const funnelMigration = readFileSync(path.resolve(process.cwd(), '../database/migrations/022_funnel_visibility_and_revision_snapshot.sql'), 'utf8')
   const repository = readFileSync(path.resolve(process.cwd(), 'src/modules/platformSettings/infrastructure/repositories/PlatformSettingsRepository.ts'), 'utf8')
   assert.match(migration, /CREATE TABLE IF NOT EXISTS platform_settings/)
   assert.match(migration, /singleton_key BOOLEAN PRIMARY KEY[^\n]*CHECK \(singleton_key\)/)
@@ -131,6 +160,12 @@ test('migration and repository enforce one additive singleton and an atomic merg
   assert.match(approvalMigration, /portal_approval_mode VARCHAR\(20\) NOT NULL DEFAULT 'content'/)
   assert.match(approvalMigration, /portal_approval_mode IN \('content', 'item'\)/)
   assert.match(repository, /row\.portal_approval_mode === 'item' \? 'item' : 'content'/)
+  assert.match(funnelMigration, /ADD COLUMN IF NOT EXISTS post_field_client_visibility JSONB NOT NULL/)
+  assert.match(funnelMigration, /ADD COLUMN IF NOT EXISTS review_field_visibility JSONB NOT NULL/)
+  assert.match(funnelMigration, /DEFAULT '\{"funnel_tag":false\}'::jsonb/)
+  assert.doesNotMatch(funnelMigration, /DROP\s+(TABLE|COLUMN)/i)
+  assert.doesNotMatch(funnelMigration, /UPDATE\s+(clients|posts)\b/i)
+  assert.match(repository, /post_field_client_visibility = EXCLUDED\.post_field_client_visibility/)
 })
 
 test('post field policies omit hidden input, allow optional blanks and enforce required effective values', () => {
@@ -161,6 +196,64 @@ test('post field policies omit hidden input, allow optional blanks and enforce r
     { description: 'Atual', scheduledDate: '2026-08-20', funnelTag: 'topo' },
   ))
   assert.doesNotThrow(() => applyPostFieldPolicies({ description: '' }, DEFAULT_PLATFORM_SETTINGS))
+})
+
+test('direct post API allows only revision-internal funnel changes on protected posts', async () => {
+  function responseState() {
+    const state: any = { status: 200, body: null }
+    const response: any = {
+      status(value: number) { state.status = value; return response },
+      json(value: any) { state.body = value; return response },
+    }
+    return { state, response }
+  }
+
+  for (const visible of [false, true]) {
+    let internalUpdates = 0
+    let mutationChecks = 0
+    const current = {
+      id: 'post-1',
+      status: 'approved',
+      funnelTag: 'Topo',
+      reviewFieldVisibility: { funnel_tag: visible },
+    }
+    const repository = {
+      async findById() { return current },
+      async updateInternalFunnelTag() { internalUpdates += 1; return { ...current, funnel_tag: 'Fundo' } },
+      async getMutationState() { mutationChecks += 1; return { allowed: false, reason: 'reopen_required' } },
+    }
+    const settings = mergePlatformSettings(DEFAULT_PLATFORM_SETTINGS, {
+      post_fields: { funnel_tag: 'optional' },
+      post_field_client_visibility: { funnel_tag: visible },
+    })
+    const controller = new PostsController(
+      {} as any,
+      {} as any,
+      {} as any,
+      repository as any,
+      {} as any,
+      {} as any,
+      { async get() { return { ...settings, updated_at: null } } } as any,
+    )
+    const { state, response } = responseState()
+    await controller.update({
+      params: { id: 'post-1' },
+      body: { funnelTag: 'Fundo' },
+      tenantId: 'company-1',
+    } as any, response)
+
+    if (visible) {
+      assert.equal(state.status, 409)
+      assert.equal(state.body.code, 'POST_REOPEN_REQUIRED')
+      assert.equal(internalUpdates, 0)
+      assert.equal(mutationChecks, 1)
+    } else {
+      assert.equal(state.status, 200)
+      assert.equal(state.body.funnel_tag, 'Fundo')
+      assert.equal(internalUpdates, 1)
+      assert.equal(mutationChecks, 0)
+    }
+  }
 })
 
 test('disabled soundtrack rejects future mutations while historical reads remain available', async () => {
@@ -199,7 +292,7 @@ test('disabled soundtrack does not mutate or block ordinary post operations', ()
   assert.match(controller, /removeFile\([\s\S]*settings\.features\.soundtrack/)
   assert.match(controller, /duplicate\([\s\S]*settings\.features\.soundtrack/)
   assert.match(controller, /submitForApproval\([\s\S]*settings\.features\.soundtrack/)
-  assert.match(repository, /enforceSoundtrackSource && await this\.soundtrackRepository\.isEmbeddedSource/)
+  assert.match(repository, /if \(enforceSoundtrackSource\) \{[\s\S]*SELECT id FROM post_soundtracks[\s\S]*source_media_id = \$2/)
   assert.match(repository, /const originalSoundtrack = includeSoundtrack \? await client\.query/)
   assert.match(repository, /if \(includeSoundtrack\) await client\.query\([\s\S]*UPDATE post_soundtracks/)
 })

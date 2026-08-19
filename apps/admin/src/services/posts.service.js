@@ -10,6 +10,13 @@ function getRequestErrorMessage(error) {
   return error.response?.data?.error || error.response?.data?.message || error.message || 'Não foi possível enviar o arquivo.'
 }
 
+function wrapFileRequestError(fileName, error) {
+  const wrapped = new Error(`${fileName}: ${getRequestErrorMessage(error)}`)
+  wrapped.response = error.response
+  wrapped.code = error.response?.data?.code || error.code
+  return wrapped
+}
+
 export async function createPost(postData, files = [], options = {}) {
   let post
   try {
@@ -42,6 +49,11 @@ export async function updatePost(postId, updates) {
   return data
 }
 
+export async function reopenPostForEditing(postId) {
+  const { data } = await apiClient.post(`/posts/${postId}/reopen-for-editing`)
+  return data.data || data
+}
+
 export async function uploadPostFiles(postId, files = [], options = {}) {
   if (!files.length) return []
   const uploadedFiles = []
@@ -68,7 +80,7 @@ export async function uploadPostFiles(postId, files = [], options = {}) {
       })
       uploadedFiles.push(...(data.data || []))
     } catch (error) {
-      throw new Error(`${file.name}: ${getRequestErrorMessage(error)}`)
+      throw wrapFileRequestError(file.name, error)
     }
   }
 
@@ -132,7 +144,7 @@ export async function replacePostFile(postId, fileId, file, options = {}) {
     })
     return data.data
   } catch (error) {
-    throw new Error(`${file.name}: ${getRequestErrorMessage(error)}`)
+    throw wrapFileRequestError(file.name, error)
   }
 }
 

@@ -14,6 +14,7 @@ export class PostMapper {
       formats: raw.formats || {},
       scheduledDate: raw.scheduled_date || null,
       funnelTag: raw.funnel_tag || null,
+      reviewFieldVisibility: raw.review_field_visibility || { funnel_tag: false },
       emailLink: raw.email_link || null,
       createdAt: new Date(raw.created_at),
       updatedAt: new Date(raw.updated_at),
@@ -23,6 +24,13 @@ export class PostMapper {
     ;(post as any).executedAt = raw.executed_at || null
     ;(post as any).filesDeleteAfter = raw.files_delete_after || null
     ;(post as any).filesRetentionPolicy = raw.files_retention_policy || null
+    ;(post as any).contentRevision = Number(raw.content_revision || 0)
+    ;(post as any).approvedRevision = raw.approved_revision === null || raw.approved_revision === undefined
+      ? null
+      : Number(raw.approved_revision)
+    ;(post as any).executedRevision = raw.executed_revision === null || raw.executed_revision === undefined
+      ? null
+      : Number(raw.executed_revision)
     return post
   }
 
@@ -44,6 +52,7 @@ export class PostMapper {
       formats: post.formats || {},
       scheduled_date: post.scheduledDate,
       funnel_tag: post.funnelTag,
+      review_field_visibility: post.reviewFieldVisibility || { funnel_tag: false },
       email_link: post.emailLink,
       created_at: post.createdAt.toISOString(),
       updated_at: post.updatedAt.toISOString(),
@@ -65,6 +74,8 @@ export class PostMapper {
       scheduledDate: post.scheduledDate,
       funnel_tag: post.funnelTag,
       funnelTag: post.funnelTag,
+      reviewFieldVisibility: post.reviewFieldVisibility || { funnel_tag: false },
+      review_field_visibility: post.reviewFieldVisibility || { funnel_tag: false },
       email_link: post.emailLink,
       emailLink: post.emailLink,
       files: post.files || [],
@@ -83,6 +94,12 @@ export class PostMapper {
       files_delete_after: (post as any).filesDeleteAfter,
       filesRetentionPolicy: (post as any).filesRetentionPolicy,
       files_retention_policy: (post as any).filesRetentionPolicy,
+      contentRevision: (post as any).contentRevision || 0,
+      content_revision: (post as any).contentRevision || 0,
+      approvedRevision: (post as any).approvedRevision ?? null,
+      approved_revision: (post as any).approvedRevision ?? null,
+      executedRevision: (post as any).executedRevision ?? null,
+      executed_revision: (post as any).executedRevision ?? null,
     }
   }
 }

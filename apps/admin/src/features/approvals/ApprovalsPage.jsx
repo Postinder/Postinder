@@ -14,6 +14,13 @@ import PageHeader from '../../components/ui/PageHeader'
 import { resolveMediaUrl } from '../../utils/mediaUrl'
 import { validateUploadFile } from '../../utils/uploadValidation'
 import MediaPreview, { getMediaKind } from '../../components/media/MediaPreview'
+import {
+  getPostEditingAction,
+  getPostMutationErrorMessage,
+  getRawPostStatus,
+  isPostReopenRequiredError,
+  POST_REOPEN_REQUIRED_MESSAGE,
+} from '../posts/postBulkSelection'
 import toast from 'react-hot-toast'
 
 const FILE_LABELS = {
@@ -49,10 +56,7 @@ function isRejectedFile(file) {
 }
 
 function isReviewPost(post) {
-  const status = computePostStatus(post)
-  const files = post.files || []
-  return ['sent', 'pending_approval', 'rejected'].includes(status) ||
-    files.some(file => ['pending', 'rejected'].includes(getFileStatus(file)))
+  return ['sent', 'pending_approval', 'rejected'].includes(getRawPostStatus(post))
 }
 
 function FilePreview({ file }) {
@@ -105,11 +109,16 @@ export default function ApprovalsPage() {
   const [notifyModal, setNotifyModal] = useState({ open: false, client: null })
   const [notifyMsg, setNotifyMsg] = useState('')
 
-  useEffect(() => {
+  function load() {
+    setLoading(true)
     Promise.all([fetchPosts({ limit: 200 }), fetchClients()])
       .then(([p, c]) => { setPosts(p); setClients(c) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
   }, [])
 
   const actionable = posts.filter(post => {
@@ -141,6 +150,15 @@ export default function ApprovalsPage() {
   async function handleResubmit() {
     const post = resubmitModal.post
     const rejectedFiles = (post?.files || []).filter(isRejectedFile)
+
+    if (getPostEditingAction(post) !== 'resubmit') {
+      toast.error(getPostEditingAction(post) === 'reopen'
+        ? POST_REOPEN_REQUIRED_MESSAGE
+        : 'Esta postagem não está mais disponível para correção.')
+      closeResubmitModal()
+      load()
+      return
+    }
 
     if (!rejectedFiles.length) {
       toast.error('Nenhum arquivo reprovado para corrigir.')
@@ -190,7 +208,11 @@ export default function ApprovalsPage() {
       setNotifyMsg(defaultMsg)
       setNotifyModal({ open: true, client })
     } catch (e) {
-      toast.error(e.response?.data?.error || e.message)
+      toast.error(getPostMutationErrorMessage(e))
+      if (isPostReopenRequiredError(e)) {
+        closeResubmitModal()
+        load()
+      }
     } finally {
       setResubmitting(false)
     }
@@ -202,7 +224,7 @@ export default function ApprovalsPage() {
     const files = post.files || []
     const rejectedFiles = files.filter(isRejectedFile)
     const pendingFiles = files.filter(isPendingFile)
-    const isRejected = status === 'rejected' || rejectedFiles.length > 0
+    const isRejected = getPostEditingAction(post) === 'resubmit'
 
     return (
       <Card key={post.id} className="mb-4 overflow-hidden">

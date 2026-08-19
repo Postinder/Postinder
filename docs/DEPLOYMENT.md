@@ -13,11 +13,11 @@ O estado efetivamente publicado deve ser confirmado no painel de cada provedor. 
 
 - Backend e frontend das correcoes anteriores foram publicados em 30/07/2026.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`; `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql`, `019_platform_settings.sql` e `020_portal_approval_mode_and_review_drafts.sql` existem somente no codigo local e devem ser aplicadas, nessa ordem, antes de um futuro deploy autorizado.
+- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`; as migrations `017` a `024` existem somente no codigo local e devem ser aplicadas, nessa ordem, antes de um futuro deploy autorizado.
 - `/health`, `/health/db` e `/health/storage` responderam com sucesso depois da publicacao.
 - Criacao com CPF, criacao e edicao com CNPJ, remocao do documento, Cliente antigo sem documento e prazo diferente de 7 dias foram validados.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
-- O pacote local de aprovacao configuravel foi auditado e validado, mas ainda nao foi publicado. O proximo deploy deve incluir a migration `020` antes de iniciar o backend novo e exige smoke test dos modos `content` e `item`, rewind e envio em lote.
+- O pacote local de aprovacao configuravel, revisao/certificacao, snapshot do funil, historico append-only de soundtrack e reacao **Adorei** foi auditado e validado. O commit anterior esta preservado, mas o segundo commit desta leva e sua publicacao ainda nao ocorreram. O proximo deploy deve aplicar `017` a `024` antes de iniciar o backend novo.
 - O script de lint do frontend nao e executavel no estado atual porque ESLint e sua configuracao nao estao instalados. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; a pendencia nao bloqueia esta publicacao, mas nao deve ser descrita como validacao aprovada. A verificacao administrativa da Vercel deve confirmar que nao existe override remoto.
 
 ## Banco e migrations
@@ -31,15 +31,15 @@ npm run db:migrate
 
 O migrador registra cada migration em `schema_migrations`. A migration `002_development_seed.sql` e historica e nao deve ser executada como parte da cadeia estrutural. O startup valida migrations pendentes e nao corrige schema automaticamente.
 
-O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. `017_platform_branding.sql`, `018_client_portal_preferences_and_recoverable_links.sql`, `019_platform_settings.sql` e `020_portal_approval_mode_and_review_drafts.sql` existem somente no codigo/local e devem ser as proximas migrations estruturais aplicadas no pre-deploy da futura publicacao.
+O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. As migrations `017` a `024` existem somente no codigo local e devem ser as proximas migrations estruturais aplicadas no pre-deploy da futura publicacao.
 
-A `019` cria o singleton operacional e o override anulavel do portal, sem backfill. A `020` adiciona `portal_approval_mode` com default `content`, drafts provisórios por item, revisao/rewind por postagem e integridade composta entre postagem e arquivo. A cadeia ate `020` e a segunda execucao/no-op foram validadas em PostgreSQL local descartavel durante a auditoria; nenhum banco remoto foi usado. Isso nao substitui backup e preflight imediatamente antes do deploy.
+A `019` cria o singleton operacional e o override anulavel do portal, sem backfill. A `020` adiciona `portal_approval_mode`, drafts provisorios e rewind. A `021` introduz revisao/certificacao e historico oficial, a `022` adiciona visibilidade/snapshot do funil, a `023` protege o historico de soundtrack como append-only e a `024` acrescenta `positive_reaction` opcional e `item_snapshot` oficial. A `024` nao faz backfill de `loved`, preserva `NULL`/snapshot vazio do legado e restringe combinacoes invalidas. A cadeia ate `024` e a segunda execucao/no-op foram validadas em PostgreSQL 18.4 local descartavel; nenhum banco remoto foi usado. Isso nao substitui backup e preflight imediatamente antes do deploy.
 
 Depois do startup, o backend executa a limpeza de retencao e agenda novas varreduras a cada hora. Aplique a `019` antes de iniciar a nova versao e confirme Storage/DB nos health checks; nao e necessario Render Cron Job.
 
 A `018` e aditiva: inclui a preferencia booleana do portal com default simplificado, ciphertext anulavel para recuperacao administrativa e indice parcial. Ela nao invalida links existentes nem exige nova variavel de ambiente; a cifra deriva de forma separada do `JWT_SECRET` backend ja obrigatorio. Em caso de rollback de aplicacao, mantenha o backend anterior ate decidir a estrategia de schema — nao remova colunas nem reescreva tokens.
 
-O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Em relacao ao repositorio atual, `017`, `018`, `019` e `020` permanecem deliberadamente pendentes. A cadeia local completa ate `020` foi validada e a segunda execucao foi no-op; o deploy continua nao autorizado nesta etapa.
+O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Em relacao ao repositorio atual, `017` a `024` permanecem deliberadamente pendentes. A cadeia local completa ate `024` foi validada e a segunda execucao foi no-op; o deploy continua nao autorizado nesta etapa.
 
 No Render, configure um Pre-Deploy Command/release step separado e bloqueante:
 
@@ -58,6 +58,7 @@ Ele deve terminar com sucesso antes do Start Command. Nao incorpore migrations a
 - A copia preparada de `roles.sql` comenta somente a instrucao que altera `statement_timeout` de `supabase_admin`; `schema.sql` e `data.sql` permanecem identicos.
 - O backup e restauravel com esse procedimento documentado de compatibilidade.
 - Objetos fisicos do Supabase Storage nao integram o backup logico e exigem plano operacional separado.
+- Em rehearsal/restauracao sobre PostgreSQL 18 recem-criado, um dump que declara `public` pode colidir com o schema vazio criado automaticamente. Somente em database confirmado como descartavel, verifique que `public` esta vazio antes de remover apenas esse schema para o `pg_restore`. Nunca generalize esse passo para producao.
 
 ## Dados demo e primeiro administrador
 
@@ -168,6 +169,10 @@ ambiente demo esta preparado para avaliacao da 20Cinco.
 - Validar `/health`, `/health/db` e `/health/storage`.
 - Exercitar login, regras por perfil, criacao, envio, portal por token, portal
   autenticado, decisao do Cliente, correcao, execucao, upload e duplicacao.
+- Nos modos `content` e `item`, exercitar separadamente **Adorei**, **Aprovar** e **Solicitar ajuste**. Confirmar que as duas escolhas positivas resultam operacionalmente em `approved`, que somente **Adorei** registra `loved`, que stale retorna conflito e que retry conflitante nao troca uma intencao pela outra.
+- Confirmar que **Adorei no mes** conta uma vez por post certificado com projecao corrente `loved` e `approvedAt` no mes, sem contar aprovacao normal, rejeicao, legado, retries, itens individualmente ou decisoes historicas superadas por rewind.
+- Confirmar que `approved` legado sem selo nao executa e que o ciclo `reopen -> submit -> aprovacao oficial -> execucao` produz selos correntes.
+- Confirmar stale review por `expectedRevision`, funil invisivel/visivel conforme `review_field_visibility` e protecao append-only do historico de portal/soundtrack.
 - Confirmar que JWT de Cliente nao alcanca rotas administrativas.
 - Confirmar que URLs de portal aparecem nos logs com token redigido e que
   respostas/erros nao refletem credenciais.
@@ -184,7 +189,7 @@ ambiente demo esta preparado para avaliacao da 20Cinco.
 
 ## Rollback operacional
 
-Para o primeiro rollout do branding: (1) criar backup e executar preflight; (2) aplicar a migration aditiva `017`; (3) publicar o backend; (4) concluir smoke tests; (5) publicar o frontend. Em rollback, retornar primeiro o frontend, depois o backend; a migration `017` permanece, pois e aditiva. Frontend novo tolera backend antigo derivando `logo_configured` de `logo_url`, e backend novo preserva o contrato consumido pelo frontend anterior.
+Para o rollout do pacote local: (1) criar backup e executar preflight; (2) aplicar, em ordem, as migrations aditivas `017` a `024`; (3) publicar o backend; (4) concluir health checks e smoke tests; (5) publicar o frontend. Em rollback de aplicacao, retornar primeiro o frontend e depois o backend; nao remova migrations ja aplicadas nem edite `schema_migrations` manualmente.
 
 Nao existem down migrations. Se o release step falhar:
 

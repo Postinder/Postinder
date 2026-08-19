@@ -3,9 +3,14 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { normalizeEmailPreviewUrl } from '../../utils/emailPreview.js'
 import {
+  canEditPostDirectly,
+  canExecutePost,
   getBulkSelectionState,
   getBulkSendEligiblePosts,
+  getPostEditingAction,
+  getPostMutationErrorMessage,
   getSelectedBulkSendPosts,
+  requiresPostReopenForEditing,
   toggleAllBulkSendPosts,
 } from './postBulkSelection.js'
 
@@ -14,6 +19,9 @@ const newPostSource = readFileSync(new URL('./NewPostPage.jsx', import.meta.url)
 const constantsSource = readFileSync(new URL('../../utils/constants.js', import.meta.url), 'utf8')
 const channelIconSource = readFileSync(new URL('../../components/posts/ChannelIcon.jsx', import.meta.url), 'utf8')
 const feedPreviewSource = readFileSync(new URL('./FeedPreviewPage.jsx', import.meta.url), 'utf8')
+const dashboardSource = readFileSync(new URL('../dashboard/DashboardPage.jsx', import.meta.url), 'utf8')
+const approvalsSource = readFileSync(new URL('../approvals/ApprovalsPage.jsx', import.meta.url), 'utf8')
+const postsServiceSource = readFileSync(new URL('../../services/posts.service.js', import.meta.url), 'utf8')
 
 test('post list strengthens secondary text hierarchy in dark mode', () => {
   assert.match(managePostsSource, /text-neutral-500 dark:text-neutral-300/)
@@ -76,8 +84,8 @@ const statusOf = post => post.status
 
 test('select all adds every eligible visible post and never adds ineligible records', () => {
   const eligible = getBulkSendEligiblePosts(bulkPosts, statusOf)
-  assert.deepEqual(eligible.map(post => post.id), ['draft', 'ready', 'rejected'])
-  assert.deepEqual(toggleAllBulkSendPosts([], eligible, true), ['draft', 'ready', 'rejected'])
+  assert.deepEqual(eligible.map(post => post.id), ['draft', 'ready'])
+  assert.deepEqual(toggleAllBulkSendPosts([], eligible, true), ['draft', 'ready'])
 })
 
 test('select all can be cleared and reports partial selection as indeterminate', () => {
@@ -116,4 +124,55 @@ test('master checkbox is wired to an indeterminate state and visible eligibility
   assert.match(managePostsSource, /selectAllRef\.current\.indeterminate = bulkSelectionState\.indeterminate/)
   assert.match(managePostsSource, /Selecionar todos/)
   assert.match(managePostsSource, /elegíveis nesta lista/)
+})
+
+test('raw post status controls edit, correction and explicit reopening independently from derived file state', () => {
+  const cases = [
+    [{ status: 'draft', files: [{ status: 'approved' }] }, 'edit'],
+    [{ status: 'ready', files: [{ status: 'rejected' }] }, 'edit'],
+    [{ status: 'rejected', files: [{ status: 'approved' }] }, 'resubmit'],
+    [{ status: 'sent', files: [{ status: 'rejected' }] }, 'reopen'],
+    [{ status: 'pending_approval', files: [{ status: 'approved' }] }, 'reopen'],
+    [{ status: 'approved', soundtrack: { approval_status: 'adjustment_requested' } }, 'reopen'],
+    [{ status: 'executed' }, 'blocked'],
+    [{ status: 'unknown' }, 'blocked'],
+    [null, 'blocked'],
+  ]
+
+  for (const [post, action] of cases) assert.equal(getPostEditingAction(post), action)
+  assert.equal(canEditPostDirectly({ status: 'rejected' }), true)
+  assert.equal(canEditPostDirectly({ status: 'approved' }), false)
+  assert.equal(requiresPostReopenForEditing({ status: 'approved' }), true)
+})
+
+test('execute action requires a certified current approval seal', () => {
+  assert.equal(canExecutePost({ status: 'approved', contentRevision: 0, approvedRevision: null }), false)
+  assert.equal(canExecutePost({ status: 'approved', content_revision: 1, approved_revision: null }), false)
+  assert.equal(canExecutePost({ status: 'approved', contentRevision: 2, approvedRevision: 1 }), false)
+  assert.equal(canExecutePost({ status: 'approved', contentRevision: 2, approvedRevision: 2 }), true)
+  assert.equal(canExecutePost({ status: 'approved', content_revision: 3, approved_revision: 3 }), true)
+  assert.equal(canExecutePost({ status: 'executed', contentRevision: 3, approvedRevision: 3 }), false)
+})
+
+test('reopen-required backend conflicts receive actionable copy', () => {
+  const error = { response: { status: 409, data: { code: 'POST_REOPEN_REQUIRED', error: 'raw' } } }
+  assert.match(getPostMutationErrorMessage(error), /Reabrir para edição/)
+  assert.equal(getPostMutationErrorMessage(new Error('Falhou')), 'Falhou')
+})
+
+test('manage and dashboard expose explicit reopen without allowing protected posts into editors', () => {
+  assert.match(postsServiceSource, /\/posts\/\$\{postId\}\/reopen-for-editing/)
+  assert.match(managePostsSource, /Reabrir para edição/)
+  assert.match(managePostsSource, /canEditPostDirectly\(post\)/)
+  assert.match(dashboardSource, /getPostEditingAction\(post\)/)
+  assert.match(dashboardSource, /Reabrir para edição/)
+  assert.match(dashboardSource, /if \(resubmitted\)/)
+  assert.doesNotMatch(managePostsSource, /Este post ja foi aprovado\. Deseja alterar mesmo assim/)
+  assert.doesNotMatch(managePostsSource, /Post aprovado: edite apenas se realmente precisar/)
+})
+
+test('approvals preserves resubmit only for raw rejected posts', () => {
+  assert.match(approvalsSource, /getPostEditingAction\(post\) !== 'resubmit'/)
+  assert.match(approvalsSource, /getPostEditingAction\(post\) === 'resubmit'/)
+  assert.match(approvalsSource, /\['sent', 'pending_approval', 'rejected'\]\.includes\(getRawPostStatus\(post\)\)/)
 })

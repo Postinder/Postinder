@@ -17,6 +17,8 @@ function mapRow(row: any): PlatformSettingsRecord {
       features: { soundtrack: row.soundtrack_enabled === true },
       client_fields: row.client_field_policies,
       post_fields: row.post_field_policies,
+      post_field_client_visibility: row.post_field_client_visibility
+        || DEFAULT_PLATFORM_SETTINGS.post_field_client_visibility,
       portal: {
         show_post_list: row.portal_show_post_list === true,
         show_supplementary_info: row.portal_show_supplementary_info === true,
@@ -50,14 +52,15 @@ export class PlatformSettingsRepository {
       const result = await client.query(
         `INSERT INTO platform_settings (
            singleton_key, executed_attachment_retention_hours, soundtrack_enabled,
-           client_field_policies, post_field_policies, portal_show_post_list,
+           client_field_policies, post_field_policies, post_field_client_visibility, portal_show_post_list,
            portal_show_supplementary_info, portal_sequential_approval, portal_approval_mode, updated_at
-         ) VALUES (TRUE, $1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, NOW())
+         ) VALUES (TRUE, $1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9, NOW())
          ON CONFLICT (singleton_key) DO UPDATE SET
            executed_attachment_retention_hours = EXCLUDED.executed_attachment_retention_hours,
            soundtrack_enabled = EXCLUDED.soundtrack_enabled,
            client_field_policies = EXCLUDED.client_field_policies,
            post_field_policies = EXCLUDED.post_field_policies,
+           post_field_client_visibility = EXCLUDED.post_field_client_visibility,
            portal_show_post_list = EXCLUDED.portal_show_post_list,
            portal_show_supplementary_info = EXCLUDED.portal_show_supplementary_info,
            portal_sequential_approval = EXCLUDED.portal_sequential_approval,
@@ -69,6 +72,7 @@ export class PlatformSettingsRepository {
           settings.features.soundtrack,
           JSON.stringify(settings.client_fields),
           JSON.stringify(settings.post_fields),
+          JSON.stringify(settings.post_field_client_visibility),
           settings.portal.show_post_list,
           settings.portal.show_supplementary_info,
           settings.portal.sequential_approval,

@@ -49,7 +49,9 @@ sequenceDiagram
 - **Link mágico com token** — sem senha, expira automaticamente, ideal para aprovação rápida pelo celular.
 - **Login autenticado** — para clientes que acessam o painel com frequência e querem histórico completo.
 
-A forma de aprovação é configurável pela agência: `content` consolida uma decisão para a postagem inteira, ou `item` permite escolhas provisórias por mídia, oficializadas quando o cliente conclui a análise.
+A forma de aprovação é configurável pela agência: `content` consolida uma decisão para a postagem inteira, ou `item` permite escolhas provisórias por mídia, oficializadas quando o cliente conclui a análise (**Concluir análise**). Em qualquer modo, o cliente tem três reações possíveis: **Adorei**, **Aprovar** e **Solicitar ajuste** — as duas primeiras produzem a mesma aprovação operacional, e **Adorei** fica registrada como reação positiva no histórico oficial do post.
+
+Cada submissão possui uma `content_revision`. A aprovação sela essa revisão em `approved_revision`, e a execução só é aceita enquanto o selo continuar corrente (registrada em `executed_revision`); conteúdo já aprovado precisa ser reaberto antes de qualquer alteração material, o que evita executar algo diferente do que o cliente viu.
 
 ---
 
@@ -71,6 +73,7 @@ A forma de aprovação é configurável pela agência: `content` consolida uma d
 - **Portal de aprovação dedicado**, com login ou link privado recuperável pelo admin (sem gerar novo token a cada acesso).
 - **Fila guiada** ordenada pela data prevista, avançando automaticamente após cada decisão — ou visão detalhada completa, configurável por cliente.
 - **Prévia nativa por tipo de arquivo** — imagem, vídeo, áudio, PDF, documento, planilha, apresentação e e-mail, sem precisar baixar nada.
+- **Três reações à postagem** — **Adorei**, **Aprovar** e **Solicitar ajuste**; as duas primeiras aprovam operacionalmente, e **Adorei** fica marcada como reação positiva no histórico.
 - **Feedback consolidado** — nota e comentário sobre o mês/entrega.
 - **Aviso automático via WhatsApp** sempre que há algo novo para revisar.
 
@@ -187,7 +190,7 @@ cd backend
 npm run db:migrate
 ```
 
-O startup não cria nem corrige schema automaticamente. Em deploy, `npm run db:migrate` deve rodar como Pre-Deploy Command/release step bloqueante, antes do Start Command — com backup lógico e preflight do banco obrigatórios antes de migrations em produção.
+O startup não cria nem corrige schema automaticamente. Em deploy, `npm run db:migrate` deve rodar como Pre-Deploy Command/release step bloqueante, antes do Start Command — com backup lógico e preflight do banco obrigatórios antes de migrations em produção. A migration `002_development_seed.sql` é histórica e não faz parte do migrador estrutural. Entre as mais recentes: a `018` adiciona a preferência de portal do cliente e a cópia cifrada recuperável do token; a `020` adiciona o modo de aprovação e drafts provisórios; a `021` introduz revisão/certificação de conteúdo e histórico oficial; a `022` adiciona visibilidade e snapshot do funil; a `023` torna versions/decisions de soundtrack append-only sem bloquear cascatas legítimas; e a `024` acrescenta a reação opcional **Adorei** e o `item_snapshot` oficial.
 
 ---
 

@@ -1,71 +1,131 @@
 import { apiClient } from '../lib/axios'
 
-export async function fetchAuthenticatedPortal() {
-  const { data } = await apiClient.get('/client-portal')
-  return data
+function withExpectedRevision(expectedRevision, payload = {}) {
+  if (!Number.isInteger(expectedRevision) || expectedRevision <= 0) {
+    throw new TypeError('expectedRevision must be a positive integer')
+  }
+  return { ...payload, expectedRevision }
 }
 
-export async function approveAuthenticatedPortalPost(postId) {
-  const { data } = await apiClient.post(`/client-portal/posts/${postId}/approve`)
-  return data
+function withPositiveReaction(payload, positiveReaction) {
+  if (positiveReaction == null) return payload
+  if (positiveReaction !== 'loved') throw new TypeError('positiveReaction must be loved when provided')
+  return { ...payload, positiveReaction }
 }
 
-export async function rejectAuthenticatedPortalPost(postId, comment, tags = []) {
-  const { data } = await apiClient.post(`/client-portal/posts/${postId}/reject`, { comment, tags })
-  return data
+export function createClientPortalService(client = apiClient) {
+  return {
+    async fetchAuthenticatedPortal() {
+      const { data } = await client.get('/client-portal')
+      return data
+    },
+
+    async approveAuthenticatedPortalPost(postId, expectedRevision, positiveReaction = null) {
+      const { data } = await client.post(
+        `/client-portal/posts/${postId}/approve`,
+        withExpectedRevision(expectedRevision, withPositiveReaction({}, positiveReaction)),
+      )
+      return data
+    },
+
+    async rejectAuthenticatedPortalPost(postId, comment, tags = [], expectedRevision) {
+      const { data } = await client.post(
+        `/client-portal/posts/${postId}/reject`,
+        withExpectedRevision(expectedRevision, { comment, tags }),
+      )
+      return data
+    },
+
+    async saveAuthenticatedPortalItemDecision(postId, fileId, decision, comment = '', tags = [], expectedRevision, positiveReaction = null) {
+      const { data } = await client.put(
+        `/client-portal/posts/${postId}/items/${fileId}/decision`,
+        withExpectedRevision(expectedRevision, withPositiveReaction({ decision, comment, tags }, positiveReaction)),
+      )
+      return data
+    },
+
+    async completeAuthenticatedPortalItemReview(postId, expectedRevision) {
+      const { data } = await client.post(
+        `/client-portal/posts/${postId}/complete-review`,
+        withExpectedRevision(expectedRevision),
+      )
+      return data
+    },
+
+    async reopenAuthenticatedPortalPost(postId, expectedRevision) {
+      const { data } = await client.post(
+        `/client-portal/posts/${postId}/reopen`,
+        withExpectedRevision(expectedRevision),
+      )
+      return data
+    },
+
+    async sendAuthenticatedPortalFeedback(payload) {
+      const { data } = await client.post('/client-portal/feedback', payload)
+      return data
+    },
+
+    async approveAuthenticatedPortalFile(fileId) {
+      const { data } = await client.post(`/client-portal/files/${fileId}/approve`)
+      return data
+    },
+
+    async rejectAuthenticatedPortalFile(fileId, comment, tags = []) {
+      const { data } = await client.post(`/client-portal/files/${fileId}/reject`, { comment, tags })
+      return data
+    },
+
+    async resetAuthenticatedPortalFile(fileId) {
+      const { data } = await client.post(`/client-portal/files/${fileId}/reset`)
+      return data
+    },
+
+    async updateAuthenticatedPortalFileFeedback(fileId, comment, tags = []) {
+      const { data } = await client.patch(`/client-portal/files/${fileId}/feedback`, { comment, tags })
+      return data
+    },
+
+    async approveAuthenticatedPortalSoundtrack(postId, expectedRevision) {
+      const { data } = await client.post(
+        `/client-portal/posts/${postId}/soundtrack/approve`,
+        withExpectedRevision(expectedRevision),
+      )
+      return data
+    },
+
+    async adjustAuthenticatedPortalSoundtrack(postId, comment, expectedRevision) {
+      const { data } = await client.post(
+        `/client-portal/posts/${postId}/soundtrack/adjust`,
+        withExpectedRevision(expectedRevision, { comment }),
+      )
+      return data
+    },
+
+    async resetAuthenticatedPortalSoundtrack(postId, expectedRevision) {
+      const { data } = await client.post(
+        `/client-portal/posts/${postId}/soundtrack/reset`,
+        withExpectedRevision(expectedRevision),
+      )
+      return data
+    },
+  }
 }
 
-export async function saveAuthenticatedPortalItemDecision(postId, fileId, decision, comment = '', tags = []) {
-  const { data } = await apiClient.put(`/client-portal/posts/${postId}/items/${fileId}/decision`, { decision, comment, tags })
-  return data
-}
+const clientPortalService = createClientPortalService()
 
-export async function completeAuthenticatedPortalItemReview(postId) {
-  const { data } = await apiClient.post(`/client-portal/posts/${postId}/complete-review`)
-  return data
-}
-
-export async function reopenAuthenticatedPortalPost(postId) {
-  const { data } = await apiClient.post(`/client-portal/posts/${postId}/reopen`)
-  return data
-}
-
-export async function sendAuthenticatedPortalFeedback(payload) {
-  const { data } = await apiClient.post('/client-portal/feedback', payload)
-  return data
-}
-
-export async function approveAuthenticatedPortalFile(fileId) {
-  const { data } = await apiClient.post(`/client-portal/files/${fileId}/approve`)
-  return data
-}
-
-export async function rejectAuthenticatedPortalFile(fileId, comment, tags = []) {
-  const { data } = await apiClient.post(`/client-portal/files/${fileId}/reject`, { comment, tags })
-  return data
-}
-
-export async function resetAuthenticatedPortalFile(fileId) {
-  const { data } = await apiClient.post(`/client-portal/files/${fileId}/reset`)
-  return data
-}
-
-export async function updateAuthenticatedPortalFileFeedback(fileId, comment, tags = []) {
-  const { data } = await apiClient.patch(`/client-portal/files/${fileId}/feedback`, { comment, tags })
-  return data
-}
-
-export async function approveAuthenticatedPortalSoundtrack(postId) {
-  const { data } = await apiClient.post(`/client-portal/posts/${postId}/soundtrack/approve`)
-  return data
-}
-
-export async function adjustAuthenticatedPortalSoundtrack(postId, comment) {
-  const { data } = await apiClient.post(`/client-portal/posts/${postId}/soundtrack/adjust`, { comment })
-  return data
-}
-
-export async function resetAuthenticatedPortalSoundtrack(postId) {
-  const { data } = await apiClient.post(`/client-portal/posts/${postId}/soundtrack/reset`)
-  return data
-}
+export const {
+  fetchAuthenticatedPortal,
+  approveAuthenticatedPortalPost,
+  rejectAuthenticatedPortalPost,
+  saveAuthenticatedPortalItemDecision,
+  completeAuthenticatedPortalItemReview,
+  reopenAuthenticatedPortalPost,
+  sendAuthenticatedPortalFeedback,
+  approveAuthenticatedPortalFile,
+  rejectAuthenticatedPortalFile,
+  resetAuthenticatedPortalFile,
+  updateAuthenticatedPortalFileFeedback,
+  approveAuthenticatedPortalSoundtrack,
+  adjustAuthenticatedPortalSoundtrack,
+  resetAuthenticatedPortalSoundtrack,
+} = clientPortalService

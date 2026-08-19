@@ -31,8 +31,10 @@ test('the settings page exposes scoped groups, approval mode and controlled fiel
     'Forma de aprovação do cliente',
   ]) assert.match(page, new RegExp(label))
   for (const key of ['whatsapp', 'segment', 'deadline_days', 'document']) assert.match(page, new RegExp(`'${key}'`))
-  for (const key of ['description', 'scheduled_date']) assert.match(page, new RegExp(`'${key}'`))
-  assert.doesNotMatch(page, /'funnel_tag'/)
+  for (const key of ['description', 'scheduled_date', 'funnel_tag']) assert.match(page, new RegExp(`'${key}'`))
+  assert.match(page, /post_field_client_visibility/)
+  assert.match(page, /Exibir esta informa/)
+  assert.match(page, /disabled=\{form\.post_fields\.funnel_tag === 'hidden'\}/)
   assert.match(page, /executed_attachment_hours/)
   assert.match(page, /features\.soundtrack/)
   assert.match(page, /show_post_list/)

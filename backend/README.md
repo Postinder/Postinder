@@ -4,7 +4,7 @@
 
 `GET /api/v1/platform-settings` le a configuracao global; `PATCH /api/v1/platform-settings` aceita somente chaves conhecidas e atualizacoes parciais. A mutacao exige admin com `platform-settings:update`. Ausencia de linha retorna defaults de dominio; a primeira alteracao cria o singleton.
 
-O schema inclui `retention.executed_attachment_hours` (1 a 8760), `features.soundtrack`, politicas `hidden|optional|required` para quatro campos de Cliente e tres de postagem, os tres booleans do portal e `portal.approval_mode` (`content|item`, default `content`). Branding nao faz parte do contrato. Funil continua no schema para compatibilidade, mas fica oculto e nao e aceito como entrada operacional.
+O schema inclui `retention.executed_attachment_hours` (1 a 8760), `features.soundtrack`, politicas `hidden|optional|required` para quatro campos de Cliente e tres de postagem, `post_field_client_visibility.funnel_tag` (default `false`), os tres booleans do portal e `portal.approval_mode` (`content|item`, default `content`). Branding nao faz parte do contrato. Funil permanece configuravel; sua politica interna e sua exposicao ao Cliente sao independentes.
 
 `StorageRetentionScheduler` inicia uma varredura nao bloqueante junto ao servidor e repete a cada hora com timer `unref`. O cleanup limita o lote total a 50, exige `status='executed'`, `executed_at` e prazo vencido/coerente, usa locks por objeto e marca `storage_deleted_at` somente apos remocao confirmada. Falhas persistem mensagem sanitizada e permanecem elegiveis para retry.
 
@@ -33,6 +33,7 @@ npm run storage:cleanup-retention
 npm test
 npm run test:integration:soundtracks
 npm run test:integration:portal-approval
+npm run test:integration:post-revision
 npm run build
 npm run start
 ```
@@ -56,10 +57,13 @@ Base local: `http://localhost:3001/api/v1`.
   48 rotas, com negacao por padrao.
 - Os perfis oficiais sao `admin`, `manager`, `editor` e `viewer`; `viewer` e
   estritamente somente leitura.
-- Aprovacao e reprovacao pertencem ao portal do Cliente.
-- `content` conclui uma decisao para a postagem inteira. `item` grava escolhas provisórias em `portal_item_review_drafts`; `POST .../complete-review` consolida o snapshot somente quando todas as midias estao resolvidas. Drafts nao alteram estado canonico, feedback, atividade, notificacao ou metricas.
-- Autosave e conclusao bloqueiam a postagem/arquivos dentro de transacoes. Retry ou conclusao concorrente depois do primeiro commit recebe resposta idempotente com `already_completed`, sem duplicar revisao ou feedback.
-- `POST .../posts/:postId/reopen` implementa rewind por postagem: somente a conclusao elegivel mais recente do Cliente pode ser reaberta uma vez por ciclo. Navegacao entre midias nao chama rewind e nao altera estado oficial.
+- Aprovacao e solicitacao de ajuste pertencem ao portal do Cliente. Para conteudo, as intencoes visiveis sao **Adorei**, **Aprovar** e **Solicitar ajuste**: **Adorei** persiste `decision = approved` com `positive_reaction = loved`; **Aprovar** persiste `decision = approved` com reacao `NULL`; ajuste preserva o resultado negativo existente. Nao existe status `loved` ou `super_like`, nem regra de execucao diferente.
+- `content` conclui uma decisao para a postagem inteira. `item` grava escolhas provisórias em `portal_item_review_drafts`; cada item pode ser aprovado normalmente, receber **Adorei** ou solicitar ajuste. `POST .../complete-review` consolida o `item_snapshot` somente quando todas as midias estao resolvidas. Misturar **Aprovar** e **Adorei** continua aprovando o post; qualquer ajuste mantem a logica negativa. Drafts nao alteram estado canonico, feedback, atividade, notificacao ou metricas.
+- Autosave e conclusao bloqueiam a postagem/arquivos dentro de transacoes. Retry identico ou conclusao concorrente depois do primeiro commit recebe resposta idempotente com `already_completed`, sem duplicar revisao ou feedback; retry conflitante retorna conflito e nao converte **Aprovar** em **Adorei**, nem o inverso.
+- Submissoes oficiais incrementam `content_revision`; aprovacao e execucao selam `approved_revision` e `executed_revision`. Operacoes de review recebem `expectedRevision` e recusam estado stale. A execucao exige selo corrente, decisao oficial do Cliente, tenant coerente e Cliente ativo.
+- Postagens protegidas, seus arquivos e soundtrack nao aceitam alteracao material silenciosa. A agencia deve reabrir antes de editar; posts `approved` legados sem selo precisam cumprir `reopen -> submit -> aprovacao oficial -> execucao`.
+- `portal_review_decisions` e `portal_review_actions` sao fatos append-only. A reacao opcional fica na decisao oficial em modo `content`; no modo `item`, o `item_snapshot` oficial preserva cada escolha e tambem e imutavel. Drafts anteriores a `021` sem revisao confiavel sao descartados; decisoes anteriores a `024` permanecem com `positive_reaction = NULL`, e nenhum historico legado e promovido ou marcado artificialmente como **Adorei**.
+- `POST .../posts/:postId/reopen` implementa rewind por postagem: somente a conclusao elegivel mais recente do Cliente pode ser reaberta uma vez por ciclo. Navegacao entre midias nao chama rewind e nao altera estado oficial. O rewind preserva a decisao historica anterior, limpa sua projecao corrente e nao herda automaticamente **Adorei** na nova analise.
 - `PATCH /posts/:id/status` aceita apenas `draft <-> ready`.
 - Postagens `executed` sao imutaveis; duplicacao cria uma nova postagem.
 - O reset so e montado com `DEPLOYMENT_MODE=demo` e
@@ -73,6 +77,8 @@ Base local: `http://localhost:3001/api/v1`.
 - Em producao, cada arquivo ainda e recebido em memoria antes do envio ao Supabase; upload direto ou retomavel esta no roadmap.
 - Fundo sonoro conserva entidade, versoes, decisoes e Storage separados dos anexos, mas e opcional, secundario e de baixa prioridade. Ausente, desabilitado ou `none` nunca bloqueia. No modo `item`, a decisao de soundtrack usa `recalculatePostStatus: false`: ela nao conclui/reprova a postagem isoladamente; uma trilha aplicavel pendente so bloqueia quando as midias resultariam em aprovacao. O modo `content` preserva a compatibilidade existente.
 - Alteracoes de fundo sonoro em postagens `executed` sao recusadas. Decisoes pertencem somente ao Cliente e ficam versionadas para auditoria.
+- A aprovacao de soundtrack e vinculada a `content_revision`. `post_soundtrack_versions` e `post_soundtrack_decisions` sao append-only no PostgreSQL: INSERT legitimo permanece aceito, UPDATE/DELETE direto e bloqueado e hard delete de soundtrack, post ou Cliente continua cascando o historico relacionado. **Adorei** pertence somente ao conteudo; soundtrack continua restrito a aprovacao ou solicitacao de ajuste e nao aceita `positive_reaction`.
+- Falhas ao remover o objeto fisico de uma trilha ficam no estado corrente `post_soundtracks.storage_delete_error`; a versao historica nao e atualizada. Se a persistencia do erro falhar, o logger ainda registra a falha para observabilidade e retry.
 - `GET /api/v1/branding` fornece somente a identidade institucional publica, incluindo `logo_configured` derivado da referencia persistida. `POST /api/v1/branding/logo` e `DELETE /api/v1/branding/logo` exigem contexto administrativo e a capacidade `branding:update`, exclusiva de `admin`.
 - Logos usam o Storage existente em `branding/logo/{uuid}.{ext}` e aceitam somente PNG, JPEG ou WebP estaticos de ate 2 MB e 16 milhoes de pixels. O pipeline confronta MIME/extensao/formato, rejeita WebP animado, APNG e multipagina, valida limites e CRC de todos os chunks PNG e conclui a decodificacao da unica imagem antes do Storage. Multer 2.2.0 limita o multipart a um arquivo, nenhum campo textual e dois parts; duas decodificacoes podem ocorrer em paralelo. A URL nao e persistida; ausencia ou falha usa o fallback Postinder.
 - `GET /api/v1/clients/:id/portal-link`, `POST /api/v1/clients/:id/portal-link` e `POST /api/v1/clients/:id/portal-link/replace` exigem `clients:portal-access`. Consulta nunca gera token; criacao recusa link ativo e substituicao usa lock e transacao para preservar o anterior se a emissao falhar.

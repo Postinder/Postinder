@@ -17,7 +17,7 @@
     "storage:cleanup-retention": "tsx scripts/cleanupStorageRetention.ts",
     "db:validate-storage-retention": "tsx scripts/validateStorageRetention.ts",
     "db:cleanup-legacy-archived": "tsx scripts/cleanupLegacyArchivedPosts.ts",
-    "test": "tsx --test src/modules/soundtracks/domain/Soundtrack.test.ts src/modules/clients/clientInput.test.ts src/modules/platformSettings/platformSettings.test.ts src/modules/portal/portalApproval.test.ts src/modules/posts/storageRetention.test.ts src/shared/middlewares/authBoundary.test.ts src/modules/maintenance/demoReset.test.ts src/shared/utils/logSanitizer.test.ts src/shared/middlewares/adminAuthorization.test.ts src/modules/integrations/aiInsights.test.ts src/modules/branding/branding.test.ts",
+    "test": "tsx --test src/modules/soundtracks/domain/Soundtrack.test.ts src/modules/clients/clientInput.test.ts src/modules/platformSettings/platformSettings.test.ts src/modules/portal/portalApproval.test.ts src/modules/posts/domain/PostMutationPolicy.test.ts src/modules/posts/storageRetention.test.ts src/shared/middlewares/authBoundary.test.ts src/modules/maintenance/demoReset.test.ts src/shared/utils/logSanitizer.test.ts src/shared/middlewares/adminAuthorization.test.ts src/modules/integrations/aiInsights.test.ts src/modules/branding/branding.test.ts",
     "test:auth": "tsx --test src/shared/middlewares/authBoundary.test.ts",
     "test:c02": "tsx --test src/modules/maintenance/demoReset.test.ts",
     "test:h02": "tsx --test src/shared/utils/logSanitizer.test.ts",
@@ -25,6 +25,7 @@
     "test:h04": "tsx --test src/modules/integrations/aiInsights.test.ts",
     "test:integration:soundtracks": "tsx scripts/validateSoundtracks.ts",
     "test:integration:portal-approval": "tsx --test src/modules/portal/portalApproval.integration.test.ts",
+    "test:integration:post-revision": "tsx --test src/modules/posts/postRevision.integration.test.ts",
     "db:setup": "npm run db:migrate",
     "build": "tsc",
     "start": "node dist/server.js"

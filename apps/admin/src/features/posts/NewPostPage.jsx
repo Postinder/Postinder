@@ -47,7 +47,7 @@ export default function NewPostPage() {
   const [files, setFiles] = useState([])
   const [selChannels, setSelChannels] = useState({})
   const [emailLink, setEmailLink] = useState('')
-  const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '' })
+  const [form, setForm] = useState({ title: '', clientId: '', scheduledDate: '', caption: '', funnelTag: '' })
   const [loading, setLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
   const [successModal, setSuccessModal] = useState({ open: false, clientId: '', status: 'draft', client: null, portalLink: '' })
@@ -122,6 +122,7 @@ export default function NewPostPage() {
     for (const [policy, value] of [
       [postFields.description, form.caption],
       [postFields.scheduled_date, form.scheduledDate],
+      [postFields.funnel_tag, form.funnelTag],
     ]) {
       if (requiredFieldIsMissing(policy, value)) {
         toast.error('Preencha todos os campos obrigatorios da postagem.')
@@ -151,6 +152,7 @@ export default function NewPostPage() {
       }
       putVisibleField(payload, 'caption', form.caption, postFields.description)
       putVisibleField(payload, 'scheduledDate', form.scheduledDate || null, postFields.scheduled_date)
+      putVisibleField(payload, 'funnelTag', form.funnelTag || null, postFields.funnel_tag)
       await createPost(payload, files.map((item, index) => ({ ...item, sortOrder: index + 1 })), {
         onUploadProgress: setUploadProgress,
         soundtrack: settings.features.soundtrack ? soundtrack : emptySoundtrackDraft(),
@@ -182,7 +184,7 @@ export default function NewPostPage() {
   }
 
   function resetForm() {
-    setForm({ title: '', clientId: '', scheduledDate: '', caption: '' })
+    setForm({ title: '', clientId: '', scheduledDate: '', caption: '', funnelTag: '' })
     setFiles([])
     setSelChannels({})
     setEmailLink('')
@@ -207,6 +209,7 @@ export default function NewPostPage() {
             ))}
           </Select>
           {isFieldVisible(postFields.scheduled_date) ? <Input label={`Data de publicacao${isFieldRequired(postFields.scheduled_date) ? ' *' : ''}`} type="date" value={form.scheduledDate} onChange={event => set('scheduledDate', event.target.value)} /> : null}
+          {isFieldVisible(postFields.funnel_tag) ? <Input label={`Funil${isFieldRequired(postFields.funnel_tag) ? ' *' : ''}`} value={form.funnelTag} onChange={event => set('funnelTag', event.target.value)} placeholder="Ex: Topo, Meio ou Fundo" /> : null}
         </div>
       </Section>
 

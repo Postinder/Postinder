@@ -12,7 +12,7 @@
     "build": "tsc && vite build",
     "test": "npm run test:unit && npm run test:react",
     "test:unit": "node --test src/utils/soundtrack.test.js src/utils/collapsiblePanels.test.js src/utils/clientDocument.test.js src/utils/brandingLogo.test.js src/utils/fieldPolicies.test.js src/config/deploymentMode.test.js src/services/integrations/ai.integration.test.js src/features/clients/ClientsPage.test.js src/features/posts/ManagePostsPage.test.js src/features/settings/BrandingPage.test.js src/features/settings/PlatformSettingsPage.test.js src/features/portal/portalSwipe.test.js src/features/portal/portalBranding.test.js src/features/portal/portalReadability.test.js src/features/portal/portalReview.test.js",
-    "test:react": "vitest run --environment jsdom src/App.branding.test.jsx src/components/branding/BrandingFlow.test.jsx src/features/settings/PlatformSettingsFlow.test.jsx",
+    "test:react": "vitest run --environment jsdom src/App.branding.test.jsx src/components/branding/BrandingFlow.test.jsx src/features/settings/PlatformSettingsFlow.test.jsx src/features/portal/PortalRevisionConflictFlow.test.jsx src/features/portal/portalServices.test.jsx",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },

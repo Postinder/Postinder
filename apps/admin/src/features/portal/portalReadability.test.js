@@ -10,6 +10,7 @@ const metricsSource = readFileSync(new URL('./PortalMetricsBar.jsx', import.meta
 const reviewHeaderSource = readFileSync(new URL('./PortalReviewHeader.jsx', import.meta.url), 'utf8')
 const reviewActionsSource = readFileSync(new URL('./PortalReviewActions.jsx', import.meta.url), 'utf8')
 const portalServicesSource = readFileSync(new URL('../../services/portal.service.js', import.meta.url), 'utf8')
+const authenticatedPortalServicesSource = readFileSync(new URL('../../services/clientPortal.service.js', import.meta.url), 'utf8')
 
 test('client portal strengthens secondary text hierarchy in dark mode', () => {
   assert.match(portalPageSource, /text-neutral-400 dark:text-neutral-300\/80/)
@@ -70,8 +71,21 @@ test('item review is editable, navigable and only concludes after every draft de
   assert.match(portalPageSource, /disabled=\{!canCompleteItemReview \|\| busy\}/)
   assert.match(portalPageSource, /Concluir análise/)
   assert.match(portalServicesSource, /complete-review/)
-  assert.match(reviewActionsSource, /aria-pressed=\{decision === 'approved'\}/)
+  assert.match(reviewActionsSource, /aria-pressed=\{normallyApproved\}/)
+  assert.match(reviewActionsSource, /aria-label="Adorei"/)
+  assert.match(reviewActionsSource, /positiveReaction === 'loved'/)
   assert.match(reviewActionsSource, /aria-pressed=\{decision === 'rejected'\}/)
+})
+
+test('portal review mutations use the selected content revision and refresh stale state', () => {
+  assert.match(portalPageSource, /getPostContentRevision\(posts\.find\(post => post\.id === projectId\)\)/)
+  assert.match(portalPageSource, /reloadAfterPortalRevisionConflict\(error, reload\)/)
+  assert.match(portalPageSource, /PORTAL_REVISION_CONFLICT_MESSAGE/)
+  assert.match(portalPageSource, /return false/)
+  assert.match(portalServicesSource, /withExpectedRevision\(expectedRevision/)
+  assert.match(authenticatedPortalServicesSource, /withExpectedRevision\(expectedRevision/)
+  assert.match(portalServicesSource, /soundtrack\/reset/)
+  assert.match(authenticatedPortalServicesSource, /soundtrack\/reset/)
 })
 
 test('portal presents complete client-facing content without technical filenames', () => {
@@ -79,5 +93,5 @@ test('portal presents complete client-facing content without technical filenames
   assert.doesNotMatch(portalPageSource, /Ver mais|line-clamp-2 md:line-clamp-1/)
   assert.match(reviewHeaderSource, /Data de publicação:/)
   assert.match(channelChipsSource, /import ChannelIcon/)
-  assert.match(reviewActionsSource, /'Reprovar'/)
+  assert.match(reviewActionsSource, /Solicitar ajuste/)
 })

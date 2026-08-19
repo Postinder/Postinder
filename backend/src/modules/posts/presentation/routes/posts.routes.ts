@@ -40,6 +40,7 @@ export function createPostsRoutes(): Router {
   router.post('/:id/soundtrack/file', soundtrackUpload.single('file'), wrap(soundtracksController.upload.bind(soundtracksController)))
   router.patch('/:id/status', wrap(controller.updateStatus.bind(controller)))
   router.post('/:id/execute', wrap(controller.markExecuted.bind(controller)))
+  router.post('/:id/reopen-for-editing', wrap(controller.reopenForEditing.bind(controller)))
   router.post('/:id/files', upload.array('files'), wrap(controller.uploadFiles.bind(controller)))
   router.patch('/:id/files/reorder', wrap(controller.reorderFiles.bind(controller)))
   router.post('/:id/files/:fileId/replace', upload.single('file'), wrap(controller.replaceFile.bind(controller)))

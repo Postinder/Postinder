@@ -12,6 +12,7 @@ export class Post {
   formats?: Record<string, string[]>
   scheduledDate?: string | null
   funnelTag?: string | null
+  reviewFieldVisibility: Record<string, boolean>
   emailLink?: string | null
   createdAt: Date
   updatedAt: Date
@@ -27,6 +28,7 @@ export class Post {
     formats?: Record<string, string[]>
     scheduledDate?: string | null
     funnelTag?: string | null
+    reviewFieldVisibility?: Record<string, boolean>
     emailLink?: string | null
     createdAt: Date
     updatedAt: Date
@@ -41,6 +43,7 @@ export class Post {
     this.formats = data.formats || {}
     this.scheduledDate = data.scheduledDate || null
     this.funnelTag = data.funnelTag || null
+    this.reviewFieldVisibility = data.reviewFieldVisibility || { funnel_tag: false }
     this.emailLink = data.emailLink || null
     this.createdAt = data.createdAt
     this.updatedAt = data.updatedAt
@@ -57,6 +60,7 @@ export class Post {
     formats?: Record<string, string[]>
     scheduledDate?: string | null
     funnelTag?: string | null
+    reviewFieldVisibility?: Record<string, boolean>
     emailLink?: string | null
     createdAt?: Date
     updatedAt?: Date
@@ -75,6 +79,7 @@ export class Post {
       formats: data.formats,
       scheduledDate: data.scheduledDate,
       funnelTag: data.funnelTag,
+      reviewFieldVisibility: data.reviewFieldVisibility,
       emailLink: data.emailLink,
       createdAt: data.createdAt || new Date(),
       updatedAt: data.updatedAt || new Date(),

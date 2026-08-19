@@ -1,5 +1,27 @@
 # Banco de dados
 
+## Migrations 021 a 024 - integridade de revisao, soundtrack e reacao positiva
+
+`021_content_revision_and_review_history.sql` adiciona `posts.content_revision`, `approved_revision` e `executed_revision`, vincula drafts/decisoes a uma revisao de conteudo e cria `portal_review_decisions` e `portal_review_actions` como fatos oficiais append-only. O banco bloqueia UPDATE e DELETE direto nesses fatos oficiais. Triggers tambem protegem alteracoes materiais em posts, files e soundtrack quando o ciclo esta protegido. Operacoes do runtime usam `expectedRevision`, e a execucao exige revisao oficialmente aprovada, Cliente ativo e tenant coerente.
+
+O backfill da `021` e deliberadamente conservador:
+
+- `sent`, `pending_approval` e `rejected` historicos recebem `content_revision = 1`;
+- `draft` e `ready` permanecem em revisao zero;
+- `approved` e `executed` preservam status e historico, mas nao recebem selo artificial;
+- nenhuma decisao oficial ou certificacao de soundtrack e fabricada;
+- drafts antigos sem revisao confiavel sao descartados porque nao podem ser associados com seguranca a uma `content_revision`.
+
+Assim, um `approved` legado sem `approved_revision` nao pode executar ate cumprir `reopen -> submit -> aprovacao oficial -> execucao`. Historico antigo do portal permanece legado e nao e promovido a `portal_review_decisions` ou `portal_review_actions`.
+
+`022_funnel_visibility_and_revision_snapshot.sql` cria `platform_settings.post_field_client_visibility` com default conservador `{"funnel_tag": false}` e `posts.review_field_visibility`. O valor historico de `funnel_tag` e preservado, e revisoes historicas recebem o snapshot conservador `{"funnel_tag": false}`. Funil interno invisivel nao e material para a aprovacao; quando visivel no snapshot submetido, passa a ser protegido. Alterar a configuracao global nao muda retroativamente revisoes anteriores.
+
+`023_soundtrack_history_append_only.sql` bloqueia UPDATE e DELETE direto em `post_soundtrack_versions` e `post_soundtrack_decisions`, mantendo INSERT legitimo. A funcao de guarda reconhece as cascatas existentes, portanto hard delete autorizado de soundtrack, post ou Cliente continua removendo o historico relacionado.
+
+`024_portal_positive_reaction.sql` e aditiva e acrescenta `positive_reaction` opcional aos drafts e decisoes do portal, alem do `item_snapshot` oficial. **Adorei** persiste `decision = approved` com `positive_reaction = loved`; aprovacao normal e legado permanecem com `NULL`. Constraints aceitam somente combinacoes semanticamente validas, impedem reacao positiva em rejeicao ou no lugar errado e preservam `[]` como snapshot legado valido. A migration nao reescreve decisoes oficiais, nao faz backfill de `loved` e nao enfraquece os triggers append-only.
+
+As migrations `021`/`022` foram validadas sobre dump sanitizado representativo. A `023`, a `024` e a cadeia oficial foram validadas em PostgreSQL 18.4 descartavel; a primeira execucao aplicou `024` uma unica vez, a segunda foi no-op, e os probes confirmaram as constraints, os bloqueios diretos e as cascatas legitimas. O SHA-256 validado da `024` e `A2DD6EFA09EABB0000DE365BE9E8A110259D197FD70910D83552A278C771C294`.
+
 ## Migration 020 - forma de aprovacao e revisoes do portal
 
 `020_portal_approval_mode_and_review_drafts.sql` e aditiva e ainda nao publicada. Ela:
@@ -12,15 +34,15 @@
 
 O autosave e a conclusao usam locks/transacoes; envio, reenvio e conclusao em modo `content` limpam drafts obsoletos aplicaveis. Posts anteriores a migration permanecem compativeis, e instalacoes sem valor explicito usam o fallback de dominio `content`.
 
-A auditoria aplicou a cadeia estrutural `001` e `003` a `020` em PostgreSQL local temporario pelo migrador oficial. A segunda execucao nao reaplicou migrations; constraints, cascatas e a FK composta foram exercitadas. Nenhum banco remoto foi acessado e o banco temporario foi removido.
+A auditoria original aplicou a cadeia estrutural ate `020`; a validacao posterior ampliou o gate ate `024`, sempre em PostgreSQL local descartavel e com segunda execucao no-op.
 
 ## Migration 019 — configuracoes globais
 
 `019_platform_settings.sql` e aditiva e ainda nao publicada. Ela cria `platform_settings` com chave singleton, retencao de 24 horas, feature flag de fundo sonoro, JSONB controlado para politicas de campos e booleans do portal. Tambem adiciona `clients.portal_mode_override` anulavel com `simplified|detailed`; `NULL` significa herdar.
 
-A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017`, `018`, `019` e `020`, nessa ordem, antes de iniciar o backend atual.
+A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017` a `024`, nessa ordem, antes de iniciar o backend atual.
 
-A limitacao anterior de PostgreSQL local foi superada: a auditoria posterior aplicou toda a cadeia ate `020` em banco temporario e confirmou o no-op da segunda rodada. Antes do deploy, ainda sao obrigatorios backup e preflight novos do ambiente publicado.
+A limitacao anterior de PostgreSQL local foi superada: a auditoria posterior aplicou toda a cadeia ate `024` em banco temporario e confirmou o no-op da segunda rodada. Antes do deploy, ainda sao obrigatorios backup e preflight novos do ambiente publicado.
 
 ## Fonte de verdade
 
@@ -42,7 +64,7 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `016`
 estao registradas. As migrations `012` a `015` foram aplicadas em 30/07/2026,
 e `016_client_documents.sql` foi aplicada em 31/07/2026. O banco publicado
-esta em `016`. Em relacao ao codigo local atual, `017`, `018`, `019` e `020` permanecem pendentes para uma futura publicacao.
+esta em `016`. Em relacao ao codigo local atual, `017` a `024` permanecem pendentes para uma futura publicacao.
 
 O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
 e posteriormente aplicou `012` a `015` em producao. Na publicacao da hotfix,
@@ -52,7 +74,7 @@ A migration aditiva `017_platform_branding.sql`, ainda nao publicada, cria a con
 
 A migration aditiva `018_client_portal_preferences_and_recoverable_links.sql`, tambem nao publicada, adiciona `clients.portal_detailed_view BOOLEAN NOT NULL DEFAULT FALSE`, `client_portal_tokens.token_ciphertext TEXT` anulavel e um indice parcial de consulta por Cliente. Nao existe backfill, remocao, reescrita ou invalidacao de token antigo. O migrador oficial aplicou `001`, `003` a `018` em PostgreSQL 18.4 local vazio e, na segunda execucao, ignorou toda a cadeia como ja registrada.
 
-A migration `015_post_soundtracks.sql` cria o estado atual do fundo sonoro, suas revisoes imutaveis e decisoes do Cliente. O vinculo e opcional: postagens anteriores continuam semanticamente no modo `none`, sem backfill de registros nem reescrita de historico.
+A migration `015_post_soundtracks.sql` cria o estado atual do fundo sonoro e suas tabelas de versoes/decisoes. O vinculo e opcional: postagens anteriores continuam semanticamente no modo `none`, sem backfill de registros nem reescrita de historico. A imutabilidade append-only dessas tabelas e garantida no banco pela `023`. **Adorei** nao pertence ao soundtrack. Falhas correntes de exclusao no Storage sao persistidas em `post_soundtracks.storage_delete_error`, sem atualizar `post_soundtrack_versions`; falhas dessa persistencia continuam observaveis no logger.
 
 A migration `016_client_documents.sql` adiciona `document_type` e
 `document_number` anulaveis a `clients`, com constraint de coerencia para CPF
@@ -72,6 +94,8 @@ a instrucao incompatível que altera `statement_timeout` de `supabase_admin`;
 O backup e restauravel com esse procedimento documentado de compatibilidade,
 mas nao inclui objetos fisicos do Supabase Storage. Crie novo backup e execute
 novo preflight antes de qualquer migration em producao.
+
+Em rehearsal/restauracao sobre PostgreSQL 18 recem-criado, um dump que declara o schema `public` pode colidir com o `public` vazio criado automaticamente. Somente em database comprovadamente descartavel, confirme o alvo e que o schema esta vazio antes de remover apenas esse schema para o `pg_restore`. Este procedimento nao autoriza apagar `public` em producao.
 
 ## Dados demo
 
