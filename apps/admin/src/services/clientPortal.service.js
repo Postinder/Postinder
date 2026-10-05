@@ -1,10 +1,11 @@
 import { apiClient } from '../lib/axios'
 
-function withExpectedRevision(expectedRevision, payload = {}) {
+function withExpectedRevision(expectedRevision, payload = {}, expectedReviewSequence = 0) {
   if (!Number.isInteger(expectedRevision) || expectedRevision <= 0) {
     throw new TypeError('expectedRevision must be a positive integer')
   }
-  return { ...payload, expectedRevision }
+  if (!Number.isInteger(expectedReviewSequence) || expectedReviewSequence < 0) throw new TypeError('Invalid review sequence')
+  return { ...payload, expectedRevision, expectedReviewSequence }
 }
 
 function withPositiveReaction(payload, positiveReaction) {
@@ -20,42 +21,42 @@ export function createClientPortalService(client = apiClient) {
       return data
     },
 
-    async approveAuthenticatedPortalPost(postId, expectedRevision, positiveReaction = null) {
+    async approveAuthenticatedPortalPost(postId, expectedRevision, positiveReaction = null, positiveFeedback = null, expectedReviewSequence = 0) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/approve`,
-        withExpectedRevision(expectedRevision, withPositiveReaction({}, positiveReaction)),
+        withExpectedRevision(expectedRevision, withPositiveReaction({ positiveFeedback }, positiveReaction), expectedReviewSequence),
       )
       return data
     },
 
-    async rejectAuthenticatedPortalPost(postId, comment, tags = [], expectedRevision) {
+    async rejectAuthenticatedPortalPost(postId, comment, tags = [], expectedRevision, expectedReviewSequence = 0) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/reject`,
-        withExpectedRevision(expectedRevision, { comment, tags }),
+        withExpectedRevision(expectedRevision, { comment, tags }, expectedReviewSequence),
       )
       return data
     },
 
-    async saveAuthenticatedPortalItemDecision(postId, fileId, decision, comment = '', tags = [], expectedRevision, positiveReaction = null) {
+    async saveAuthenticatedPortalItemDecision(postId, fileId, decision, comment = '', tags = [], expectedRevision, positiveReaction = null, positiveFeedback = null, expectedReviewSequence = 0) {
       const { data } = await client.put(
         `/client-portal/posts/${postId}/items/${fileId}/decision`,
-        withExpectedRevision(expectedRevision, withPositiveReaction({ decision, comment, tags }, positiveReaction)),
+        withExpectedRevision(expectedRevision, withPositiveReaction({ decision, comment, tags, positiveFeedback }, positiveReaction), expectedReviewSequence),
       )
       return data
     },
 
-    async completeAuthenticatedPortalItemReview(postId, expectedRevision) {
+    async completeAuthenticatedPortalItemReview(postId, expectedRevision, expectedReviewSequence = 0) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/complete-review`,
-        withExpectedRevision(expectedRevision),
+        withExpectedRevision(expectedRevision, {}, expectedReviewSequence),
       )
       return data
     },
 
-    async reopenAuthenticatedPortalPost(postId, expectedRevision) {
+    async reopenAuthenticatedPortalPost(postId, expectedRevision, expectedReviewSequence = 0, expectedDecisionId) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/reopen`,
-        withExpectedRevision(expectedRevision),
+        withExpectedRevision(expectedRevision, { expectedDecisionId }, expectedReviewSequence),
       )
       return data
     },
@@ -85,26 +86,26 @@ export function createClientPortalService(client = apiClient) {
       return data
     },
 
-    async approveAuthenticatedPortalSoundtrack(postId, expectedRevision) {
+    async approveAuthenticatedPortalSoundtrack(postId, expectedRevision, expectedReviewSequence = 0) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/soundtrack/approve`,
-        withExpectedRevision(expectedRevision),
+        withExpectedRevision(expectedRevision, {}, expectedReviewSequence),
       )
       return data
     },
 
-    async adjustAuthenticatedPortalSoundtrack(postId, comment, expectedRevision) {
+    async adjustAuthenticatedPortalSoundtrack(postId, comment, expectedRevision, expectedReviewSequence = 0) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/soundtrack/adjust`,
-        withExpectedRevision(expectedRevision, { comment }),
+        withExpectedRevision(expectedRevision, { comment }, expectedReviewSequence),
       )
       return data
     },
 
-    async resetAuthenticatedPortalSoundtrack(postId, expectedRevision) {
+    async resetAuthenticatedPortalSoundtrack(postId, expectedRevision, expectedReviewSequence = 0) {
       const { data } = await client.post(
         `/client-portal/posts/${postId}/soundtrack/reset`,
-        withExpectedRevision(expectedRevision),
+        withExpectedRevision(expectedRevision, {}, expectedReviewSequence),
       )
       return data
     },

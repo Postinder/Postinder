@@ -34,12 +34,12 @@ export default function PortalReviewHeader({ content, currentPosition, totalFile
           type="button"
           onClick={onUndo}
           disabled={!canUndo || busy}
-          aria-label="Desfazer a última decisão"
-          title="Desfazer a última decisão"
+          aria-label="Voltar à última postagem"
+          title="Voltar à última postagem"
           className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-bold text-neutral-600 transition hover:border-[var(--portal-brand-border)] hover:text-[var(--portal-brand-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-brand-focus)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:focus-visible:ring-offset-neutral-950"
         >
           <RotateCcw size={15} aria-hidden="true" />
-          <span className="hidden 2xl:inline">Desfazer</span>
+          <span>Voltar</span>
         </button>
       </div>
     </header>

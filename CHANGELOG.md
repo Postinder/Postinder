@@ -1,5 +1,15 @@
 # Changelog do Postinder
 
+## Não publicado — 04/10/2026 — Voltar, feedback positivo e aprovação administrativa
+
+- Corrigido rewind encadeado: alvo deriva da última decisão oficial antes da elegibilidade, com rodada obrigatória, lock por cliente e retry sem duplicação. Alterações materiais gravam horário efetivo após lock para invalidar rewind mesmo quando a edição começou antes da conclusão.
+- Adorei azul abre modal de comentário opcional. Persistência revisionada em content/drafts/snapshot item, normalização de branco, limite e retry sensível ao texto; sem uso da tabela feedback.
+- Nova capability `posts:admin-approve`, exclusiva de admin, endpoint próprio e fluxo compartilhado nas telas administrativas. Rejeição r origina certificação administrativa r+1, auditada e atômica, sem falsa decisão do cliente.
+- Fingerprint material canônico, idempotencyKey por intenção e gate de execução cliente OU admin. Histórico e projeções distinguem a origem; justificativa permanece interna.
+- Migration `025_review_feedback_and_admin_approval.sql` adiciona campos, constraints e dois índices parciais únicos, sem backfill.
+- Gate local: backend 240; frontend 83 unitários + 53 React; PostgreSQL 27 revisão + 14 portal + 40 pacote; cadeia nova/skip, soundtrack/retencão e builds aprovados. Notas: lint ausente, chunk Vite >500 kB e uma intermitência preexistente de teste do logo que passou na repetição.
+
+
 Este changelog registra os principais marcos funcionais e arquiteturais do projeto. O estado vigente esta em [PROJECT_STATE.md](PROJECT_STATE.md).
 
 ## Nao publicado - 14/08/2026 - reacao positiva Adorei

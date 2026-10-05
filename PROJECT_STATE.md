@@ -1,24 +1,21 @@
 # Estado Atual do Postinder
 
-## Fluxo configuravel e reacao Adorei - pacote local auditado e nao publicado
+## Correção focal — AUD-025-01 / AUD-025-02 — 04/10/2026
 
-- Branch atual: `configuracoes-gerais-plataforma`, em `eb1e1ae2384896d5e82a8824b5bbd3e7c80e9405`. O commit anterior permanece intocado; a leva **Adorei** esta tecnicamente concluida e com documentacao em consolidacao no worktree, mas seu segundo commit ainda nao foi criado e nenhum push ou deploy foi realizado.
-- A configuracao global **Forma de aprovacao do cliente** aceita `content` e `item`. O default e fallback para instalacoes antigas e `content`; overrides simplificado/detalhado do portal nao alteram essa escolha global.
-- O portal oferece **Adorei**, **Aprovar** e **Solicitar ajuste**. **Adorei** persiste `decision = approved` com `positive_reaction = loved`; **Aprovar** persiste `decision = approved` com reacao `NULL`; ajuste mantem a consequencia negativa existente. Nao existe status `loved` ou `super_like`: **Adorei** e **Aprovar** possuem a mesma consequencia operacional de aprovacao.
-- Em `content`, a postagem inteira recebe uma unica decisao. Em `item`, cada midia recebe um draft provisorio editavel e todas as escolhas so se tornam oficiais em **Concluir analise**. Aprovar e Adorei sao escolhas positivas e podem ser misturadas; qualquer ajuste resulta em `rejected`. O `item_snapshot` oficial preserva cada escolha como fato imutavel.
-- Navegacao dentro da postagem e livre, inclusive por indicadores clicaveis, e nunca consome rewind. O rewind reabre no nivel da postagem apenas a conclusao elegivel mais recente do Cliente, uma vez por ciclo; preserva a decisao historica e remove somente sua projecao corrente. A nova analise nao herda **Adorei** nem drafts anteriores e pode terminar independentemente em qualquer uma das tres intencoes.
-- A conclusao oficial aplica um snapshot sob lock e transacao. Retry e duplo submit sao idempotentes; uma conclusao concorrente prevalece e a outra recebe `already_completed`. Autosave usa os mesmos locks para nao atravessar a conclusao.
-- Drafts item a item nao alimentam estado canonico, metricas, feedback, atividade ou notificacao. Conclusao em modo `content`, envio e reenvio removem drafts obsoletos aplicaveis.
-- Contadores operacionais por estado representam o estado canonico atual da postagem. Quantidade de arquivos, cliques, drafts ou revisoes intermediarias nao multiplica o total de posts aprovados/reprovados; analises historicas de primeira decisao, arquivos e feedbacks continuam separadas em Insights.
-- **Selecionar todos** usa a lista carregada e visivel nos filtros atuais e inclui somente `draft`, `ready` ou `rejected` com ao menos uma midia, ou E-mail Marketing como unico canal com URL nao vazia. Checkbox individual, mestre, estado `indeterminate`, modal e API usam o mesmo conjunto contextual.
-- Soundtrack permanece compativel, opcional e secundario. Ausente, desabilitado ou `none` nunca bloqueia. No modo `item`, sua decisao isolada nao conclui/reprova a postagem; uma trilha aplicavel pendente so bloqueia quando o snapshot visual resultaria em aprovacao.
-- Cada submissao oficial possui `content_revision`; aprovacao e execucao selam `approved_revision` e `executed_revision`. Conteudo protegido exige reabertura para alteracao material, e operacoes stale sao recusadas por `expectedRevision`.
-- Funil permanece configuravel como `hidden|optional|required`. `platform_settings.post_field_client_visibility` usa `{"funnel_tag": false}` por default, e `posts.review_field_visibility` preserva o snapshot de cada revisao sem reescrita retroativa.
-- A migration local mais recente e `024_portal_positive_reaction.sql`. A `021` introduz revisao/certificacao e historico oficial, a `022` adiciona visibilidade/snapshot do funil, a `023` protege versions/decisions de soundtrack como append-only e a `024` acrescenta `positive_reaction` opcional e `item_snapshot` oficial sem backfill de entusiasmo.
-- A auditoria independente corrigiu: SQL PostgreSQL `42P08`, corrida autosave/conclusao, drafts obsoletos, elegibilidade divergente no lote, estado intermediario causado por soundtrack, reset de rewind em E-mail Marketing sem arquivo, integridade cruzada de drafts e default legado de funil.
-- Gate tecnico final da leva **Adorei**: typecheck e build backend aprovados; backend 215/215; PostgreSQL de revisao 27/27; portal approval 14/14; soundtrack/retention focal 16/16; integracao de soundtrack, append-only e `git diff --check` aprovados. No admin, `npm test` passou 83/83 unitarios e 33/33 React; o focal do portal passou 20/20 Node e 8/8 React; `portalServices.test.jsx` integrou o agregador padrao com 3/3; build aprovado. A migration `024` foi validada em PostgreSQL 18.4 descartavel e a segunda execucao foi no-op. Nenhum P0, P1 ou P2 residual ficou dentro do escopo.
-- Ressalva tecnica baixa: estado oficial, revisao e feedback sao atomicos, mas `activity_events` e gravado pelo controller depois do commit transacional da decisao oficial no banco, em modo best-effort. Uma falha pode omitir esse evento secundario sem corromper postagem, revisao, feedback ou metricas. Outbox/transacao compartilhada nao foi implementada.
-- Os dois P2 focais anteriores estao resolvidos: falhas de remocao de Storage do soundtrack ficam em `post_soundtracks.storage_delete_error` sem mutar versoes append-only, e `portalServices.test.jsx` integra a suite padrao do admin. O proximo passo seguro e concluir a auditoria documental/diff e criar o segundo commit local autorizado. Deploy continua pendente e exigira migrations `017` a `024`, backup/preflight e smoke tests no ambiente publicado.
+Métricas históricas por arquivo preservam a análise do Cliente após certificação administrativa; tela e CSV permanecem coerentes. Feedback positivo usa 5.000 pontos de código Unicode também na interface. Validação focal e regressão: 472 testes passaram, typechecks e build frontend aprovados. Estado: **READY FOR FOCAL REAUDIT**, sem declaração de CLEAN, commit ou deploy. Contratos críticos e migration 025 preservados; detalhes em `docs/REVIEW_PACKAGE_REPORT.md`. Os números abaixo registram a entrega anterior à correção focal.
+
+## Pacote de revisão — 04/10/2026 — somente workspace local
+
+Implementados Voltar autoritativo, Adorei azul com comentário opcional e aprovação administrativa. Branch: `configuracoes-gerais-plataforma`; HEAD-base: `62dd524f3ca8a67ca907d36ee423b767a87f7409`. Nenhum commit, push ou deploy nesta etapa. Os 89 arquivos preexistentes de tmp/ preservam nomes e hashes SHA-256, e o índice permanece vazio. O container descartável foi removido após os testes. O próximo passo é a revisão humana das alterações locais; consolidação Git e publicação dependem de autorização posterior.
+
+- Voltar seleciona primeiro a última decisão oficial do cliente, depois verifica elegibilidade. Se ela estiver reaberta, consumida, executada, alterada ou indisponível, nenhuma anterior a substitui. GET fornece alvo, decisão, revisão material e rodada; localStorage não concede autorização. Conclusão e rewind são serializados por cliente. Todos os comandos do portal exigem `expectedReviewSequence` e `expectedRevision`; rewind exige também `expectedDecisionId`.
+- Adorei continua `approved + loved`, abre modal opcional de até 5.000 caracteres, normaliza branco para NULL e não salva no cancelamento. Comentários pertencem à decisão content ou ao draft/snapshot item; nunca à tabela `feedback`. Histórico é preservado e a métrica continua uma contagem por postagem.
+- Somente admin possui `posts:admin-approve`. Uma rejeição oficial pertinente pode originar `admin_approved` em r+1, com justificativa interna, ator, chave idempotente e fingerprint SHA-256. Não se fabrica aprovação do cliente. A transação certifica arquivos e soundtrack aplicável; o gate aceita certificação cliente OU admin da revisão corrente.
+- Migration incremental única: `025_review_feedback_and_admin_approval.sql`; sem backfill e sem alteração dos triggers append-only. Cadeia nova (24 migrations estruturais, excluindo seed 002) aplicada em PostgreSQL local e segunda execução integralmente skip.
+- Validação: backend 240/240; frontend unitário 83/83 e React 53/53 na repetição final; integração de revisões 27/27, portal 14/14 e pacote novo 40/40. Duplicação/retencão de soundtrack também validada com arquivos locais. Builds backend/frontend passaram.
+- Notas: lint preexistente indisponível (ESLint/configuração ausentes); Vite avisa sobre chunk >500 kB; um teste preexistente de fallback do logo falhou intermitentemente e passou na repetição integral, sem alteração do teste ou componente. Eventos secundários de atividade de decisões do cliente continuam best-effort; o fato oficial e a certificação administrativa são transacionais.
+
+Contratos, campos do fingerprint e comandos estão em `backend/README.md` e `database/README.md`. Referências de publicação nas seções históricas abaixo não foram revalidadas remotamente nesta etapa.
 
 ## Configuracoes gerais da plataforma — pacote local nao publicado
 
@@ -38,7 +35,7 @@
 - O gate atual aprovou 215 testes de backend, 27 testes PostgreSQL de revisao, 14 de portal approval e 16 focais de soundtrack/retention, alem da integracao de soundtrack, typecheck, builds backend/admin, 83 testes unitarios e 33 React do admin, focais do portal e validacao final do diff.
 - As correcoes anteriores foram publicadas em 30/07/2026: backend e frontend foram atualizados, e `/health`, `/health/db` e `/health/storage` responderam com sucesso.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; no codigo local, as migrations `017` a `024` permanecem pendentes.
+- A migration `016_client_documents.sql` foi aplicada com sucesso e confirmada em producao. O ultimo schema publicado esta em `016`; no codigo local, as migrations `017` a `025` permanecem pendentes.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
 
 ## Rodada local para novos testes com Clientes
@@ -89,7 +86,7 @@ O fluxo implementado e:
 
 - `draft` e `ready` sao internos.
 - O Cliente usa **Adorei**, **Aprovar** ou **Solicitar ajuste** para arquivos e postagens pelo portal; as duas escolhas positivas convergem no mesmo estado operacional `approved`.
-- `approved` representa conteudo aprovado pelo Cliente e aparece na central como **Aprovado pelo cliente**.
+- `approved` representa conteúdo liberado operacionalmente. A origem `client` indica **Aprovado pelo cliente**; `admin` indica **Aprovado manualmente pela equipe**. A origem administrativa não é uma decisão de satisfação do Cliente.
 - `executed` representa conteudo efetivamente publicado ou realizado pela agencia e aparece como **Postado na rede**.
 - Postagens `executed` sao registros historicos imutaveis; podem ser consultadas e duplicadas, mas nao editadas, reenviadas, alteradas ou excluidas.
 - Excluir postagem e exclusao logica por `deleted_at`. Postagem `approved` exige admin e confirmacao reforcada; `executed` nunca pode ser excluida.
@@ -161,11 +158,11 @@ O backend publicado usa PostgreSQL da Supabase. O estado confirmado depois da pu
 - `001`, a `002` historica e `003` a `016` estao registradas;
 - `016_client_documents.sql` foi aplicada com sucesso;
 - o banco publicado esta em `016`;
-- aquele deploy terminou sem migration pendente; `017` a `024`, criadas depois, continuam ausentes do banco publicado.
+- aquele deploy terminou sem migration pendente; `017` a `025`, criadas depois, continuam ausentes do banco publicado.
 
 O backup logico foi criado, preservado e validado. A restauracao foi comprovada em stack Supabase local compativel, em transacao unica, usando copia de `roles.sql` com somente a instrucao de `statement_timeout` de `supabase_admin` comentada; schema e dados permaneceram identicos. O backup e restauravel com esse procedimento documentado de compatibilidade, mas nao inclui objetos fisicos do Supabase Storage.
 
-Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. `017` a `024` ainda nao integram o banco publicado. Em validacao local posterior, a cadeia `001`, `003` a `024` foi aplicada em PostgreSQL 18.4 descartavel e a segunda execucao foi no-op.
+Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executado por `npm run db:migrate` em `backend`, aplicou `012` a `015` na ordem correta. Em producao, essas quatro migrations foram aplicadas em 30/07/2026. Na publicacao de 31/07/2026, o migrador ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. `017` a `025` ainda nao integram o banco publicado. Em validacao local posterior, a cadeia `001`, `003` a `024` foi aplicada em PostgreSQL 18.4 descartavel e a segunda execucao foi no-op.
 
 ## Seguranca e demonstracao
 
@@ -202,7 +199,7 @@ Sobre o clone restaurado, o migrador real `backend/scripts/migrate.ts`, executad
 
 - O pacote local mais recente passou por typecheck e build backend, backend 215/215, PostgreSQL de revisao 27/27, portal approval 14/14, soundtrack/retention focal 16/16, integracao de soundtrack, gate append-only e `git diff --check`. O admin passou 83/83 unitarios, 33/33 React, focal de portal 20/20 Node e 8/8 React e build; `portalServices.test.jsx` executou no agregador padrao com 3/3. As validacoes publicadas anteriores e seus health checks permanecem historicamente registradas.
 - O script `npm run lint` do frontend existe, mas ESLint e sua configuracao nao estao disponiveis. O comando nao foi aprovado. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; por isso, a pendencia e tecnica e nao bloqueante para a publicacao atual. A verificacao administrativa da Vercel continua necessaria para confirmar que nao existe override remoto.
-- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado continua em `016`; as migrations locais `017` a `024` devem integrar, em ordem, um futuro deploy autorizado. O segundo commit da leva local atual ainda nao existe.
+- A publicacao de 31/07/2026 incluiu commit, push, migration `016`, backend e frontend. O banco publicado continua em `016`; as migrations locais `017` a `025` devem integrar, em ordem, um futuro deploy autorizado. Esta etapa não criou novo commit.
 - A verificacao manual da Vercel continua pendente para nomes de variaveis, Production/Preview/Development, commit ativo, deployments historicos e previews. Eventual segredo historico exigira rotacao ou invalidacao em etapa separada.
 - A verificacao manual do Render confirmou categorias de URL/CORS, banco, JWT, Supabase/Storage e `NODE_ENV`; nenhum `VITE_*`, credencial de integracao ou Environment Group foi evidenciado. O backend da hotfix foi publicado em 31/07/2026 e os tres endpoints de health responderam com sucesso.
 - O ambiente publicado continua em modo demo, disponivel em `https://portal-20cinco.vercel.app` e preparado para testes pela 20Cinco.

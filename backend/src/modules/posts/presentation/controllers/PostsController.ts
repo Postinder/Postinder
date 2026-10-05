@@ -1,3 +1,4 @@
+import { AdministrativeApprovalService } from '../../application/services/AdministrativeApprovalService'
 import { Request, Response } from 'express'
 import { ACTIVE_POST_CHANNELS, assertEmailPreviewRequirement, createPostSchema, updatePostSchema } from '../../application/dtos/CreatePostDTO'
 import { CreatePostService } from '../../application/services/CreatePostService'
@@ -64,6 +65,7 @@ function assertFunnelReadyForSubmission(post: any, settings: PlatformSettings) {
 }
 
 export class PostsController {
+  private readonly administrativeApproval = new AdministrativeApprovalService()
   constructor(
     private createPostService: CreatePostService,
     private listPostsService: ListPostsService,
@@ -418,6 +420,20 @@ export class PostsController {
       metadata: { status },
     }).catch(() => {})
     res.json({ success: true })
+  }
+
+  async prepareAdminApproval(req: AuthRequest, res: Response) {
+    res.json(await this.administrativeApproval.prepare(req.params.id, req.tenantId))
+  }
+
+  async adminApprove(req: AuthRequest, res: Response) {
+    res.json(await this.administrativeApproval.approve(req.params.id, req.body, {
+      id: req.user?.userId, role: req.user?.role, companyId: req.tenantId,
+    }))
+  }
+
+  async reviewHistory(req: AuthRequest, res: Response) {
+    res.json(await this.administrativeApproval.history(req.params.id, req.tenantId))
   }
 
   async markExecuted(req: AuthRequest, res: Response) {

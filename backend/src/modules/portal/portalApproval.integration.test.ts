@@ -138,11 +138,11 @@ integrationTest('draft churn has no official side effects and only final snapsho
   const retry = await repository.completeItemReview(seeded.postId, scope, 1)
   assert.equal(retry.kind, 'already_completed')
 
-  assert.equal((await repository.reopenPost(seeded.postId, scope, 1)).kind, 'reopened')
-  await repository.saveItemDecision(seeded.postId, a, { decision: 'approved' }, scope, 1)
-  await repository.saveItemDecision(seeded.postId, b, { decision: 'approved' }, scope, 1)
-  await repository.saveItemDecision(seeded.postId, c, { decision: 'approved' }, scope, 1)
-  const second = await repository.completeItemReview(seeded.postId, scope, 1)
+  assert.equal((await repository.reopenPost(seeded.postId, scope, 1, 'client', 1)).kind, 'reopened')
+  await repository.saveItemDecision(seeded.postId, a, { decision: 'approved' }, scope, 1, 1)
+  await repository.saveItemDecision(seeded.postId, b, { decision: 'approved' }, scope, 1, 1)
+  await repository.saveItemDecision(seeded.postId, c, { decision: 'approved' }, scope, 1, 1)
+  const second = await repository.completeItemReview(seeded.postId, scope, 1, 'client', 1)
   assert.equal(second.kind, 'completed')
   assert.equal(second.status, 'approved')
 
@@ -189,10 +189,10 @@ integrationTest('approved rewind rejected replaces the current metric without du
     await repository.saveItemDecision(seeded.postId, file.id, { decision: 'approved' }, scope, 1)
   }
   assert.equal((await repository.completeItemReview(seeded.postId, scope, 1)).status, 'approved')
-  assert.equal((await repository.reopenPost(seeded.postId, scope, 1)).kind, 'reopened')
-  await repository.saveItemDecision(seeded.postId, seeded.files[0].id, { decision: 'approved' }, scope, 1)
-  await repository.saveItemDecision(seeded.postId, seeded.files[1].id, { decision: 'rejected', comment: 'final rejection' }, scope, 1)
-  assert.equal((await repository.completeItemReview(seeded.postId, scope, 1)).status, 'rejected')
+  assert.equal((await repository.reopenPost(seeded.postId, scope, 1, 'client', 1)).kind, 'reopened')
+  await repository.saveItemDecision(seeded.postId, seeded.files[0].id, { decision: 'approved' }, scope, 1, 1)
+  await repository.saveItemDecision(seeded.postId, seeded.files[1].id, { decision: 'rejected', comment: 'final rejection' }, scope, 1, 1)
+  assert.equal((await repository.completeItemReview(seeded.postId, scope, 1, 'client', 1)).status, 'rejected')
 
   const state = await query(
     `SELECT p.status, r.revision, r.completed_status,
@@ -326,7 +326,7 @@ integrationTest('content Adorei is an idempotent approved fact, stays revision-b
   )
   assert.equal((await repository.listPosts(lovedSeed.clientId, companyId))[0].hasPositiveReaction, true)
 
-  assert.equal((await repository.reopenPost(lovedSeed.postId, lovedScope, 1)).kind, 'reopened')
+  assert.equal((await repository.reopenPost(lovedSeed.postId, lovedScope, 1, 'client', 1)).kind, 'reopened')
   const reopened = (await repository.listPosts(lovedSeed.clientId, companyId))[0]
   assert.equal(reopened.positiveReaction, null)
   assert.equal(reopened.hasPositiveReaction, false)
@@ -335,7 +335,7 @@ integrationTest('content Adorei is an idempotent approved fact, stays revision-b
     [lovedSeed.postId],
   )).rows[0].positive_reaction, 'loved')
 
-  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1)).status, 'approved')
+  assert.equal((await repository.approvePost(lovedSeed.postId, lovedScope, 1, 'client', null, null, 1)).status, 'approved')
   const history = await query(
     'SELECT positive_reaction FROM portal_review_decisions WHERE post_id = $1 ORDER BY review_sequence',
     [lovedSeed.postId],
@@ -509,13 +509,13 @@ integrationTest('an email-only agency resubmission starts a fresh rewind cycle',
   const portalRepository = new PortalRepository(new PlatformSettingsService())
   const postRepository = new PostRepository()
   assert.equal((await portalRepository.rejectPost(seeded.postId, 'first rejection', [], scope, 1)).status, 'rejected')
-  assert.equal((await portalRepository.reopenPost(seeded.postId, scope, 1)).kind, 'reopened')
-  assert.equal((await portalRepository.rejectPost(seeded.postId, 'changed rejection', [], scope, 1)).status, 'rejected')
+  assert.equal((await portalRepository.reopenPost(seeded.postId, scope, 1, 'client', 1)).kind, 'reopened')
+  assert.equal((await portalRepository.rejectPost(seeded.postId, 'changed rejection', [], scope, 1, 'client', 1)).status, 'rejected')
   assert.equal(await portalRepository.reopenPost(seeded.postId, scope, 1), false)
 
   assert.equal(await postRepository.resubmit(seeded.postId, {}, companyId, false), true)
-  assert.equal((await portalRepository.approvePost(seeded.postId, scope, 2)).status, 'approved')
-  assert.equal((await portalRepository.reopenPost(seeded.postId, scope, 2)).kind, 'reopened')
+  assert.equal((await portalRepository.approvePost(seeded.postId, scope, 2, 'client', null, null, 2)).status, 'approved')
+  assert.equal((await portalRepository.reopenPost(seeded.postId, scope, 2, 'client', 3)).kind, 'reopened')
 })
 
 integrationTest('migration constraints enforce defaults, valid modes, file ownership and cascades', async () => {

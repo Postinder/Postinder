@@ -1,5 +1,33 @@
 # Backend do Postinder
 
+## Contratos de revisão e certificação administrativa (025)
+
+GET dos portais por token e autenticado expõe `rewind: {available, postId, decisionId, contentRevision, reviewSequence}`; sem decisão anterior, apenas `available:false`. Cada postagem informa `reviewSequence`. Todos os comandos de revisão exigem `expectedRevision` e `expectedReviewSequence`; rewind exige `expectedDecisionId`. Conflitos usam HTTP 409 (`REVIEW_CONFLICT`, `REVISION_CONFLICT` ou conflito de decisão). Conclusões/rewind adquirem advisory lock por cliente antes do lock da postagem, ordenando conclusões entre posts. Retry reconhece o fato anterior e não reaplica efeitos.
+
+`positiveFeedback` é string opcional de até 5.000 caracteres, trim/branco→NULL, permitida somente em approved+loved. Em content pertence ao fato oficial; em item pertence ao draft até a conclusão e a `item_snapshot[].positiveFeedback` depois. Mesmo retry com texto diferente conflita. Não é gravada em `feedback`.
+
+- `GET /api/v1/posts/:id/admin-approval`: valida elegibilidade e devolve revisão/fingerprint para a intenção.
+- `POST /api/v1/posts/:id/admin-approve`: body fechado `{justification, expectedRevision, expectedFingerprint, idempotencyKey}`. Ambos exigem `posts:admin-approve`, concedida somente a admin. Ator/role/empresa vêm da autenticação, nunca do body.
+- `GET /api/v1/posts/:id/review-history`: leitura administrativa `posts:read`; inclui decisões originais e ações com justificativa/responsável.
+
+`AdministrativeApprovalService` bloqueia postagem, arquivos, soundtrack e configuração aplicável; valida rejeição oficial atual, cliente/empresa e completude; compara fingerprint; certifica r+1 e insere `admin_approved` referenciando a rejeição r. Arquivos, decisão de soundtrack com ator admin, ação e selo do post são atômicos. Uma chave com payload diferente conflita. O gate e as projeções compartilham `approvalSourceSql` (client/admin), sem novo status.
+
+### Fingerprint material
+
+SHA-256 do JSON canônico em `MaterialFingerprint.ts`, envelope version=1. Chaves de objetos ordenadas recursivamente; undefined/null→null; datas ISO UTC; texto visível exato; arrays de domínio preservados. Anexos são ordenados por sort_order (NULL=999999), created_at e id. Política de campos obrigatórios é ordenada antes do hash.
+
+- Post: id, client_id, company_id, content_revision, title, description, channels, formats, email_link, scheduled_date e funnel_tag quando a política da nova revisão o torna visível.
+- Arquivo: id, url, bucket, storage_path, mime_type, size_bytes, original_name, file_type, sort_order, storage_deleted_at. created_at determina desempate da ordem, sem integrar cada objeto material.
+- Soundtrack habilitada/aplicável: id, mode, revision_number, source_media_id, track_name, artist, external_url, platform, start_time_seconds, usage_source, usage_notes, rights_notes, audio_url, bucket, storage_path, mime_type, size_bytes, original_name, storage_deleted_at.
+- Política: soundtrackEnabled, funnelVisible, requiredFields. Soundtrack ausente/none/desabilitada e funil não visível não entram como material. Status derivado, timestamp de leitura/atualização e valores da interface ficam fora.
+
+### Validação local
+
+`npm test`: 240 testes, incluindo 25 de fingerprint/validação. `npm run test:integration:post-revision`: 27; `npm run test:integration:portal-approval`: 14; `npm run test:integration:review-package`: 40. Integrações exigem `POST_REVISION_INTEGRATION=1`, `POST_REVISION_TEST_CONFIRM=RUN_ISOLATED_TESTS` e `POST_REVISION_TEST_DATABASE_URL` local com nome terminado em `_test`; a suíte portal exige também `PORTAL_APPROVAL_INTEGRATION=1`. Não executar as três suítes contra o mesmo banco em paralelo: a primeira recria o schema. Rodar na ordem revisão → portal → pacote.
+
+Nesta entrega foi usado PostgreSQL descartável em 127.0.0.1:55439, container `postinder-approval-test-20261004`, bancos `postinder_approval_test` e `postinder_migration_test`. O script `test:integration:soundtracks` passou com DATABASE_URL local e credenciais Supabase vazias, usando exclusivamente arquivos locais. Build/typecheck passou. Container removido ao final; consulta posterior confirmou sua ausência.
+
+
 ## Configuracoes da plataforma
 
 `GET /api/v1/platform-settings` le a configuracao global; `PATCH /api/v1/platform-settings` aceita somente chaves conhecidas e atualizacoes parciais. A mutacao exige admin com `platform-settings:update`. Ausencia de linha retorna defaults de dominio; a primeira alteracao cria o singleton.
@@ -60,10 +88,10 @@ Base local: `http://localhost:3001/api/v1`.
 - Aprovacao e solicitacao de ajuste pertencem ao portal do Cliente. Para conteudo, as intencoes visiveis sao **Adorei**, **Aprovar** e **Solicitar ajuste**: **Adorei** persiste `decision = approved` com `positive_reaction = loved`; **Aprovar** persiste `decision = approved` com reacao `NULL`; ajuste preserva o resultado negativo existente. Nao existe status `loved` ou `super_like`, nem regra de execucao diferente.
 - `content` conclui uma decisao para a postagem inteira. `item` grava escolhas provisórias em `portal_item_review_drafts`; cada item pode ser aprovado normalmente, receber **Adorei** ou solicitar ajuste. `POST .../complete-review` consolida o `item_snapshot` somente quando todas as midias estao resolvidas. Misturar **Aprovar** e **Adorei** continua aprovando o post; qualquer ajuste mantem a logica negativa. Drafts nao alteram estado canonico, feedback, atividade, notificacao ou metricas.
 - Autosave e conclusao bloqueiam a postagem/arquivos dentro de transacoes. Retry identico ou conclusao concorrente depois do primeiro commit recebe resposta idempotente com `already_completed`, sem duplicar revisao ou feedback; retry conflitante retorna conflito e nao converte **Aprovar** em **Adorei**, nem o inverso.
-- Submissoes oficiais incrementam `content_revision`; aprovacao e execucao selam `approved_revision` e `executed_revision`. Operacoes de review recebem `expectedRevision` e recusam estado stale. A execucao exige selo corrente, decisao oficial do Cliente, tenant coerente e Cliente ativo.
+- Submissoes oficiais incrementam `content_revision`; aprovacao e execucao selam `approved_revision` e `executed_revision`. Operacoes de review recebem `expectedRevision` e recusam estado stale. A execucao exige selo corrente, certificação oficial do Cliente ou administrativa, tenant coerente e Cliente ativo.
 - Postagens protegidas, seus arquivos e soundtrack nao aceitam alteracao material silenciosa. A agencia deve reabrir antes de editar; posts `approved` legados sem selo precisam cumprir `reopen -> submit -> aprovacao oficial -> execucao`.
 - `portal_review_decisions` e `portal_review_actions` sao fatos append-only. A reacao opcional fica na decisao oficial em modo `content`; no modo `item`, o `item_snapshot` oficial preserva cada escolha e tambem e imutavel. Drafts anteriores a `021` sem revisao confiavel sao descartados; decisoes anteriores a `024` permanecem com `positive_reaction = NULL`, e nenhum historico legado e promovido ou marcado artificialmente como **Adorei**.
-- `POST .../posts/:postId/reopen` implementa rewind por postagem: somente a conclusao elegivel mais recente do Cliente pode ser reaberta uma vez por ciclo. Navegacao entre midias nao chama rewind e nao altera estado oficial. O rewind preserva a decisao historica anterior, limpa sua projecao corrente e nao herda automaticamente **Adorei** na nova analise.
+- `POST .../posts/:postId/reopen` implementa rewind por postagem: somente a última conclusão oficial do Cliente, se elegível pode ser reaberta uma vez por ciclo. Navegacao entre midias nao chama rewind e nao altera estado oficial. O rewind preserva a decisao historica anterior, limpa sua projecao corrente e nao herda automaticamente **Adorei** na nova analise.
 - `PATCH /posts/:id/status` aceita apenas `draft <-> ready`.
 - Postagens `executed` sao imutaveis; duplicacao cria uma nova postagem.
 - O reset so e montado com `DEPLOYMENT_MODE=demo` e

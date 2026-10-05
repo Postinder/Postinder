@@ -200,3 +200,13 @@ export function computePostStatus(post) {
 
   return post?.status || 'draft'
 }
+
+export async function prepareAdminApproval(postId) {
+  return (await apiClient.get('/posts/' + postId + '/admin-approval')).data
+}
+export async function approvePostAdministratively(postId, payload) {
+  return (await apiClient.post('/posts/' + postId + '/admin-approve', payload)).data
+}
+export async function fetchPostReviewHistory(postId) {
+  return (await apiClient.get('/posts/' + postId + '/review-history')).data
+}

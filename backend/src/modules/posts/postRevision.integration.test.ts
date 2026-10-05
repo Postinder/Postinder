@@ -306,6 +306,7 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
     await applyMigration('022_funnel_visibility_and_revision_snapshot.sql')
     await applyMigration('023_soundtrack_history_append_only.sql')
     await applyMigration('024_portal_positive_reaction.sql')
+    await applyMigration('025_review_feedback_and_admin_approval.sql')
 
     const [postModule, portalModule, soundtrackModule, settingsModule, poolModule] = await Promise.all([
       import('./infrastructure/repositories/PostRepository'),
@@ -901,10 +902,10 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
     )
     for (const file of seeded.files) {
       assert.equal((await portalRepository.saveItemDecision(
-        seeded.postId, file.id, { decision: 'approved' }, scope, 2,
+        seeded.postId, file.id, { decision: 'approved' }, scope, 2, 1,
       )).kind, 'saved')
     }
-    assert.equal((await portalRepository.completeItemReview(seeded.postId, scope, 2)).status, 'approved')
+    assert.equal((await portalRepository.completeItemReview(seeded.postId, scope, 2, 'client', 1)).status, 'approved')
 
     const actionCountBeforeStaleRewind = Number((await database().query(
       'SELECT COUNT(*)::int AS count FROM portal_review_actions WHERE post_id = $1',
@@ -919,18 +920,18 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
       [seeded.postId],
     )).rows[0].count), actionCountBeforeStaleRewind)
 
-    assert.deepEqual(await portalRepository.reopenPost(seeded.postId, scope, 2), { kind: 'reopened' })
+    assert.deepEqual(await portalRepository.reopenPost(seeded.postId, scope, 2, 'client', 2), { kind: 'reopened' })
     assert.equal((await portalRepository.saveItemDecision(
       seeded.postId,
       seeded.files[0].id,
       { decision: 'rejected', comment: 'Changed decision on the same revision' },
       scope,
-      2,
+      2, 2,
     )).kind, 'saved')
     assert.equal((await portalRepository.saveItemDecision(
-      seeded.postId, seeded.files[1].id, { decision: 'approved' }, scope, 2,
+      seeded.postId, seeded.files[1].id, { decision: 'approved' }, scope, 2, 2,
     )).kind, 'saved')
-    assert.equal((await portalRepository.completeItemReview(seeded.postId, scope, 2)).status, 'rejected')
+    assert.equal((await portalRepository.completeItemReview(seeded.postId, scope, 2, 'client', 2)).status, 'rejected')
 
     const decisions = await database().query(
       `SELECT content_revision, review_sequence, decision
@@ -1147,10 +1148,10 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
       scope,
       'client',
       2,
-      { recalculatePostStatus: false },
+      { recalculatePostStatus: false, expectedReviewSequence: 1 },
     )
     assert.equal(currentDecision.approvedContentRevision, 2)
-    assert.equal((await portalRepository.approvePost(seeded.postId, scope, 2)).status, 'approved')
+    assert.equal((await portalRepository.approvePost(seeded.postId, scope, 2, 'client', null, null, 1)).status, 'approved')
   })
 
   test('client reassociation requires an active same-tenant client and history keeps the actual approver', async () => {
@@ -1333,7 +1334,7 @@ integrationSuite('PostgreSQL content revision contract', { concurrency: false },
     })
 
     await submit(seeded.postId)
-    assert.equal((await portalRepository.approvePost(seeded.postId, scope, 2)).status, 'approved')
+    assert.equal((await portalRepository.approvePost(seeded.postId, scope, 2, 'client', null, null, 1)).status, 'approved')
     assert.equal(await postRepository.markExecuted(seeded.postId, 24, companyId), true)
   })
 

@@ -125,7 +125,7 @@ export default function ClientDetailsPage() {
 
   const stats = useMemo(() => {
     const total = clientPosts.length
-    const approved = clientPosts.filter(post => getHistoricalStatus(post) === 'approved').length
+    const approved = clientPosts.filter(post => getHistoricalStatus(post) === 'approved' && post.approvalSource !== 'admin').length
     const pending = clientPosts.filter(post => getHistoricalStatus(post) === 'pending_approval').length
     const currentlyRejected = clientPosts.filter(post => getHistoricalStatus(post) === 'rejected').length
     const postIds = new Set(clientPosts.map(post => post.id))

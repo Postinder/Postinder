@@ -1,3 +1,4 @@
+import { approvalSourceSql } from '../../domain/ApprovalCertification'
 import { PoolClient } from 'pg'
 import { pool, query } from '../../../../shared/database/pool'
 import { Post } from '../../domain/Post.entity'
@@ -143,7 +144,7 @@ export class PostRepository implements IPostRepository {
            funnel_tag = EXCLUDED.funnel_tag,
            review_field_visibility = EXCLUDED.review_field_visibility,
            email_link = EXCLUDED.email_link,
-           updated_at = EXCLUDED.updated_at
+           updated_at = clock_timestamp()
          RETURNING *`,
         [
           data.id,
@@ -181,6 +182,7 @@ export class PostRepository implements IPostRepository {
       const result = await query(
         `SELECT
            p.*,
+           ${approvalSourceSql('p')} AS approval_source,
            COALESCE(
              json_agg(
                json_build_object(
@@ -250,6 +252,7 @@ export class PostRepository implements IPostRepository {
       const result = await query(
         `SELECT
            p.*,
+           ${approvalSourceSql('p')} AS approval_source,
            COALESCE(
              json_agg(
                json_build_object(
@@ -299,7 +302,7 @@ export class PostRepository implements IPostRepository {
   }
 
   async updateFields(id: string, data: any, companyId?: string) {
-    const fields: string[] = ['updated_at = NOW()']
+    const fields: string[] = ['updated_at = clock_timestamp()']
     const params: any[] = []
 
     if (data.title !== undefined) {
@@ -396,7 +399,7 @@ export class PostRepository implements IPostRepository {
     }
     const result = await query(
       `UPDATE posts
-       SET funnel_tag = $2, updated_at = NOW()
+       SET funnel_tag = $2, updated_at = clock_timestamp()
        WHERE ${conditions.join(' AND ')}
        RETURNING *`,
       params,
@@ -501,7 +504,7 @@ export class PostRepository implements IPostRepository {
         savedFiles.push(result.rows[0])
       }
 
-      await client.query(`UPDATE posts SET updated_at = NOW() WHERE id = $1`, [postId])
+      await client.query(`UPDATE posts SET updated_at = clock_timestamp() WHERE id = $1`, [postId])
       await client.query('COMMIT')
       transactionStarted = false
       return savedFiles
@@ -587,7 +590,7 @@ export class PostRepository implements IPostRepository {
         fileId,
         { ...actor, companyId },
       )
-      await client.query('UPDATE posts SET updated_at = NOW() WHERE id = $1', [postId])
+      await client.query('UPDATE posts SET updated_at = clock_timestamp() WHERE id = $1', [postId])
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
@@ -721,7 +724,7 @@ export class PostRepository implements IPostRepository {
          WHERE f.post_id = $1 AND f.id = ordered.id`,
         params,
       )
-      await client.query('UPDATE posts SET updated_at = NOW() WHERE id = $1', [postId])
+      await client.query('UPDATE posts SET updated_at = clock_timestamp() WHERE id = $1', [postId])
       await client.query('COMMIT')
       return true
     } catch (error) {
@@ -776,7 +779,7 @@ export class PostRepository implements IPostRepository {
        WHERE f.id = ordered.id`,
         [postId],
       )
-      await client.query('UPDATE posts SET updated_at = NOW() WHERE id = $1', [postId])
+      await client.query('UPDATE posts SET updated_at = clock_timestamp() WHERE id = $1', [postId])
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
@@ -1311,16 +1314,9 @@ export class PostRepository implements IPostRepository {
         await client.query('ROLLBACK')
         return false
       }
-      const decision = await client.query(
-       `SELECT id FROM portal_review_decisions
-         WHERE post_id = $1
-           AND content_revision = $2
-           AND decision = 'approved'
-           AND client_id = $3
-         ORDER BY review_sequence DESC LIMIT 1`,
-        [id, post.content_revision, post.client_id],
-      )
-      if (!decision.rows[0]) {
+      const certification = await client.query(
+        `SELECT ${approvalSourceSql('p')} AS source FROM posts p WHERE p.id = $1`, [id])
+      if (!certification.rows[0]?.source) {
         await client.query('ROLLBACK')
         return false
       }

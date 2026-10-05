@@ -76,6 +76,7 @@ describe('portal revision-bound interactive intents', () => {
       'Nova intencao explicita',
       [],
       5,
+      0,
     ))
   })
 
@@ -117,10 +118,10 @@ describe('portal revision-bound interactive intents', () => {
     expect(screen.getByRole('textbox').value).toBe('')
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Ajuste novo' } })
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reprovar' }))
-    await waitFor(() => expect(onAdjust).toHaveBeenCalledWith('Ajuste novo', 8))
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledWith('Ajuste novo', 8, 0))
   })
 
-  it('offers three explicit content intents and maps Adorei to an approved positive reaction', () => {
+  it('offers three explicit content intents and maps Adorei to an approved positive reaction', async () => {
     const project = emailProject(6)
     const props = reviewProps(project)
     render(<ProjectReviewPanel {...props} />)
@@ -129,7 +130,9 @@ describe('portal revision-bound interactive intents', () => {
     expect(screen.getByRole('button', { name: 'Aprovar' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Solicitar ajuste' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Adorei' }))
-    expect(props.onApprovePost).toHaveBeenCalledWith('post-1', 'loved')
+    expect(props.onApprovePost).not.toHaveBeenCalled()
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar Adorei' }))
+    await waitFor(() => expect(props.onApprovePost).toHaveBeenCalledWith('post-1', 'loved', null, 6, 0))
   })
 
   it('keeps a loved item visibly distinct while preserving approved as its operational decision', () => {

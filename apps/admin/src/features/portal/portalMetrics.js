@@ -10,7 +10,7 @@ export function countApprovedInMonth(posts, referenceDate = new Date()) {
   const referenceMonth = monthKey(referenceDate)
   return posts.filter(post => {
     const approvedAt = post.approvedAt || post.approved_at
-    return approvedAt && monthKey(approvedAt) === referenceMonth
+    return post.approvalSource !== 'admin' && approvedAt && monthKey(approvedAt) === referenceMonth
   }).length
 }
 
@@ -23,7 +23,7 @@ export function countLovedInMonth(posts, referenceDate = new Date()) {
       || post.positive_reaction === 'loved'
       || post.hasPositiveReaction === true
       || itemSnapshot.some(item => item?.positiveReaction === 'loved' || item?.positive_reaction === 'loved')
-    return loved && approvedAt && monthKey(approvedAt) === referenceMonth
+    return post.approvalSource !== 'admin' && loved && approvedAt && monthKey(approvedAt) === referenceMonth
   }).length
 }
 

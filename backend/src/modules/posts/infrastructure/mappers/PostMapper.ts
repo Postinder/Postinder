@@ -31,6 +31,7 @@ export class PostMapper {
     ;(post as any).executedRevision = raw.executed_revision === null || raw.executed_revision === undefined
       ? null
       : Number(raw.executed_revision)
+    ;(post as any).approvalSource = raw.approval_source || null
     return post
   }
 
@@ -68,6 +69,7 @@ export class PostMapper {
       title: post.title,
       description: post.description,
       status: post.status,
+      approvalSource: (post as any).approvalSource || null,
       channels: post.channels || [],
       formats: post.formats || {},
       scheduled_date: post.scheduledDate,

@@ -1,5 +1,19 @@
 # Roadmap do Postinder
 
+## Entrega local de 04/10/2026
+
+| Frente | Estado |
+| --- | --- |
+| Voltar sem encadeamento e servidor autoritativo | implementado e validado |
+| Adorei azul, modal opcional e histórico revisionado | implementado e validado |
+| Aprovação manual exclusiva admin em r+1 | implementada e validada |
+| Fingerprint, idempotência, concorrência e rollback | validados em PostgreSQL descartável |
+| Migration 025, cadeia nova e segunda execução skip | validadas localmente |
+| Revisão humana do diff / commit / publicação | pendentes; nenhum commit ou deploy nesta etapa |
+
+O gate detalhado vigente está em [PROJECT_STATE.md](PROJECT_STATE.md). Lint continua sem ferramenta/configuração instalada; o aviso de chunk do Vite e a intermitência observada no teste antigo de logo estão registrados como notas. Não há aprovação administrativa em lote nesta entrega.
+
+
 Este documento registra o estado das frentes de preparacao e o trabalho futuro. Investigacoes e relatorios tecnicos nao sao funcionalidades de produto.
 
 ## Estado da preparacao pre-deploy
@@ -36,7 +50,7 @@ Este documento registra o estado das frentes de preparacao e o trabalho futuro. 
 - Configurar a demo publicada com `DEPLOYMENT_MODE=demo`, `ENABLE_DEMO_RESET=true` e `VITE_DEPLOYMENT_MODE=demo`.
 - Decidir se a IA sera habilitada; se for, configurar a credencial somente no backend.
 - Criar novo backup logico e executar novo preflight imediatamente antes do deploy.
-- [ ] Auditar o diff final e criar o segundo commit local autorizado. Antes do deploy, reconfirmar o preflight das migrations `017` a `024` e manter `npm run db:migrate` como release step bloqueante anterior ao Start Command.
+- [ ] Revisar o diff final e obter autorização para qualquer novo commit. Antes do deploy, reconfirmar o preflight das migrations `017` a `025` e manter `npm run db:migrate` como release step bloqueante anterior ao Start Command.
 - Publicar primeiro o backend, confirmar migrations e startup, depois publicar o frontend.
 - Confirmar commits e bundles ativos e executar smoke tests, conferencia de logs sanitizados e teste controlado do reset demo.
 - Validar no ambiente publicado metadados de Storage, copia fisica e limpeza manual de Retencao somente com dados descartaveis.

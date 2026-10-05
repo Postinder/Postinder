@@ -98,13 +98,13 @@ async function main() {
     let post = await pool.query(`SELECT status FROM posts WHERE id = $1`, [postId])
     assert.equal(post.rows[0].status, 'approved', 'approved files and soundtrack should approve the post')
 
-    assert.deepEqual(await portalRepository.reopenPost(postId, scope, contentRevision), { kind: 'reopened' })
+    assert.deepEqual(await portalRepository.reopenPost(postId, scope, contentRevision, 'client', 1), { kind: 'reopened' })
     await assert.rejects(
-      soundtrackRepository.decide(postId, 'adjustment_requested', ' ', scope, 'client', contentRevision),
+      soundtrackRepository.decide(postId, 'adjustment_requested', ' ', scope, 'client', contentRevision, { expectedReviewSequence: 1 }),
       /comentario/i,
     )
     await soundtrackRepository.decide(
-      postId, 'adjustment_requested', 'Trocar a trilha.', scope, 'client', contentRevision,
+      postId, 'adjustment_requested', 'Trocar a trilha.', scope, 'client', contentRevision, { expectedReviewSequence: 1 },
     )
     post = await pool.query(`SELECT status FROM posts WHERE id = $1`, [postId])
     assert.equal(post.rows[0].status, 'rejected')

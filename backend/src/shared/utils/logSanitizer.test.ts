@@ -167,6 +167,7 @@ test('portal request matrix never emits or reflects the private token and preser
       if (/(INVALID|EXPIRED|REVOKED|INACTIVE)/.test(token)) return null
       return validSession
     },
+    async getRewind() { return { available: false } },
     async listPosts() {
       if (state.activeToken.endsWith('REPOSITORY')) {
         throw Object.assign(new Error(`repository failed for /api/v1/portal/${state.activeToken}`), {
@@ -309,7 +310,7 @@ test('portal request matrix never emits or reflects the private token and preser
 
     await t.test('approval still uses the real token and emits token-free activity', async () => {
       const secret = syntheticPortalToken('APPROVE')
-      const result = await request(`/api/v1/portal/${secret}/posts/post-id/approve`, { method: 'POST' })
+      const result = await request(`/api/v1/portal/${secret}/posts/post-id/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision: 1, expectedReviewSequence: 0 }) })
       assert.equal(result.status, 200)
       assert.equal(state.validatedTokens.at(-1), secret)
       assert.equal(state.approvalCalls, 1)
@@ -322,7 +323,7 @@ test('portal request matrix never emits or reflects the private token and preser
       const result = await request(`/api/v1/portal/${secret}/posts/post-id/reject`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ comment }),
+        body: JSON.stringify({ comment, expectedRevision: 1, expectedReviewSequence: 0 }),
       })
       assert.equal(result.status, 200)
       assert.equal(state.validatedTokens.at(-1), secret)

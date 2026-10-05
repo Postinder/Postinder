@@ -35,7 +35,7 @@ export function canExecutePost(post) {
 
 export function getPostReopenConfirmation(postOrStatus) {
   const approved = getRawPostStatus(postOrStatus) === 'approved'
-  const currentState = approved ? 'já foi aprovada pelo cliente' : 'já foi enviada para revisão do cliente'
+  const currentState = approved ? (postOrStatus?.approvalSource === 'admin' ? 'já foi aprovada manualmente pela equipe' : 'já foi aprovada pelo cliente') : 'já foi enviada para revisão do cliente'
   return `Esta postagem ${currentState}. Reabrir para edição invalidará a revisão e qualquer aprovação atual. Deseja continuar?`
 }
 

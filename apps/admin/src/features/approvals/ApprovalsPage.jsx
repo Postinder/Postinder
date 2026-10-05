@@ -21,6 +21,8 @@ import {
   POST_REOPEN_REQUIRED_MESSAGE,
 } from '../posts/postBulkSelection'
 import toast from 'react-hot-toast'
+import AdministrativeReview from '../../components/posts/AdministrativeReview'
+import { useAuthStore } from '../../store/authStore'
 
 const FILE_LABELS = {
   IMAGE: 'Imagem',
@@ -95,6 +97,7 @@ function FileStatusPill({ status }) {
 }
 
 export default function ApprovalsPage() {
+  const { user } = useAuthStore()
   const [searchParams] = useSearchParams()
   const [posts, setPosts] = useState([])
   const [clients, setClients] = useState([])
@@ -293,6 +296,7 @@ export default function ApprovalsPage() {
               </div>
             )}
 
+            <AdministrativeReview post={post} role={user?.role} onChanged={load} />
             {isRejected ? (
               <Button variant="teal" size="sm" icon={<RotateCcw size={12} />} onClick={() => openResubmitModal(post)}>
                 Corrigir arquivos

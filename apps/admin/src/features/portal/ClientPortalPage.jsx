@@ -1,3 +1,4 @@
+import PositiveFeedbackDialog from './PositiveFeedbackDialog'
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
@@ -442,6 +443,9 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
   const [comment, setComment] = useState('')
   const [selectedTags, setSelectedTags] = useState([])
   const [rejectRevision, setRejectRevision] = useState(null)
+  const [rejectSequence, setRejectSequence] = useState(0)
+  const [loveIntent, setLoveIntent] = useState(null)
+  const selectedSequence = selectedProject?.reviewSequence ?? 0
   const rejectTextareaRef = useRef(null)
   const selectedRevision = getPostContentRevision(selectedProject)
 
@@ -462,12 +466,26 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
     setComment('')
     setSelectedTags([])
     setRejectRevision(null)
-  }, [revisionConflictSequence, selectedProject?.id, selectedRevision])
+  }, [revisionConflictSequence, selectedProject?.id, selectedRevision, selectedSequence])
+
+  function openLoveDialog() {
+    setLoveIntent({ postId: selectedProject.id, fileId: approvalMode === 'item' ? currentFile?.id : null,
+      revision: selectedRevision, sequence: selectedSequence, feedback: currentFile?.review_positive_feedback || '' })
+  }
+
+  function confirmLove(intent, feedback) {
+    return intent.fileId
+      ? onSaveItemDecision(intent.postId, intent.fileId, 'approved', '', [], intent.revision, 'loved', feedback, intent.sequence)
+      : onApprovePost(intent.postId, 'loved', feedback, intent.revision, intent.sequence)
+  }
+
+  useEffect(() => { setLoveIntent(null) }, [revisionConflictSequence, selectedProject?.id, selectedRevision, selectedSequence, currentFile?.id])
 
   function openRejectDialog() {
     setComment(approvalMode === 'item' ? currentFile?.review_reason || '' : '')
     setSelectedTags(approvalMode === 'item' ? currentFile?.review_tags || [] : [])
     setRejectRevision(selectedRevision)
+    setRejectSequence(selectedSequence)
     setRejectOpen(true)
   }
 
@@ -477,8 +495,8 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
       return
     }
     const decision = currentFile && approvalMode === 'item'
-      ? onSaveItemDecision(selectedProject.id, currentFile.id, 'rejected', comment.trim(), selectedTags, rejectRevision)
-      : onRejectPost(selectedProject.id, comment.trim(), selectedTags, rejectRevision)
+      ? onSaveItemDecision(selectedProject.id, currentFile.id, 'rejected', comment.trim(), selectedTags, rejectRevision, null, null, rejectSequence)
+      : onRejectPost(selectedProject.id, comment.trim(), selectedTags, rejectRevision, rejectSequence)
     decision.then(saved => {
       if (saved === false) return
       setComment('')
@@ -508,10 +526,10 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
             type="button"
             onClick={onUndo}
             disabled={busy}
-            aria-label="Desfazer a última decisão"
+            aria-label="Voltar à última postagem"
             className="mt-5 inline-flex items-center justify-center rounded-lg border border-green-300 bg-white px-4 py-2 text-sm font-bold text-green-800 transition hover:bg-green-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-green-800 dark:bg-neutral-900 dark:text-green-300 dark:hover:bg-green-950 dark:focus-visible:ring-offset-neutral-950"
           >
-            Desfazer última decisão
+            Voltar
           </button>
         ) : null}
       </div>
@@ -557,9 +575,7 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
             onApprove={() => approvalMode === 'item'
               ? onSaveItemDecision(selectedProject.id, currentFile.id, 'approved')
               : onApprovePost(selectedProject.id)}
-            onLove={() => approvalMode === 'item'
-              ? onSaveItemDecision(selectedProject.id, currentFile.id, 'approved', '', [], null, 'loved')
-              : onApprovePost(selectedProject.id, 'loved')}
+            onLove={openLoveDialog}
             onReject={openRejectDialog}
             onPrevious={() => setActiveFileId(files[currentFileIndex - 1]?.id || currentFile.id)}
             onNext={() => setActiveFileId(files[currentFileIndex + 1]?.id || currentFile.id)}
@@ -575,7 +591,7 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
             post={selectedProject}
             busy={busy}
             onApprove={() => onApprovePost(selectedProject.id)}
-            onLove={() => onApprovePost(selectedProject.id, 'loved')}
+            onLove={openLoveDialog}
             onReject={openRejectDialog}
           />
         ) : (
@@ -606,11 +622,12 @@ export function ProjectReviewPanel({ projects, pendingItemsCount, selectedProjec
             soundtrack={selectedProject.soundtrack}
             busy={busy}
             onApprove={() => onApproveSoundtrack(selectedProject.id)}
-            onAdjust={(comment, intentRevision) => onAdjustSoundtrack(selectedProject.id, comment, intentRevision)}
+            onAdjust={(comment, intentRevision, intentSequence) => onAdjustSoundtrack(selectedProject.id, comment, intentRevision, intentSequence)}
             revisionConflictSequence={revisionConflictSequence}
           />
         ) : null}
 
+        {loveIntent ? <PositiveFeedbackDialog intent={loveIntent} onConfirm={confirmLove} onClose={() => setLoveIntent(null)} busy={busy} /> : null}
         {rejectOpen ? (
           <PortalDialog
             labelledBy="portal-reject-title"
@@ -681,7 +698,6 @@ export default function ClientPortalPage({ mode = 'token' }) {
   const [generalFeedback, setGeneralFeedback] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [isOverviewExpanded, dispatchPortalOverview] = useReducer(togglePortalOverview, PORTAL_OVERVIEW_INITIAL_STATE)
-  const [lastAction, setLastAction] = useState(null)
   const [revisionConflictSequence, setRevisionConflictSequence] = useState(0)
   const tabRefs = useRef({})
 
@@ -712,6 +728,17 @@ export default function ClientPortalPage({ mode = 'token' }) {
   function getExpectedRevision(projectId) {
     return getPostContentRevision(posts.find(post => post.id === projectId))
   }
+
+  function getExpectedSequence(projectId) {
+    return posts.find(post => post.id === projectId)?.reviewSequence ?? 0
+  }
+
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState !== 'hidden') reload().catch(() => {}) }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
+  }, [token, isAuthenticatedMode])
 
   async function refreshMissingRevision() {
     setRevisionConflictSequence(current => current + 1)
@@ -753,14 +780,13 @@ export default function ClientPortalPage({ mode = 'token' }) {
   const sequentialApproval = portalSettings.sequential_approval !== false
   const approvalMode = portalSettings.approval_mode === 'item' ? 'item' : 'content'
   const soundtrackEnabled = payload?.features?.soundtrack === true
-  const lastActionKey = useMemo(
-    () => `postinder.portal.lastAction.${isAuthenticatedMode ? client?.id || 'auth' : token || 'token'}`,
-    [client?.id, isAuthenticatedMode, token],
-  )
-
   const pendingProjects = useMemo(
-    () => getPendingPortalProjects(posts),
-    [posts],
+    () => {
+      const pending = getPendingPortalProjects(posts)
+      const returning = pending.find(post => post.id === payload?.rewind?.postId)
+      return returning ? [returning, ...pending.filter(post => post !== returning)] : pending
+    },
+    [posts, payload?.rewind?.postId],
   )
 
   const pendingItemsCount = useMemo(
@@ -823,12 +849,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
     [approvalMode, files, posts],
   )
 
-  const canUndoLastAction = useMemo(() => {
-    if (!lastAction) return false
-    const project = posts.find(post => post.id === lastAction.projectId)
-    if (!project) return false
-    return ['approved', 'rejected'].includes(getPostStatus(project))
-  }, [lastAction, posts])
+  const canUndoLastAction = payload?.rewind?.available === true
 
   const feedbackItems = useMemo(() => {
     const fileFeedbacks = files
@@ -849,26 +870,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
     return [...fileFeedbacks, ...generalFeedbacks].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
   }, [files, payload?.feedbacks])
 
-  useEffect(() => {
-    if (!payload) return
-    try {
-      const saved = localStorage.getItem(lastActionKey)
-      setLastAction(saved ? JSON.parse(saved) : null)
-    } catch {
-      setLastAction(null)
-    }
-  }, [lastActionKey, payload])
-
-  useEffect(() => {
-    if (!lastAction) return
-    const project = posts.find(post => post.id === lastAction.projectId)
-    if (!project || !['approved', 'rejected'].includes(getPostStatus(project))) {
-      setLastAction(null)
-      localStorage.removeItem(lastActionKey)
-    }
-  }, [lastAction, lastActionKey, posts])
-
-  async function handleSaveItemDecision(projectId, fileId, decision, comment = '', tags = [], intentRevision = null, positiveReaction = null) {
+  async function handleSaveItemDecision(projectId, fileId, decision, comment = '', tags = [], intentRevision = null, positiveReaction = null, positiveFeedback = null, intentSequence = null) {
     setBusy(true)
     try {
       const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
@@ -876,8 +878,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await saveAuthenticatedPortalItemDecision(projectId, fileId, decision, comment, tags, expectedRevision, positiveReaction)
-      else await savePortalItemDecision(token, projectId, fileId, decision, comment, tags, expectedRevision, positiveReaction)
+      if (isAuthenticatedMode) await saveAuthenticatedPortalItemDecision(projectId, fileId, decision, comment, tags, expectedRevision, positiveReaction, positiveFeedback, intentSequence ?? getExpectedSequence(projectId))
+      else await savePortalItemDecision(token, projectId, fileId, decision, comment, tags, expectedRevision, positiveReaction, positiveFeedback, intentSequence ?? getExpectedSequence(projectId))
       await reload()
       toast.success(positiveReaction === 'loved' ? 'Item marcado como Adorei.' : decision === 'approved' ? 'Item marcado como aprovado.' : 'Ajuste solicitado para o item.')
       return true
@@ -897,11 +899,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await completeAuthenticatedPortalItemReview(projectId, expectedRevision)
-      else await completePortalItemReview(token, projectId, expectedRevision)
-      const action = { projectId, type: 'completed' }
-      setLastAction(action)
-      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      if (isAuthenticatedMode) await completeAuthenticatedPortalItemReview(projectId, expectedRevision, getExpectedSequence(projectId))
+      else await completePortalItemReview(token, projectId, expectedRevision, getExpectedSequence(projectId))
       await reload()
       toast.success('Análise concluída.')
       return true
@@ -913,19 +912,16 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleApprovePost(projectId, positiveReaction = null) {
+  async function handleApprovePost(projectId, positiveReaction = null, positiveFeedback = null, intentRevision = null, intentSequence = null) {
     setBusy(true)
     try {
-      const expectedRevision = getExpectedRevision(projectId)
+      const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
       if (expectedRevision === null) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId, expectedRevision, positiveReaction)
-      else await approvePortalPost(token, projectId, expectedRevision, positiveReaction)
-      const action = { projectId, type: 'completed' }
-      setLastAction(action)
-      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      if (isAuthenticatedMode) await approveAuthenticatedPortalPost(projectId, expectedRevision, positiveReaction, positiveFeedback, intentSequence ?? getExpectedSequence(projectId))
+      else await approvePortalPost(token, projectId, expectedRevision, positiveReaction, positiveFeedback, intentSequence ?? getExpectedSequence(projectId))
       await reload()
       toast.success(positiveReaction === 'loved' ? 'Que bom que você adorou! Conteúdo aprovado.' : 'Conteúdo aprovado.')
       return true
@@ -945,8 +941,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await approveAuthenticatedPortalSoundtrack(projectId, expectedRevision)
-      else await approvePortalSoundtrack(token, projectId, expectedRevision)
+      if (isAuthenticatedMode) await approveAuthenticatedPortalSoundtrack(projectId, expectedRevision, getExpectedSequence(projectId))
+      else await approvePortalSoundtrack(token, projectId, expectedRevision, getExpectedSequence(projectId))
       await reload()
       toast.success('Fundo sonoro aprovado.')
       return true
@@ -958,7 +954,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleAdjustSoundtrack(projectId, comment, intentRevision = null) {
+  async function handleAdjustSoundtrack(projectId, comment, intentRevision = null, intentSequence = null) {
     setBusy(true)
     try {
       const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
@@ -966,8 +962,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await adjustAuthenticatedPortalSoundtrack(projectId, comment, expectedRevision)
-      else await adjustPortalSoundtrack(token, projectId, comment, expectedRevision)
+      if (isAuthenticatedMode) await adjustAuthenticatedPortalSoundtrack(projectId, comment, expectedRevision, intentSequence ?? getExpectedSequence(projectId))
+      else await adjustPortalSoundtrack(token, projectId, comment, expectedRevision, intentSequence ?? getExpectedSequence(projectId))
       await reload()
       toast.success('Ajuste do fundo sonoro solicitado.')
       return true
@@ -979,7 +975,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
     }
   }
 
-  async function handleRejectPost(projectId, comment, tags = [], intentRevision = null) {
+  async function handleRejectPost(projectId, comment, tags = [], intentRevision = null, intentSequence = null) {
     setBusy(true)
     try {
       const expectedRevision = intentRevision ?? getExpectedRevision(projectId)
@@ -987,11 +983,8 @@ export default function ClientPortalPage({ mode = 'token' }) {
         await refreshMissingRevision()
         return false
       }
-      if (isAuthenticatedMode) await rejectAuthenticatedPortalPost(projectId, comment, tags, expectedRevision)
-      else await rejectPortalPost(token, projectId, comment, tags, expectedRevision)
-      const action = { projectId, type: 'completed' }
-      setLastAction(action)
-      localStorage.setItem(lastActionKey, JSON.stringify(action))
+      if (isAuthenticatedMode) await rejectAuthenticatedPortalPost(projectId, comment, tags, expectedRevision, intentSequence ?? getExpectedSequence(projectId))
+      else await rejectPortalPost(token, projectId, comment, tags, expectedRevision, intentSequence ?? getExpectedSequence(projectId))
       await reload()
       toast.success('Conteúdo reprovado.')
       return true
@@ -1004,28 +997,17 @@ export default function ClientPortalPage({ mode = 'token' }) {
   }
 
   async function handleUndoLastAction() {
-    if (!lastAction || !canUndoLastAction) return
+    const target = payload?.rewind
+    if (!target?.available || busy) return
     setBusy(true)
     try {
-      const expectedRevision = getExpectedRevision(lastAction.projectId)
-      if (expectedRevision === null) {
-        await refreshMissingRevision()
-        return false
-      }
-      if (isAuthenticatedMode) await reopenAuthenticatedPortalPost(lastAction.projectId, expectedRevision)
-      else await reopenPortalPost(token, lastAction.projectId, expectedRevision)
-      setSelectedProjectId(lastAction.projectId)
-      setLastAction(null)
-      localStorage.removeItem(lastActionKey)
+      if (isAuthenticatedMode) await reopenAuthenticatedPortalPost(target.postId, target.contentRevision, target.reviewSequence, target.decisionId)
+      else await reopenPortalPost(token, target.postId, target.contentRevision, target.reviewSequence, target.decisionId)
+      setSelectedProjectId(target.postId)
       await reload()
       toast.success('Conteúdo reaberto para revisão.')
       return true
-    } catch (error) {
-      await handlePortalMutationError(error)
-      return false
-    } finally {
-      setBusy(false)
-    }
+    } catch (error) { await handlePortalMutationError(error); return false } finally { setBusy(false) }
   }
 
   async function handleGeneralFeedback() {
@@ -1207,7 +1189,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                         <div className="whitespace-normal break-words text-sm font-bold">{post.title || 'Conteúdo sem título'}</div>
                         <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-300/80">{(post.channels || []).join(', ') || 'Sem canais definidos'}</div>
                       </div>
-                      <PortalStatusBadge status={getPostStatus(post)} />
+                      <PortalStatusBadge status={getPostStatus(post)} approvalSource={post.approvalSource} />
                     </div>
                   ))}
                 </div>
@@ -1244,7 +1226,7 @@ export default function ClientPortalPage({ mode = 'token' }) {
                     {file.rejection_reason || 'Sem comentario detalhado.'}
                   </p>
 
-                  <p className="mt-4 text-xs font-semibold text-neutral-400">Para alterar esta decisão, use Desfazer na revisão do conteúdo.</p>
+                  <p className="mt-4 text-xs font-semibold text-neutral-400">Para alterar esta decisão, use Voltar na revisão do conteúdo.</p>
                 </div>
               </article>
             )) : <EmptyPanel title="Nenhum item recusado" description="Itens recusados ficarão aqui caso você queira revisar e aprovar depois." />}
@@ -1272,9 +1254,16 @@ export default function ClientPortalPage({ mode = 'token' }) {
                     <h3 className="font-extrabold">{post.title || 'Conteúdo sem título'}</h3>
                     <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-300/80">{formatDate(getPostDate(post))}</p>
                   </div>
-                  <PortalStatusBadge status={getPostStatus(post)} />
+                  <PortalStatusBadge status={getPostStatus(post)} approvalSource={post.approvalSource} />
                 </div>
                 {post.description && <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-300">{post.description}</p>}
+                {(post.reviewHistory || []).map(review => (
+                  <div key={review.id} className="mt-3 border-t border-neutral-200 pt-2 text-sm dark:border-neutral-800">
+                    <p>Revisão {review.contentRevision} · {review.decision === 'rejected' ? 'Ajustes solicitados' : review.positiveReaction === 'loved' ? 'Adorei' : 'Aprovado'} · {formatDate(review.decidedAt)}</p>
+                    {review.positiveFeedback && <p className="whitespace-pre-wrap text-blue-700 dark:text-blue-300">{review.positiveFeedback}</p>}
+                    {(review.itemSnapshot || []).filter(item => item.positiveFeedback).map(item => <p key={item.fileId} className="whitespace-pre-wrap text-blue-700 dark:text-blue-300">{item.positiveFeedback}</p>)}
+                  </div>
+                ))}
               </div>
             )) : <EmptyPanel title="Sem histórico" description="Conteúdos aprovados, recusados ou concluídos aparecerão aqui." />}
           </section>

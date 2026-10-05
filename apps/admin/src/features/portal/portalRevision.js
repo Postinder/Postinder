@@ -11,7 +11,7 @@ export function getPostContentRevision(post) {
 export function isPortalRevisionConflict(error) {
   const status = Number(error?.response?.status)
   const code = String(error?.response?.data?.code || '').trim().toLowerCase()
-  return status === 409 && code === 'revision_conflict'
+  return status === 409 && ['revision_conflict', 'review_conflict'].includes(code)
 }
 
 export async function reloadAfterPortalRevisionConflict(error, reload) {

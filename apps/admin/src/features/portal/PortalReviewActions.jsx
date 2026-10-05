@@ -14,7 +14,7 @@ export default function PortalReviewActions({ onReject, onApprove, onLove, busy,
         disabled={busy}
         aria-label="Adorei"
         aria-pressed={loved}
-        className={`inline-flex items-center justify-center gap-2 rounded-xl border font-black shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-neutral-950 ${loved ? 'border-rose-600 bg-rose-600 text-white ring-2 ring-rose-200' : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300 dark:hover:bg-rose-950'} ${buttonSize}`}
+        className={`inline-flex items-center justify-center gap-2 rounded-xl border font-black shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-neutral-950 ${loved ? 'border-blue-600 bg-blue-600 text-white ring-2 ring-blue-200' : 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-950'} ${buttonSize}`}
       >
         {busy ? <Loader2 size={compact ? 16 : 19} className="animate-spin" aria-hidden="true" /> : <Heart size={compact ? 16 : 19} fill={loved ? 'currentColor' : 'none'} aria-hidden="true" />}
         Adorei

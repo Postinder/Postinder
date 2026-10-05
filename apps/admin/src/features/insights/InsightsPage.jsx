@@ -9,6 +9,7 @@ import { Select } from '../../components/ui/Input'
 import AIInsightsPanel from '../../components/ai/AIInsightsPanel'
 import PageHeader from '../../components/ui/PageHeader'
 import toast from 'react-hot-toast'
+import { getHistoricalFileMetrics, getHistoricalRejectedPostIds } from './historicalFileMetrics'
 
 function VerticalBarChart({ data, colorFn }) {
   if (!data.length) return <div className="text-center text-neutral-400 py-8 text-sm">Sem dados no período</div>
@@ -369,73 +370,6 @@ function getHistoricalFeedbackDate(feedback) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-function getHistoricalRejectedPostIds(posts, historicalFeedbacks = []) {
-  const postIds = new Set(posts.map(post => post.id))
-  const rejectedIds = new Set()
-
-  historicalFeedbacks.forEach(feedback => {
-    const postId = getFeedbackPostId(feedback)
-    if (postId && postIds.has(postId)) rejectedIds.add(postId)
-  })
-
-  posts.forEach(post => {
-    if ((post.files || []).some(file => file.rejection_reason || file.rejection_tags?.length || file.status === 'rejected')) {
-      rejectedIds.add(post.id)
-    }
-  })
-
-  return rejectedIds
-}
-
-function getFileName(file) {
-  return file?.name || file?.original_name || file?.originalName || file?.storage_url || file?.url || 'arquivo'
-}
-
-function getFileKey(postId, file) {
-  return `${postId}:${file?.id || getFileName(file)}`
-}
-
-function getHistoricalRejectedFileKeys(posts, historicalFeedbacks = []) {
-  const postById = new Map(posts.map(post => [post.id, post]))
-  const rejectedKeys = new Set()
-
-  posts.forEach(post => {
-    ;(post.files || []).forEach(file => {
-      if (file.status === 'rejected' || file.rejection_reason || file.rejection_tags?.length) {
-        rejectedKeys.add(getFileKey(post.id, file))
-      }
-    })
-  })
-
-  historicalFeedbacks.forEach(feedback => {
-    const postId = getFeedbackPostId(feedback)
-    const post = postById.get(postId)
-    if (!post) return
-    const rejectedFiles = Array.isArray(feedback.rejected_files) ? feedback.rejected_files : []
-
-    const validRejectedFiles = rejectedFiles.filter(item =>
-      item?.fileId || item?.file_id || item?.fileName || item?.file_name || (Array.isArray(item?.tags) && item.tags.length)
-    )
-
-    validRejectedFiles.forEach(item => {
-      const fileId = item.fileId || item.file_id
-      const fileName = item.fileName || item.file_name
-      const matchedFile = fileId
-        ? (post.files || []).find(file => file.id === fileId)
-        : (post.files || []).find(file => getFileName(file) === fileName)
-
-      if (matchedFile) rejectedKeys.add(getFileKey(post.id, matchedFile))
-      else if (fileName || fileId) rejectedKeys.add(`${post.id}:${fileId || fileName}`)
-    })
-
-    if (!validRejectedFiles.length && (feedback.text || feedback.tags?.length)) {
-      rejectedKeys.add(`${post.id}:historical-feedback:${feedback.id}`)
-    }
-  })
-
-  return rejectedKeys
-}
-
 function getFileFeedbackItems(posts, clients, clientFilter = '', historicalFeedbacks = []) {
   const postById = new Map(posts.map(post => [post.id, post]))
   const currentItems = posts
@@ -715,20 +649,15 @@ export default function InsightsPage() {
   const pending   = metricsPosts.filter(p => ['pending_approval','pending','updated','draft'].includes(getStatus(p))).length
   const historicalRejectedPostIds = getHistoricalRejectedPostIds(metricsPosts, historicalFeedbacks)
   const initiallyRejected = historicalRejectedPostIds.size
-  const initiallyApproved = metricsPosts.filter(post => getStatus(post) === 'approved' && !historicalRejectedPostIds.has(post.id)).length
+  const initiallyApproved = metricsPosts.filter(post => getStatus(post) === 'approved' && post.approvalSource !== 'admin' && !historicalRejectedPostIds.has(post.id)).length
   const initialDecisionTotal = initiallyApproved + initiallyRejected
   const approvalRate  = initialDecisionTotal ? Math.round(initiallyApproved / initialDecisionTotal * 100) : 0
   const rejectionRate = initialDecisionTotal ? Math.round(initiallyRejected / initialDecisionTotal * 100) : 0
   const concludedWithRevision = metricsPosts.filter(post => getStatus(post) === 'approved' && historicalRejectedPostIds.has(post.id)).length
-  const concludedWithoutRevision = metricsPosts.filter(post => getStatus(post) === 'approved' && !historicalRejectedPostIds.has(post.id)).length
-  const totalFiles = metricsPosts.reduce((sum, post) => sum + (post.files || []).length, 0)
-  const rejectedFileKeys = getHistoricalRejectedFileKeys(metricsPosts, historicalFeedbacks)
-  const rejectedFiles = Math.min(rejectedFileKeys.size, totalFiles)
-  const approvedFiles = Math.max(0, totalFiles - rejectedFiles)
-  const fileApprovalRate = totalFiles ? Math.round((approvedFiles / totalFiles) * 100) : 0
-  const fileRejectionRate = totalFiles ? Math.round((rejectedFiles / totalFiles) * 100) : 0
+  const concludedWithoutRevision = metricsPosts.filter(post => getStatus(post) === 'approved' && post.approvalSource !== 'admin' && !historicalRejectedPostIds.has(post.id)).length
+  const { totalFiles, rejectedFiles, approvedFiles, fileApprovalRate, fileRejectionRate } = getHistoricalFileMetrics(metricsPosts, historicalFeedbacks)
   const decisionDurations = metricsPosts
-    .filter(post => ['approved', 'rejected'].includes(getStatus(post)))
+    .filter(post => post.approvalSource !== 'admin' && ['approved', 'rejected'].includes(getStatus(post)))
     .map(post => {
       const submitted = getSubmittedDate(post)
       const decided = getDecisionDate(post)
@@ -767,7 +696,7 @@ export default function InsightsPage() {
       return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
     })
     const rejectedIds = getHistoricalRejectedPostIds(cp, historicalFeedbacks)
-    const firstApproved = cp.filter(p => getStatus(p) === 'approved' && !rejectedIds.has(p.id)).length
+    const firstApproved = cp.filter(p => getStatus(p) === 'approved' && p.approvalSource !== 'admin' && !rejectedIds.has(p.id)).length
     const firstTotal = firstApproved + rejectedIds.size
     const r  = firstTotal ? Math.round(firstApproved / firstTotal * 100) : 0
     return { label: c.name, value: r }
@@ -778,7 +707,7 @@ export default function InsightsPage() {
       return getPostClientId(p) === c.id && date && date >= periodRange.start && date <= periodRange.end
     })
     const rejectedIds = getHistoricalRejectedPostIds(cp, historicalFeedbacks)
-    const firstApproved = cp.filter(p => getStatus(p) === 'approved' && !rejectedIds.has(p.id)).length
+    const firstApproved = cp.filter(p => getStatus(p) === 'approved' && p.approvalSource !== 'admin' && !rejectedIds.has(p.id)).length
     const firstTotal = firstApproved + rejectedIds.size
     const r  = firstTotal ? Math.round(rejectedIds.size / firstTotal * 100) : 0
     return { label: c.name, value: r }

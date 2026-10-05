@@ -27,7 +27,7 @@ export default function DeletePostModal({ post, status, open, onClose, onConfirm
       onClose={loading ? () => {} : onClose}
       title={isApproved ? 'Excluir postagem aprovada?' : 'Excluir postagem?'}
       subtitle={isApproved
-        ? 'Esta postagem já foi aprovada pelo cliente. A exclusão removerá o conteúdo do fluxo operacional e poderá afetar o histórico de aprovação. Esta ação não poderá ser desfeita.'
+        ? 'Esta postagem já foi aprovada. A exclusão removerá o conteúdo do fluxo operacional e poderá afetar o histórico de aprovação. Esta ação não poderá ser desfeita.'
         : 'Esta postagem será removida do fluxo de trabalho. Esta ação não poderá ser desfeita.'}
     >
       {isApproved ? (

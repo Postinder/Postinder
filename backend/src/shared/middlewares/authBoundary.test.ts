@@ -90,6 +90,7 @@ before(async () => {
     name: 'Client test',
     email: 'client@test.invalid',
   })
+  ;(PortalRepository.prototype as any).getRewind = async () => ({ available: false })
   ;(PortalRepository.prototype as any).listPosts = async () => []
   ;(PortalRepository.prototype as any).listFeedbacks = async () => []
   ;(PortalRepository.prototype as any).markClientAccess = async () => undefined
@@ -441,7 +442,7 @@ test('client approval and adjustment remain available only on client routes', as
   const approve = await request('/api/v1/client-portal/posts/post-id/approve', {
     method: 'POST',
     headers: { ...bearer(clientToken), 'content-type': 'application/json' },
-    body: '{}',
+    body: JSON.stringify({ expectedRevision: 1, expectedReviewSequence: 0 }),
   })
   assert.equal(approve.status, 200)
   assert.equal(calls.portalApprove, beforeApprove + 1)
@@ -449,7 +450,7 @@ test('client approval and adjustment remain available only on client routes', as
   const reject = await request('/api/v1/client-portal/posts/post-id/reject', {
     method: 'POST',
     headers: { ...bearer(clientToken), 'content-type': 'application/json' },
-    body: JSON.stringify({ comment: 'Please adjust this post' }),
+    body: JSON.stringify({ expectedRevision: 1, expectedReviewSequence: 0, comment: 'Please adjust this post' }),
   })
   assert.equal(reject.status, 200)
   assert.equal(calls.portalReject, beforeReject + 1)

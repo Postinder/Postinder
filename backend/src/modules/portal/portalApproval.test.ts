@@ -16,7 +16,7 @@ function responseState() {
 function request(body: any = {}) {
   return {
     params: { token: 'private-token', postId: 'post-1', fileId: 'file-1' },
-    body: { expectedRevision: 7, ...body },
+    body: { expectedRevision: 7, expectedReviewSequence: 0, ...body },
   } as any
 }
 

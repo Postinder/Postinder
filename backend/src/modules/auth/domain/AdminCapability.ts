@@ -19,6 +19,7 @@ export const ADMIN_CAPABILITIES = Object.freeze([
   'posts:change-status',
   'posts:submit',
   'posts:resubmit',
+  'posts:admin-approve',
   'posts:execute',
   'posts:delete',
   'posts:duplicate',

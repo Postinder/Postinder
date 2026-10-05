@@ -1,5 +1,16 @@
 # Decisoes de Produto do Postinder
 
+## Decisões implementadas em 04/10/2026
+
+- A última conclusão oficial é escolhida antes de verificar elegibilidade para Voltar. Não há fallback N−2, mesmo após rewind, execução, edição ou reassociação do alvo. A navegação entre anexos continua livre. Backend é autoridade; decisão, revisão e rodada identificam a intenção.
+- Adorei tem identidade azul e modal “Que bom que adorou esse conteúdo!” / “O que você mais gostou? Tem alguma sugestão para ampliarmos esse tema?”. Comentário é opcional, limitado a 5.000 pontos de código Unicode na interface, API e banco; branco vira NULL. Cancelar não produz efeito. `positive_feedback` content e `item_snapshot[].positiveFeedback` item preservam a semântica positiva; `comment` continua rejeição. Não alimentar `feedback` nem multiplicar “Adorei no mês”.
+- Aprovação manual pertence à equipe, com capability exclusiva do admin; manager não recebe a capacidade. Não há lote nem novo status. Rejeição oficial r do mesmo cliente/ciclo é pré-condição; legado sem esse fato é recusado.
+- Aprovação administrativa certifica r+1 com justificativa interna obrigatória, referência à rejeição, ator real, data, idempotencyKey e request fingerprint. A rejeição r é imutável. Arquivos e soundtrack aplicável integram a mesma transação. Nenhum `approved` fictício é inserido em decisões do cliente.
+- Fingerprint canônico cobre conteúdo, anexos ordenados e soundtrack/configuração aplicável. Modal antigo depois de edição conflita. Retry idêntico reconhece o fato; mesma chave com intenção diferente conflita. Gate de execução aceita cliente OU admin somente na revisão vigente.
+- Justificativa não integra projeções do portal. Histórico interno mostra responsável, justificativa, r+1 e rejeição original. Contagem operacional de aprovados inclui a liberação administrativa; indicadores de aprovação/satisfação do cliente não tratam essa liberação como aprovação do cliente.
+- A certificação corrente não remove análises anteriores do cliente das métricas históricas por arquivo. Essas métricas preservam feedbacks e evidências de rejeição; estado administrativo isolado não prova uma análise do cliente. Tela e CSV usam a mesma fórmula.
+
+
 ## Configuracoes operacionais globais
 
 - Ha uma unica configuracao por instalacao. Nao existem agencia, organizacao, tenant, selecao no login ou white label adicional. Branding permanece separado.
@@ -27,14 +38,14 @@
 ## Fluxo e responsabilidade
 
 - A agencia cria, revisa, corrige, envia e marca a postagem como Executada.
-- Somente o Cliente aprova ou reprova. A area administrativa acompanha o processo, mas nao decide em nome do Cliente.
+- Decisões do Cliente pertencem ao Cliente. A equipe pode certificar administrativamente uma revisão após rejeição oficial, com origem `admin`, sem criar decisão em nome do Cliente.
 - `draft` e `ready` sao estados internos e reversiveis. O endpoint generico de status existe apenas para essa alternancia.
 - O portal deve ser acessivel por token privado e tambem por Cliente autenticado, com a mesma regra de decisao.
 
 ## Estados da postagem
 
 - **Em andamento** compreende os estados anteriores a `approved`.
-- **Concluida** corresponde a `approved` e e exibida como **Aprovado pelo cliente**.
+- **Concluida** corresponde ao estado operacional `approved`. A origem da certificação é interpretada separadamente: `client` permite **Aprovado pelo cliente**; `admin` indica **Aprovado manualmente pela equipe**. Satisfação e aprovação do Cliente exigem origem de cliente.
 - **Executada** corresponde a `executed` e e exibida como **Postado na rede**.
 - Uma postagem Executada e historico imutavel quanto a conteudo, anexos ativos, status e decisoes de negocio. Usuarios nao podem editar, reenviar, reabrir, substituir, excluir ou modificar o registro original; somente consulta e duplicacao do original sao permitidas.
 - A correcao posterior a uma Executada deve ocorrer como nova postagem ou revisao explicitamente auditavel; nao por reabertura silenciosa do registro historico.
@@ -50,12 +61,12 @@
 ## Portal e aprovacao
 
 - A instalacao escolhe uma forma global de aprovacao do Cliente. `content`, o default, trata a postagem inteira como uma unica unidade de decisao. `item` permite uma escolha provisoria por midia e exige a acao explicita **Concluir analise** para oficializar o snapshot final.
-- O portal apresenta tres intencoes para o conteudo: **Adorei**, **Aprovar** e **Solicitar ajuste**. **Adorei** significa `decision = approved` com `positive_reaction = loved`; **Aprovar** significa `decision = approved` com `positive_reaction = NULL`; ajuste preserva o resultado negativo existente. **Adorei** nao e status, nao cria `loved`/`super_like`, nao muda execucao e nao abre fluxo operacional separado: sua unica diferenca e o sinal historico positivo adicional.
+- O portal apresenta tres intencoes para o conteudo: **Adorei**, **Aprovar** e **Solicitar ajuste**. **Adorei** significa `decision = approved` com `positive_reaction = loved`; **Aprovar** significa `decision = approved` com `positive_reaction = NULL`; ajuste preserva o resultado negativo existente. **Adorei** nao e status, nao cria `loved`/`super_like`, nao muda execucao e nao abre fluxo operacional separado: acrescenta o sinal historico positivo e permite comentário opcional vinculado à decisão.
 - No modo `content`, navegar entre imagens e videos nao multiplica aprovacoes: o Cliente toma uma unica decisao para a postagem. **Aprovar** e **Adorei** produzem o mesmo resultado operacional `approved`; **Solicitar ajuste** preserva a recusa. No modo `item`, cada midia permanece no carrossel, pode ser revisitada e ter sua escolha alterada ate a conclusao.
-- Navegacao interna e rewind sao conceitos separados. Avancar, voltar ou selecionar livremente qualquer midia da postagem nao consome rewind e nao altera o estado oficial. O rewind opera no nivel da postagem concluida e permite reabrir somente a conclusao elegivel mais recente do Cliente, uma vez por ciclo; envio ou reenvio inicia novo ciclo.
+- Navegacao interna e rewind sao conceitos separados. Avancar, voltar ou selecionar livremente qualquer midia da postagem nao consome rewind e nao altera o estado oficial. O rewind opera no nivel da postagem concluida e permite reabrir somente a última conclusão oficial do Cliente, se elegível, uma vez por ciclo; envio ou reenvio inicia novo ciclo.
 - Escolhas provisórias no modo `item` nao alimentam estado canonico, metricas, feedback, atividade ou notificacao oficial. Cada item pode ser aprovado normalmente, receber **Adorei** ou solicitar ajuste; drafts preservam a reacao ate a conclusao. **Aprovar** e **Adorei** sao escolhas positivas, portanto qualquer mistura entre elas resulta em postagem `approved`; qualquer ajuste resulta em `rejected`. O `item_snapshot` oficial preserva cada escolha como historico imutavel. Nao existe estado de produto "parcialmente aprovado".
 - Cada envio/reenvio oficial possui `content_revision`. A aprovacao sela a revisao corrente em `approved_revision`; a execucao exige esse selo e registra `executed_revision`. Alteracao material de post, anexos ou soundtrack protegido exige reabertura e novo ciclo de revisao.
-- Operacoes de draft, decisao, rewind e soundtrack carregam `expectedRevision`. Uma acao stale nao pode ser aplicada sobre conteudo mais novo. Retry identico permanece idempotente; retry conflitante nao converte **Aprovar** em **Adorei**, nem **Adorei** em **Aprovar**.
+- Operacoes de draft, decisao, rewind e soundtrack carregam `expectedRevision` e `expectedReviewSequence`; rewind também carrega `expectedDecisionId`. Uma acao stale nao pode ser aplicada sobre conteudo mais novo. Retry identico permanece idempotente; retry conflitante nao converte **Aprovar** em **Adorei**, nem **Adorei** em **Aprovar**.
 - `portal_review_decisions` e `portal_review_actions` sao fatos oficiais append-only. Reacoes em modo `content` e o `item_snapshot` em modo `item` pertencem a esses fatos imutaveis. Historico anterior nao e promovido artificialmente; decisoes anteriores a `024` permanecem com reacao `NULL`, snapshots vazios continuam validos e drafts antigos sem revisao confiavel sao descartados pela migration `021`.
 - Rewind nao apaga uma decisao historica com `loved`: ele reabre apenas a projecao corrente. A nova analise nao herda automaticamente a reacao nem drafts da revisao anterior e pode terminar, independentemente, em **Aprovar**, **Adorei** ou **Solicitar ajuste**.
 - Um `approved` legado sem `approved_revision` continua visivel como aprovado historico, mas nao esta certificado para execucao. O caminho obrigatorio e `reopen -> submit -> aprovacao oficial -> execucao`.

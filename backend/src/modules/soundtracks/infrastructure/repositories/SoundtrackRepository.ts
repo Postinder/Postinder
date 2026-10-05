@@ -1,3 +1,4 @@
+import { assertReviewRound } from '../../../portal/domain/ReviewRound'
 import { PoolClient } from 'pg'
 import { pool, query } from '../../../../shared/database/pool'
 import { AppException } from '../../../../shared/exceptions/AppException'
@@ -276,7 +277,7 @@ export class SoundtrackRepository {
       `UPDATE posts
        SET approved_revision = NULL,
            approved_at = NULL,
-           updated_at = NOW()
+           updated_at = clock_timestamp()
        WHERE id = $1`,
       [postId],
     )
@@ -463,7 +464,7 @@ export class SoundtrackRepository {
     scope: SoundtrackScope,
     actorRole: string,
     expectedRevision: number,
-    options: { recalculatePostStatus?: boolean } = {},
+    options: { recalculatePostStatus?: boolean; expectedReviewSequence?: number } = {},
   ) {
     const client = await pool.connect()
     try {
@@ -505,6 +506,7 @@ export class SoundtrackRepository {
         await client.query('ROLLBACK')
         return { kind: 'revision_conflict' as const, currentRevision }
       }
+      await assertReviewRound(client, postId, options.expectedReviewSequence ?? 0)
       if (decision === 'adjustment_requested' && !cleanText(comment)) {
         throw new AppException('O comentario do ajuste e obrigatorio', 400, 'SOUNDTRACK_ADJUSTMENT_COMMENT_REQUIRED')
       }
@@ -564,7 +566,7 @@ export class SoundtrackRepository {
     }
   }
 
-  async resetDecision(postId: string, scope: SoundtrackScope, expectedRevision: number, actorRole = 'client') {
+  async resetDecision(postId: string, scope: SoundtrackScope, expectedRevision: number, actorRole = 'client', expectedReviewSequence = 0) {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -601,6 +603,7 @@ export class SoundtrackRepository {
         await client.query('ROLLBACK')
         return { kind: 'revision_conflict' as const, currentRevision }
       }
+      await assertReviewRound(client, postId, expectedReviewSequence)
       if (locked.rows[0].approval_status === 'pending') {
         await client.query('ROLLBACK')
         return true

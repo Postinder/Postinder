@@ -1,3 +1,5 @@
+import { AppException } from '../../../../shared/exceptions/AppException'
+import { normalizePositiveFeedback } from '../../domain/ReviewRound'
 import { Request, Response } from 'express'
 import { env } from '../../../../config/environment'
 import { ActivityRepository } from '../../../activities/infrastructure/repositories/ActivityRepository'
@@ -58,6 +60,7 @@ export class PortalController {
       })
       return true
     }
+    if (result?.kind === 'already_reopened') { res.json({ success: true, idempotent: true }); return true }
     if (result?.kind === 'already_completed') {
       res.json({
         success: true,
@@ -93,6 +96,12 @@ export class PortalController {
     }
     res.status(404).json({ error: 'Post or item not found' })
     return true
+  }
+
+  private expectedSequence(req: Request) {
+    const value = req.body?.expectedReviewSequence
+    if (!Number.isInteger(value) || value < 0) throw new AppException('expectedReviewSequence é obrigatório', 400)
+    return value as number
   }
 
   private expectedRevision(req: Request) {
@@ -165,9 +174,10 @@ export class PortalController {
     const session = await this.getSession(req, res)
     if (!session) return
 
-    const [posts, feedbacks] = await Promise.all([
+    const [posts, feedbacks, rewind] = await Promise.all([
       this.portalRepository.listPosts(session.clientId, session.companyId),
       this.portalRepository.listFeedbacks(session.clientId, session.companyId),
+      this.portalRepository.getRewind(session.clientId, session.companyId),
     ])
 
     res.json({
@@ -177,6 +187,7 @@ export class PortalController {
       expiresAt: session.expiresAt,
       posts,
       feedbacks,
+      rewind,
     })
   }
 
@@ -203,10 +214,11 @@ export class PortalController {
 
     await this.portalRepository.markClientAccess(session.clientId, session.companyId).catch(() => {})
 
-    const [client, posts, feedbacks] = await Promise.all([
+    const [client, posts, feedbacks, rewind] = await Promise.all([
       this.portalRepository.getClient(session.clientId, session.companyId),
       this.portalRepository.listPosts(session.clientId, session.companyId),
       this.portalRepository.listFeedbacks(session.clientId, session.companyId),
+      this.portalRepository.getRewind(session.clientId, session.companyId),
     ])
 
     if (!client) return res.status(404).json({ error: 'Client not found' })
@@ -218,6 +230,7 @@ export class PortalController {
       expiresAt: null,
       posts,
       feedbacks,
+      rewind,
     })
   }
 
@@ -238,7 +251,8 @@ export class PortalController {
     const approved = await this.portalRepository.approvePost(req.params.postId, {
       clientId: session.clientId,
       companyId: session.companyId,
-    }, this.expectedRevision(req), 'client_portal', reaction.value)
+    }, this.expectedRevision(req), 'client_portal', reaction.value,
+      normalizePositiveFeedback(req.body?.positiveFeedback, 'approved', reaction.value), this.expectedSequence(req))
     if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -268,7 +282,8 @@ export class PortalController {
     const approved = await this.portalRepository.approvePost(req.params.postId, {
       clientId: session.clientId,
       companyId: session.companyId,
-    }, this.expectedRevision(req), 'client', reaction.value)
+    }, this.expectedRevision(req), 'client', reaction.value,
+      normalizePositiveFeedback(req.body?.positiveFeedback, 'approved', reaction.value), this.expectedSequence(req))
     if (this.respondToReviewResult(approved, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -301,7 +316,7 @@ export class PortalController {
     const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, tags, {
       clientId: session.clientId,
       companyId: session.companyId,
-    }, this.expectedRevision(req), 'client_portal')
+    }, this.expectedRevision(req), 'client_portal', this.expectedSequence(req))
     if (this.respondToReviewResult(rejected, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -340,7 +355,7 @@ export class PortalController {
     const rejected = await this.portalRepository.rejectPost(req.params.postId, comment, tags, {
       clientId: session.clientId,
       companyId: session.companyId,
-    }, this.expectedRevision(req), 'client')
+    }, this.expectedRevision(req), 'client', this.expectedSequence(req))
     if (this.respondToReviewResult(rejected, res)) return
 
     await this.activityRepository.createForPost(req.params.postId, {
@@ -389,11 +404,13 @@ export class PortalController {
       {
         decision,
         positiveReaction: reaction.value,
+        positiveFeedback: normalizePositiveFeedback(req.body?.positiveFeedback, decision, reaction.value),
         comment: String(req.body?.comment || '').trim(),
         tags: Array.isArray(req.body?.tags) ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : [],
       },
       session,
       this.expectedRevision(req),
+      this.expectedSequence(req),
     )
     if (this.respondToReviewResult(result, res)) return
     res.json({ success: true, draft: result.draft })
@@ -422,6 +439,7 @@ export class PortalController {
       session,
       this.expectedRevision(req),
       actorRole,
+      this.expectedSequence(req),
     )
     if (this.respondToReviewResult(result, res)) return
     await this.activityRepository.createForPost(req.params.postId, {
@@ -457,13 +475,18 @@ export class PortalController {
     session: { clientId: string; companyId?: string },
     actorRole: string,
   ) {
+    if (typeof req.body?.expectedDecisionId !== 'string' || !/^[a-f0-9-]{36}$/i.test(req.body.expectedDecisionId)) {
+      throw new AppException('expectedDecisionId é obrigatório', 400)
+    }
     const reopened = await this.portalRepository.reopenPost(
       req.params.postId,
       session,
       this.expectedRevision(req),
       actorRole,
+      this.expectedSequence(req),
+      req.body.expectedDecisionId,
     )
-    if (!reopened) return res.status(409).json({ error: 'Este conteúdo não pode mais ser reaberto.' })
+    if (!reopened) return res.status(409).json({ error: 'Este conteúdo não pode mais ser reaberto.', code: 'REVIEW_CONFLICT' })
     if (this.respondToReviewResult(reopened, res)) return
     res.json({ success: true })
   }
@@ -516,7 +539,7 @@ export class PortalController {
       { clientId: session.clientId, companyId: session.companyId },
       actorRole,
       this.expectedRevision(req),
-      { recalculatePostStatus: false },
+      { recalculatePostStatus: false, expectedReviewSequence: this.expectedSequence(req) },
     )
     if (soundtrack?.kind === 'revision_conflict') {
       this.respondToReviewResult(soundtrack, res)
@@ -558,7 +581,7 @@ export class PortalController {
     const session = await this.getSession(req, res)
     if (!session) return
     const reset = await this.soundtrackRepository.resetDecision(
-      req.params.postId, session, this.expectedRevision(req), 'client_portal',
+      req.params.postId, session, this.expectedRevision(req), 'client_portal', this.expectedSequence(req),
     )
     if (typeof reset === 'object' && this.respondToReviewResult(reset, res)) return
     if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })
@@ -581,7 +604,7 @@ export class PortalController {
     const session = this.getAuthenticatedClient(req, res)
     if (!session) return
     const reset = await this.soundtrackRepository.resetDecision(
-      req.params.postId, session, this.expectedRevision(req), 'client',
+      req.params.postId, session, this.expectedRevision(req), 'client', this.expectedSequence(req),
     )
     if (typeof reset === 'object' && this.respondToReviewResult(reset, res)) return
     if (!reset) return res.status(404).json({ error: 'Fundo sonoro nao encontrado' })

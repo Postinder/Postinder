@@ -1,5 +1,16 @@
 # Postinder
 
+## Revisão do cliente e aprovação manual — pacote local
+
+**Voltar** depende do alvo informado pelo servidor: somente a última postagem oficialmente decidida pode ser reaberta uma vez no ciclo. Uma última decisão inelegível não permite procurar outra mais antiga. Funciona após refresh e na tela sem pendências; requisições de outra rodada são recusadas.
+
+**Adorei** é azul e mantém `approved + loved`. Abre comentário opcional (5.000 caracteres); cancelar não registra decisão. O texto integra o histórico próprio da revisão, separado de solicitações de ajuste e sem multiplicar a métrica mensal.
+
+**Aprovar manualmente**, em Gerenciar postagens e Aprovações, é exclusivo de admin. Exige rejeição oficial atual e justificativa interna; certifica r+1, preserva a rejeição r e registra origem administrativa. Confirmação antiga após edição retorna conflito. Execução exige certificação oficial corrente do cliente ou da equipe, além de arquivos, soundtrack e cliente válidos.
+
+Aplicar `025_review_feedback_and_admin_approval.sql` antes do backend deste pacote. A interface e a API devem ser atualizadas juntas: comandos do portal agora exigem identidade da rodada. Código permanece local, sem commit ou deploy desta etapa. Veja [contratos e testes](backend/README.md).
+
+
 ## Configuracoes da plataforma
 
 O pacote local atual adiciona uma configuracao operacional global da instalacao em `/admin/platform-settings`, sem multi-tenancy. Ela controla retencao de arquivos apos `executed`, fundo sonoro, politicas de campos seguros de Clientes/postagens, visibilidade do funil para o Cliente, defaults do portal e a forma de aprovacao do Cliente (`content` ou `item`, com default `content`). Identidade visual continua separada em `/admin/branding`.
@@ -8,13 +19,13 @@ Somente admin altera a configuracao. O backend valida um schema fechado, usa def
 
 A retencao usa 24 horas por default e grava o prazo no momento da execucao. Um scheduler interno varre no startup e a cada hora. Apenas objetos fisicos de postagens executadas com `executed_at` e prazo confiavel sao removidos; registros, metricas e historico permanecem.
 
-Cada submissao oficial possui `content_revision`. A aprovacao sela essa revisao em `approved_revision`, e a execucao so e aceita quando o selo continua corrente, sendo registrada em `executed_revision`. Conteudo protegido precisa ser reaberto antes de qualquer alteracao material; operacoes do portal enviam `expectedRevision` para recusar drafts ou decisoes stale. O Cliente possui tres intencoes visiveis para o conteudo: **Adorei**, **Aprovar** e **Solicitar ajuste**. **Adorei** e **Aprovar** produzem a mesma aprovacao operacional; somente **Adorei** acrescenta `positive_reaction = loved` ao fato historico oficial.
+Cada submissao oficial possui `content_revision`. A aprovacao sela essa revisao em `approved_revision`, e a execucao so e aceita quando o selo continua corrente, sendo registrada em `executed_revision`. Conteudo protegido precisa ser reaberto antes de qualquer alteracao material; operacoes do portal enviam `expectedRevision` e `expectedReviewSequence` para recusar drafts ou decisoes stale. O Cliente possui tres intencoes visiveis para o conteudo: **Adorei**, **Aprovar** e **Solicitar ajuste**. **Adorei** e **Aprovar** produzem a mesma aprovacao operacional; somente **Adorei** acrescenta `positive_reaction = loved` ao fato historico oficial.
 
 Plataforma de gestao e aprovacao de conteudo para agencias. A agencia prepara e envia postagens; o Cliente revisa imagens, videos e outros arquivos pelo portal; a agencia registra a execucao depois da aprovacao. O portal permite uma decisao por postagem (`content`) ou escolhas provisórias por midia consolidadas em **Concluir analise** (`item`), sempre com navegacao livre entre as midias.
 
 ## Estado atual
 
-A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. O pacote local atual possui um commit anterior preservado, mas a leva **Adorei** ainda nao recebeu seu segundo commit nem foi publicada. O backend futuro exige as migrations estruturais `017` a `024`, nessa ordem, antes de uma publicacao autorizada. Os totais de validacao estao registrados em `PROJECT_STATE.md`. Nenhum deploy deste pacote foi realizado.
+A auditoria tecnica pre-deploy e as correcoes anteriores foram publicadas em julho de 2026; o banco publicado continua em `016`. O pacote local atual possui um commit anterior preservado, e o novo pacote 025 permanece somente no workspace, sem commit ou publicação desta etapa. O backend futuro exige as migrations estruturais `017` a `025`, nessa ordem, antes de uma publicacao autorizada. Os totais de validacao estao registrados em `PROJECT_STATE.md`. Nenhum deploy deste pacote foi realizado.
 
 ## Interface atual
 

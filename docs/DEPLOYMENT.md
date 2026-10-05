@@ -1,5 +1,16 @@
 # Deploy, Banco e Ambientes
 
+## Pacote local de 04/10/2026 — ainda sem publicação
+
+Esta etapa não acessou serviços ou bancos remotos e não criou commit/deploy. As referências de produção abaixo são registros anteriores, não uma verificação remota atual.
+
+Para futura publicação autorizada, aplicar a cadeia até `025_review_feedback_and_admin_approval.sql` antes do backend. O backend passa a exigir `expectedReviewSequence` em todos os comandos do portal, e `expectedDecisionId` no rewind. Publicar o frontend compatível na mesma janela e solicitar recarga das abas antigas; comandos antigos sem rodada são recusados com 400, sem efeito.
+
+Validar Voltar sem N−2, Adorei opcional nos dois modos e liberação administrativa exclusiva admin. Esta última certifica r+1 com justificativa interna e gate de execução cliente OU admin; rollback de aplicação não deve apagar fatos ou desfazer migrations manualmente. Uma versão antiga do backend não sabe executar certificações administrativas: planejar eventual rollback considerando esse contrato.
+
+Gate local: backend 240, frontend 83+53, PostgreSQL 27+14+40, cadeia nova/skip, soundtrack/retencão e builds. Lint indisponível no repositório; aviso de chunk >500 kB e intermitência observada no teste antigo do logo estão registrados no PROJECT_STATE.
+
+
 ## Topologia de referencia
 
 - **Vercel:** frontend React/Vite em `apps/admin`.
@@ -13,11 +24,11 @@ O estado efetivamente publicado deve ser confirmado no painel de cada provedor. 
 
 - Backend e frontend das correcoes anteriores foram publicados em 30/07/2026.
 - A hotfix de CPF/CNPJ e `deadline_days` foi commitada, enviada ao Git e publicada em backend e frontend em 31/07/2026.
-- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`; as migrations `017` a `024` existem somente no codigo local e devem ser aplicadas, nessa ordem, antes de um futuro deploy autorizado.
+- A migration `016_client_documents.sql` foi aplicada com sucesso. O banco publicado esta em `016`; as migrations `017` a `025` existem somente no codigo local e devem ser aplicadas, nessa ordem, antes de um futuro deploy autorizado.
 - `/health`, `/health/db` e `/health/storage` responderam com sucesso depois da publicacao.
 - Criacao com CPF, criacao e edicao com CNPJ, remocao do documento, Cliente antigo sem documento e prazo diferente de 7 dias foram validados.
 - O ambiente permanece em modo demo para avaliacao da 20Cinco em `https://portal-20cinco.vercel.app`.
-- O pacote local de aprovacao configuravel, revisao/certificacao, snapshot do funil, historico append-only de soundtrack e reacao **Adorei** foi auditado e validado. O commit anterior esta preservado, mas o segundo commit desta leva e sua publicacao ainda nao ocorreram. O proximo deploy deve aplicar `017` a `024` antes de iniciar o backend novo.
+- O pacote local de aprovacao configuravel, revisao/certificacao, snapshot do funil, historico append-only de soundtrack e reacao **Adorei** foi auditado e validado. O commit anterior esta preservado, e esta etapa não criou novo commit ou publicação. O proximo deploy deve aplicar `017` a `025` antes de iniciar o backend novo.
 - O script de lint do frontend nao e executavel no estado atual porque ESLint e sua configuracao nao estao instalados. Nao ha workflow de CI no repositorio, e as configuracoes versionadas da Vercel e os comandos documentados do Render nao invocam lint; a pendencia nao bloqueia esta publicacao, mas nao deve ser descrita como validacao aprovada. A verificacao administrativa da Vercel deve confirmar que nao existe override remoto.
 
 ## Banco e migrations
@@ -31,7 +42,7 @@ npm run db:migrate
 
 O migrador registra cada migration em `schema_migrations`. A migration `002_development_seed.sql` e historica e nao deve ser executada como parte da cadeia estrutural. O startup valida migrations pendentes e nao corrige schema automaticamente.
 
-O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. As migrations `017` a `024` existem somente no codigo local e devem ser as proximas migrations estruturais aplicadas no pre-deploy da futura publicacao.
+O banco publicado usa PostgreSQL da Supabase e esta em `016`. A migration `002_development_seed.sql` permanece historica; `001` e `003` a `016` estao registrados. A `016`, aplicada em 31/07/2026, adiciona campos anulaveis de documento do Cliente e nao faz backfill. As migrations `017` a `025` existem somente no codigo local e devem ser as proximas migrations estruturais aplicadas no pre-deploy da futura publicacao.
 
 A `019` cria o singleton operacional e o override anulavel do portal, sem backfill. A `020` adiciona `portal_approval_mode`, drafts provisorios e rewind. A `021` introduz revisao/certificacao e historico oficial, a `022` adiciona visibilidade/snapshot do funil, a `023` protege o historico de soundtrack como append-only e a `024` acrescenta `positive_reaction` opcional e `item_snapshot` oficial. A `024` nao faz backfill de `loved`, preserva `NULL`/snapshot vazio do legado e restringe combinacoes invalidas. A cadeia ate `024` e a segunda execucao/no-op foram validadas em PostgreSQL 18.4 local descartavel; nenhum banco remoto foi usado. Isso nao substitui backup e preflight imediatamente antes do deploy.
 
@@ -39,7 +50,7 @@ Depois do startup, o backend executa a limpeza de retencao e agenda novas varred
 
 A `018` e aditiva: inclui a preferencia booleana do portal com default simplificado, ciphertext anulavel para recuperacao administrativa e indice parcial. Ela nao invalida links existentes nem exige nova variavel de ambiente; a cifra deriva de forma separada do `JWT_SECRET` backend ja obrigatorio. Em caso de rollback de aplicacao, mantenha o backend anterior ate decidir a estrategia de schema — nao remova colunas nem reescreva tokens.
 
-O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Em relacao ao repositorio atual, `017` a `024` permanecem deliberadamente pendentes. A cadeia local completa ate `024` foi validada e a segunda execucao foi no-op; o deploy continua nao autorizado nesta etapa.
+O migrador oficial e `backend/scripts/migrate.ts`. Na publicacao da hotfix, ele consultou `schema_migrations`, ignorou as migrations ja registradas e aplicou `016_client_documents.sql`. Em relacao ao repositorio atual, `017` a `025` permanecem deliberadamente pendentes. A cadeia local completa ate `025` foi validada e a segunda execucao foi no-op; o deploy continua nao autorizado nesta etapa.
 
 No Render, configure um Pre-Deploy Command/release step separado e bloqueante:
 
@@ -189,7 +200,7 @@ ambiente demo esta preparado para avaliacao da 20Cinco.
 
 ## Rollback operacional
 
-Para o rollout do pacote local: (1) criar backup e executar preflight; (2) aplicar, em ordem, as migrations aditivas `017` a `024`; (3) publicar o backend; (4) concluir health checks e smoke tests; (5) publicar o frontend. Em rollback de aplicacao, retornar primeiro o frontend e depois o backend; nao remova migrations ja aplicadas nem edite `schema_migrations` manualmente.
+Para o rollout do pacote local: (1) criar backup e executar preflight; (2) aplicar, em ordem, as migrations aditivas `017` a `025`; (3) publicar o backend; (4) concluir health checks e smoke tests; (5) publicar o frontend. Em rollback de aplicacao, retornar primeiro o frontend e depois o backend; nao remova migrations ja aplicadas nem edite `schema_migrations` manualmente.
 
 Nao existem down migrations. Se o release step falhar:
 

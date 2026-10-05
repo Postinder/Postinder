@@ -1,3 +1,4 @@
+import AdministrativeReview from '../../components/posts/AdministrativeReview'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -563,7 +564,7 @@ function ExecutePostModal({ post, client, open, onClose, onConfirm, loading, ret
         </div>
 
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          Depois de postado na rede, o projeto sai da lista de aprovados pelo cliente. O cliente nao podera alterar a aprovacao.
+          Depois de postado na rede, o projeto sai da lista de aprovados. O cliente nao podera alterar a aprovacao.
         </div>
 
         <div className="flex gap-3">
@@ -786,7 +787,7 @@ export default function ManagePostsPage() {
         <div className="mb-4 flex flex-wrap gap-2">
           {[
             { key: 'active', label: 'Projetos em andamento', count: activeCount },
-            { key: 'completed', label: 'Aprovado pelo cliente', count: completedCount },
+            { key: 'completed', label: 'Aprovados', count: completedCount },
             { key: 'executed', label: 'Postado na rede', count: executedCount },
           ].map(item => (
             <button
@@ -906,6 +907,7 @@ export default function ManagePostsPage() {
                     <span className="text-xs text-neutral-400 dark:text-neutral-300/80">Atualizado {formatDate(getUpdatedDate(post))}</span>
                   </div>
                   <div className="flex flex-wrap justify-end gap-1.5">
+                    <AdministrativeReview post={post} role={user?.role} onChanged={load} />
                     <button title="Previa" onClick={() => navigate(`/admin/feed?client=${getPostClientId(post)}&post=${post.id}`)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-mag-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-mag-200"><Eye size={16} /></button>
                     {canEdit && <button title="Editar" onClick={() => openPostEditor(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-teal-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-teal-100"><Edit3 size={16} /></button>}
                     {canEditFunnelInternally && <button title="Editar Funil interno" aria-label="Editar Funil interno" onClick={() => setInternalFunnelPost(post)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-violet-600 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-violet-300"><Tag size={16} /></button>}
@@ -924,7 +926,7 @@ export default function ManagePostsPage() {
           {!filtered.length && (
             <Card className="p-10 text-center">
               <div className="text-sm font-bold text-neutral-700 dark:text-neutral-200">Nenhuma postagem encontrada</div>
-              <p className="mt-1 text-sm text-neutral-500">{view === 'executed' ? 'Nenhuma postagem postada na rede com estes filtros.' : view === 'completed' ? 'Nenhuma postagem aprovada pelo cliente com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
+              <p className="mt-1 text-sm text-neutral-500">{view === 'executed' ? 'Nenhuma postagem postada na rede com estes filtros.' : view === 'completed' ? 'Nenhuma postagem aprovada com estes filtros.' : 'Crie rascunhos ou ajuste os filtros para continuar.'}</p>
               <Button className="mt-4" icon={<Plus size={16} />} onClick={() => navigate('/admin/posts/new')}>Nova Postagem</Button>
             </Card>
           )}

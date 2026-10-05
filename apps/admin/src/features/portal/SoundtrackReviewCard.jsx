@@ -19,6 +19,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
   const [muted, setMuted] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [comment, setComment] = useState('')
+  const [adjustSequence, setAdjustSequence] = useState(0)
   const [adjustRevision, setAdjustRevision] = useState(null)
   const audioFile = soundtrack?.audioFile
   const audioUrl = resolveMediaUrl(audioFile?.storage_url || audioFile?.url)
@@ -50,7 +51,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
     setAdjustOpen(false)
     setComment('')
     setAdjustRevision(null)
-  }, [revisionConflictSequence, post?.id, post?.contentRevision, post?.content_revision])
+  }, [revisionConflictSequence, post?.id, post?.contentRevision, post?.content_revision, post?.reviewSequence])
 
   async function togglePlayback() {
     const audio = audioRef.current
@@ -76,7 +77,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
 
   function submitAdjustment() {
     if (!comment.trim()) return
-    onAdjust(comment.trim(), adjustRevision).then(saved => {
+    onAdjust(comment.trim(), adjustRevision, adjustSequence).then(saved => {
       if (saved === false) return
       setComment('')
       setAdjustOpen(false)
@@ -152,7 +153,7 @@ export default function SoundtrackReviewCard({ post, soundtrack, onApprove, onAd
 
       {status === 'pending' ? (
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={() => { setAdjustRevision(getPostContentRevision(post)); setAdjustOpen(true) }} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-bold text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 dark:border-red-900"><XCircle size={16} /> Reprovar</button>
+          <button type="button" onClick={() => { setAdjustRevision(getPostContentRevision(post)); setAdjustSequence(post?.reviewSequence ?? 0); setAdjustOpen(true) }} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-bold text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-60 dark:border-red-900"><XCircle size={16} /> Reprovar</button>
           <button type="button" onClick={onApprove} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"><CheckCircle size={16} /> Aprovar fundo sonoro</button>
         </div>
       ) : null}

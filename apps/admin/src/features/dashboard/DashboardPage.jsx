@@ -222,7 +222,7 @@ function buildRecentActivities(posts, clients, clientFilter, backendActivities =
       addActivity({
         id: `post-approved-${post.id}`,
         type: 'post_approved',
-        title: 'Post aprovado',
+        title: post.approvalSource === 'admin' ? 'Aprovado manualmente pela equipe' : 'Post aprovado pelo cliente',
         description: `${post.title || 'Post sem título'}${client?.name ? ` · ${client.name}` : ''}`,
         date: post.approvedAt || post.approved_at || updatedAt,
         icon: CheckCircle,

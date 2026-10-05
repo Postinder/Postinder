@@ -1,5 +1,16 @@
 # Banco de dados
 
+## Migration 025 — feedback positivo e aprovação administrativa
+
+`025_review_feedback_and_admin_approval.sql` é a única migration nova deste pacote. Acrescenta positive_feedback TEXT nullable em drafts/decisões e justification, idempotency_key UUID, request_fingerprint TEXT em ações. Não cria status ou tabela nova; não há backfill, reescrita de decisões, snapshots ou triggers append-only.
+
+Constraints exigem feedback não branco (incluindo espaços Unicode), até 5.000 caracteres e combinação approved+loved; a coluna oficial é exclusiva de content. Snapshots item aceitam positiveFeedback opcional e preservam snapshots legados sem a chave. A ação admin_approved exige revisão positiva, actor_id, actor_role=admin, decision_id, justificativa válida, UUID de idempotência e hash hexadecimal de 64 caracteres. A pertinência da rejeição é validada transacionalmente pelo backend, não por CHECK cross-table.
+
+Índices únicos parciais: `idx_portal_admin_approval_revision` em (post_id,content_revision) e `idx_portal_admin_approval_idempotency` em (post_id,idempotency_key), ambos WHERE action='admin_approved'. Rewind usa as estruturas anteriores e não adiciona schema específico.
+
+Validado em PostgreSQL local descartável: cadeia oficial em banco vazio (24 migrations estruturais, seed 002 excluído), segunda execução do migrador com 24 skips, registros/snapshots legados, limites/NULL/Unicode, índices únicos, append-only e cascatas legítimas. A repetição suportada é via migrador e schema_migrations; não reaplicar o SQL 025 avulso. Aprovação administrativa é fato próprio em r+1; nenhuma aprovação de cliente é fabricada.
+
+
 ## Migrations 021 a 024 - integridade de revisao, soundtrack e reacao positiva
 
 `021_content_revision_and_review_history.sql` adiciona `posts.content_revision`, `approved_revision` e `executed_revision`, vincula drafts/decisoes a uma revisao de conteudo e cria `portal_review_decisions` e `portal_review_actions` como fatos oficiais append-only. O banco bloqueia UPDATE e DELETE direto nesses fatos oficiais. Triggers tambem protegem alteracoes materiais em posts, files e soundtrack quando o ciclo esta protegido. Operacoes do runtime usam `expectedRevision`, e a execucao exige revisao oficialmente aprovada, Cliente ativo e tenant coerente.
@@ -40,7 +51,7 @@ A auditoria original aplicou a cadeia estrutural ate `020`; a validacao posterio
 
 `019_platform_settings.sql` e aditiva e ainda nao publicada. Ela cria `platform_settings` com chave singleton, retencao de 24 horas, feature flag de fundo sonoro, JSONB controlado para politicas de campos e booleans do portal. Tambem adiciona `clients.portal_mode_override` anulavel com `simplified|detailed`; `NULL` significa herdar.
 
-A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017` a `024`, nessa ordem, antes de iniciar o backend atual.
+A migration nao altera `017`/`018`, nao faz backfill e nao reescreve Clientes, postagens ou arquivos. Instalacoes sem linha usam os mesmos defaults no dominio. A cadeia oficial deve aplicar `017` a `025`, nessa ordem, antes de iniciar o backend atual.
 
 A limitacao anterior de PostgreSQL local foi superada: a auditoria posterior aplicou toda a cadeia ate `024` em banco temporario e confirmou o no-op da segunda rodada. Antes do deploy, ainda sao obrigatorios backup e preflight novos do ambiente publicado.
 
@@ -64,7 +75,7 @@ O startup nao cria tabelas, colunas, indices ou dados. Em producao, migrations p
 No PostgreSQL publicado da Supabase, `001`, a `002` historica e `003` a `016`
 estao registradas. As migrations `012` a `015` foram aplicadas em 30/07/2026,
 e `016_client_documents.sql` foi aplicada em 31/07/2026. O banco publicado
-esta em `016`. Em relacao ao codigo local atual, `017` a `024` permanecem pendentes para uma futura publicacao.
+esta em `016`. Em relacao ao codigo local atual, `017` a `025` permanecem pendentes para uma futura publicacao.
 
 O migrador real `backend/scripts/migrate.ts` foi validado em clone restaurado
 e posteriormente aplicou `012` a `015` em producao. Na publicacao da hotfix,

@@ -1,10 +1,22 @@
 # Checklist de deploy de teste
 
+## Pacote 025 — gate local e futura publicação
+
+- [x] Validar localmente Voltar sem encadeamento, Adorei opcional e aprovação administrativa r+1, incluindo stale, autorização, fingerprint, concorrência, idempotência e rollback.
+- [x] Executar cadeia estrutural em banco vazio e segunda execução skip; testar constraints, snapshots legados, índices e append-only.
+- [x] Backend 240/240; frontend 83/83 unitários e 53/53 React na repetição; PostgreSQL revisão 27/27, portal 14/14 e pacote 40/40; soundtrack/retencão e builds locais aprovados.
+- [ ] Obter revisão humana e autorização antes de commit ou publicação.
+- [ ] Em publicação futura, aplicar até 025 antes do backend e atualizar frontend na mesma janela. Abas antigas devem recarregar para enviar expectedReviewSequence/expectedDecisionId.
+- [ ] Smoke remoto futuro: admin permitido, manager/cliente negados, justificativa não exposta ao portal, rejeição r preservada e execução em r+1.
+
+Nenhum item remoto foi executado nesta etapa. Lint permanece indisponível; não marcar como aprovado. A falha intermitente preexistente do teste de logo passou na repetição integral, sem alteração do teste.
+
+
 Consulte [../DEPLOYMENT.md](../DEPLOYMENT.md) para configuracao de Render, Vercel, Supabase e migrations.
 
 A hotfix de Clientes foi publicada e validada em 31/07/2026. O banco publicado
 esta em `016`, e o ambiente demo esta disponivel para avaliacao da 20Cinco em
-`https://portal-20cinco.vercel.app`. As migrations `017` a `024` e os pacotes
+`https://portal-20cinco.vercel.app`. As migrations `017` a `025` e os pacotes
 locais subsequentes continuam nao publicados e devem integrar uma publicacao futura autorizada.
 
 ## Consolidacao e verificacao
@@ -43,12 +55,12 @@ locais subsequentes continuam nao publicados e devem integrar uma publicacao fut
 
 - [ ] Criar backup e executar preflight somente leitura.
 - [ ] Confirmar os tres lockfiles v3, `engine-strict=true` na raiz/backend/frontend, instalacao limpa com `npm ci`, Node 24 no Vercel e `NODE_VERSION=24.16.0` no Render; nao presumir que o painel ja esta correto.
-- [ ] Confirmar que o release step aplicara, em ordem, as migrations `017` a `024` sobre o banco publicado em `016`; a `024` deve aparecer uma unica vez em `schema_migrations`.
+- [ ] Confirmar que o release step aplicara, em ordem, as migrations `017` a `025` sobre o banco publicado em `016`; a `025` deve aparecer uma unica vez em `schema_migrations`.
 - [ ] Publicar o backend somente depois das migrations. Validar branding, configuracoes globais, modos `content|item`, drafts, conclusao, rewind, revisao/certificacao, funil, **Adorei** e E-mail Marketing sem arquivo antes de publicar o frontend.
 - [ ] Concluir health checks e smoke tests do backend antes de publicar o frontend.
 - [ ] Publicar o frontend e confirmar que login/recuperacao nao consultam branding, enquanto admin e portais exibem o logo configuravel.
 - [ ] Reexecutar pelo menos backend 215/215, PostgreSQL de revisao 27/27, portal approval 14/14, soundtrack/retention focal 16/16, integracao de soundtrack, admin 83/83 unitarios e 33/33 React, focais do portal 20/20 Node e 8/8 React, `portalServices` 3/3, builds e `git diff --check` no artefato final; atualizar os totais se novos testes forem adicionados.
-- [ ] Em rollback, retornar frontend e depois backend; manter as migrations aditivas `017` a `024` e decidir qualquer estrategia posterior sem editar `schema_migrations` manualmente.
+- [ ] Em rollback, retornar frontend e depois backend; manter as migrations aditivas `017` a `025` e decidir qualquer estrategia posterior sem editar `schema_migrations` manualmente.
 
 ## Depois do deploy
 
@@ -104,4 +116,4 @@ ausencia de override remoto.
 
 ## Observacao
 
-O scheduler interno de Retencao e o retry por nova varredura existem no pacote local de configuracoes gerais, mas ainda exigem migration `019` e smoke test com dados descartaveis antes de publicacao. O fluxo atual exige tambem `020` a `024`. Outbox para `activity_events`, fila distribuida, bucket privado, signed URLs, upload direto/retomavel e transcodificacao continuam inexistentes.
+O scheduler interno de Retencao e o retry por nova varredura existem no pacote local de configuracoes gerais, mas ainda exigem migration `019` e smoke test com dados descartaveis antes de publicacao. O fluxo atual exige tambem `020` a `025`. Outbox para `activity_events`, fila distribuida, bucket privado, signed URLs, upload direto/retomavel e transcodificacao continuam inexistentes.

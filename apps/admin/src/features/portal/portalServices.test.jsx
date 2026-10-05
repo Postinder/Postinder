@@ -33,16 +33,16 @@ describe('portal services optimistic revision contract', () => {
     await service.resetPortalSoundtrack('token', 'post', 7)
 
     expect(calls).toEqual([
-      { method: 'post', path: '/portal/token/posts/post/approve', body: { expectedRevision: 7 } },
-      { method: 'post', path: '/portal/token/posts/loved-post/approve', body: { positiveReaction: 'loved', expectedRevision: 7 } },
-      { method: 'post', path: '/portal/token/posts/post/reject', body: { comment: 'Ajustar', tags: ['Texto'], expectedRevision: 7 } },
-      { method: 'put', path: '/portal/token/posts/post/items/file/decision', body: { decision: 'rejected', comment: 'Trocar', tags: ['Imagem'], expectedRevision: 7 } },
-      { method: 'put', path: '/portal/token/posts/post/items/loved-file/decision', body: { decision: 'approved', comment: '', tags: [], positiveReaction: 'loved', expectedRevision: 7 } },
-      { method: 'post', path: '/portal/token/posts/post/complete-review', body: { expectedRevision: 7 } },
-      { method: 'post', path: '/portal/token/posts/post/reopen', body: { expectedRevision: 7 } },
-      { method: 'post', path: '/portal/token/posts/post/soundtrack/approve', body: { expectedRevision: 7 } },
-      { method: 'post', path: '/portal/token/posts/post/soundtrack/adjust', body: { comment: 'Diminuir volume', expectedRevision: 7 } },
-      { method: 'post', path: '/portal/token/posts/post/soundtrack/reset', body: { expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/post/approve', body: { positiveFeedback: null, expectedReviewSequence: 0, expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/loved-post/approve', body: { positiveFeedback: null, expectedReviewSequence: 0, positiveReaction: 'loved', expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/post/reject', body: { expectedReviewSequence: 0, comment: 'Ajustar', tags: ['Texto'], expectedRevision: 7 } },
+      { method: 'put', path: '/portal/token/posts/post/items/file/decision', body: { positiveFeedback: null, expectedReviewSequence: 0, decision: 'rejected', comment: 'Trocar', tags: ['Imagem'], expectedRevision: 7 } },
+      { method: 'put', path: '/portal/token/posts/post/items/loved-file/decision', body: { positiveFeedback: null, expectedReviewSequence: 0, decision: 'approved', comment: '', tags: [], positiveReaction: 'loved', expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/post/complete-review', body: { expectedReviewSequence: 0, expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/post/reopen', body: { expectedDecisionId: undefined, expectedReviewSequence: 0, expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/post/soundtrack/approve', body: { expectedReviewSequence: 0, expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/post/soundtrack/adjust', body: { expectedReviewSequence: 0, comment: 'Diminuir volume', expectedRevision: 7 } },
+      { method: 'post', path: '/portal/token/posts/post/soundtrack/reset', body: { expectedReviewSequence: 0, expectedRevision: 7 } },
     ])
   })
 
@@ -62,16 +62,16 @@ describe('portal services optimistic revision contract', () => {
     await service.resetAuthenticatedPortalSoundtrack('post', 9)
 
     expect(calls).toEqual([
-      { method: 'post', path: '/client-portal/posts/post/approve', body: { expectedRevision: 9 } },
-      { method: 'post', path: '/client-portal/posts/loved-post/approve', body: { positiveReaction: 'loved', expectedRevision: 9 } },
-      { method: 'post', path: '/client-portal/posts/post/reject', body: { comment: 'Ajustar', tags: ['Texto'], expectedRevision: 9 } },
-      { method: 'put', path: '/client-portal/posts/post/items/file/decision', body: { decision: 'approved', comment: '', tags: [], expectedRevision: 9 } },
-      { method: 'put', path: '/client-portal/posts/post/items/loved-file/decision', body: { decision: 'approved', comment: '', tags: [], positiveReaction: 'loved', expectedRevision: 9 } },
-      { method: 'post', path: '/client-portal/posts/post/complete-review', body: { expectedRevision: 9 } },
-      { method: 'post', path: '/client-portal/posts/post/reopen', body: { expectedRevision: 9 } },
-      { method: 'post', path: '/client-portal/posts/post/soundtrack/approve', body: { expectedRevision: 9 } },
-      { method: 'post', path: '/client-portal/posts/post/soundtrack/adjust', body: { comment: 'Trocar faixa', expectedRevision: 9 } },
-      { method: 'post', path: '/client-portal/posts/post/soundtrack/reset', body: { expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/post/approve', body: { positiveFeedback: null, expectedReviewSequence: 0, expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/loved-post/approve', body: { positiveFeedback: null, expectedReviewSequence: 0, positiveReaction: 'loved', expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/post/reject', body: { expectedReviewSequence: 0, comment: 'Ajustar', tags: ['Texto'], expectedRevision: 9 } },
+      { method: 'put', path: '/client-portal/posts/post/items/file/decision', body: { positiveFeedback: null, expectedReviewSequence: 0, decision: 'approved', comment: '', tags: [], expectedRevision: 9 } },
+      { method: 'put', path: '/client-portal/posts/post/items/loved-file/decision', body: { positiveFeedback: null, expectedReviewSequence: 0, decision: 'approved', comment: '', tags: [], positiveReaction: 'loved', expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/post/complete-review', body: { expectedReviewSequence: 0, expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/post/reopen', body: { expectedDecisionId: undefined, expectedReviewSequence: 0, expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/post/soundtrack/approve', body: { expectedReviewSequence: 0, expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/post/soundtrack/adjust', body: { expectedReviewSequence: 0, comment: 'Trocar faixa', expectedRevision: 9 } },
+      { method: 'post', path: '/client-portal/posts/post/soundtrack/reset', body: { expectedReviewSequence: 0, expectedRevision: 9 } },
     ])
   })
 
